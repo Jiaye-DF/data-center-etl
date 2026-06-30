@@ -24,7 +24,8 @@ services:
     environment:
       - BACKEND_PORT=8000
       # container 內須以 service name 連 DB(覆蓋 .env 的 localhost,僅供本機 dev)
-      - DATABASE_URL=postgresql+asyncpg://data_center_etl:changeme-development@postgres:5432/data_center_etl
+      # 帳密由 .env 注入,禁寫死(見 docs/Design-Base/00-overview/02-secrets.md)
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
 
     depends_on:
       postgres:
@@ -43,14 +44,14 @@ services:
     ports:
       - "5435:5432"
     environment:
-      - POSTGRES_DB=data_center_etl
-      - POSTGRES_USER=data_center_etl
-      - POSTGRES_PASSWORD=changeme-development
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       # postgres 18+ 建議掛載 /var/lib/postgresql(資料置於版本子目錄),非舊版 /data
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U data_center_etl -d data_center_etl"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
