@@ -218,7 +218,7 @@ flowchart LR
 
 ## 五、設施關聯圖
 
-各 AWS 設施之間的關係：包含 / 套用 / 授權 / 提供帳密 / 加密 / 監控 / 讀寫。實線=資料流，虛線=管理 / 安全關聯。
+各 AWS 設施之間的關係：包含 / 套用 / 授權 / 提供帳密 / 加密 / 監控 / 讀寫。線條配色：**藍=資料流**、**灰=基礎連線**、**紫=安全治理（SG / IAM / KMS / CloudWatch）**。
 
 ```mermaid
 flowchart TB
@@ -260,10 +260,8 @@ flowchart TB
     CT["CloudTrail"]
   end
 
-  ONP -.->|VPN| VGW
+  ONP ==>|Site-to-Site VPN| VGW
   VGW --> DMS
-  NAT -->|對外經| IGW
-  DMS -.->|出向連外| NAT
   DMS ==>|寫入| RAW
   GLUE -->|讀取| RAW
   GLUE -->|寫入| HUB
@@ -272,10 +270,11 @@ flowchart TB
   GLUE -->|匯出| S3
   ATH -->|查詢| S3
   RS -->|載入| S3
-  EC2 -->|讀取| HUB
-  DMS -.->|task log| VPCE
+  EC2 -->|讀取 ETL-Hub| HUB
   VPCE -->|私網存取| S3
-
+  NAT -->|對外上網| IGW
+  DMS -.->|出向流量| NAT
+  DMS -.->|task log| VPCE
   SGD -.->|套用| DMS
   SGR -.->|套用| RAW
   SGR -.->|套用| HUB
@@ -292,6 +291,11 @@ flowchart TB
   CW -.->|監控| RAW
   CW -.->|監控| GLUE
   CT -.->|稽核| IAM
+
+  %% 線條分類上色:藍=資料流 / 灰=基礎連線 / 紫=安全治理
+  linkStyle 0,1,2,3,4,5,6,7,8,9,10,11 stroke:#1f6feb,stroke-width:2.5px
+  linkStyle 12,13,14 stroke:#94a3b8,stroke-width:1.5px
+  linkStyle 15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30 stroke:#8b5cf6,stroke-width:1.5px
 ```
 
 > 各階段範圍對照見〈四、整體使用到的 AWS 設施〉的 Phase 欄。
