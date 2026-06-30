@@ -1,0 +1,37 @@
+# scaffold-version: 1.2
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+coverage/
+
+# Env
+.env
+.env.development
+.env.staging
+.env.production
+.env.local
+!.env.*.example
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Misc
+*.log
+*.bak
+
+# Harness task workflow runs (本機執行紀錄，不進版控)
+docs/Tasks/*/workflow/

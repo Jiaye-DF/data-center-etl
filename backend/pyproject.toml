@@ -1,0 +1,45 @@
+[project]
+name = "data-center-etl-backend"
+version = "0.1.0"
+requires-python = "==3.14.1.*"
+dependencies = [
+    "fastapi==0.136.1",
+    "uvicorn[standard]==0.46.0",
+    "pydantic==2.13.3",
+    "pydantic-settings==2.14.0",
+    "httpx==0.28.1",
+    "passlib[bcrypt]==1.7.4",
+    "pyjwt[crypto]==2.10.1",
+    "python-multipart==0.0.20",
+    "sqlalchemy[asyncio]==2.0.49",
+    "asyncpg==0.31.0",
+    "alembic==1.14.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff==0.15.20",
+    "mypy==1.20.2",
+    "pytest==8.4.2",
+    "pip-audit==2.8.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+exclude = ["alembic/versions"]
+
+[[tool.mypy.overrides]]
+module = ["passlib.*"]
+ignore_missing_imports = true

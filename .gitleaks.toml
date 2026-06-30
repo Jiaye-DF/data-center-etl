@@ -1,0 +1,16 @@
+title = "data-center-etl gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "白名單"
+paths = [
+  '''(.*\.)?env\..*\.example''',
+  '''docs/.*\.md''',
+]
+regexes = [
+  '''changeme-development''',
+  '''changeme-32-bytes-very-very-secret''',
+  '''__GENERATE_AT_DEPLOY__''',
+]

@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'><line x1='8' y1='4.5' x2='4' y2='11.5' stroke='%232563eb' stroke-width='1.4' stroke-linecap='round'/><line x1='8' y1='4.5' x2='12' y2='11.5' stroke='%232563eb' stroke-width='1.4' stroke-linecap='round'/><circle cx='8' cy='4' r='2.5' fill='%232563eb'/><circle cx='4' cy='12' r='2.5' fill='%2360a5fa'/><circle cx='12' cy='12' r='2.5' fill='%2360a5fa'/></svg>">
+  <title>系統架構 — Demo 簡報模板</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-soft: #f8fafc;
+      --fg: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --toolbar-bg: #f8fafc;
+      --btn-bg: #ffffff;
+      --btn-hover: #f1f5f9;
+      --accent: #2563eb;
+      --error: #dc2626;
+      --user: #16a34a;
+      --it: #2563eb;
+      --shared: #9333ea;
+      --critical: #dc2626;
+    }
+    [data-theme="dark"] {
+      --bg: #0f172a;
+      --bg-soft: #1e293b;
+      --fg: #f1f5f9;
+      --muted: #94a3b8;
+      --border: #334155;
+      --toolbar-bg: #1e293b;
+      --btn-bg: #1e293b;
+      --btn-hover: #334155;
+      --accent: #60a5fa;
+      --error: #f87171;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; height: 100%;
+      font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, -apple-system, sans-serif;
+      background: var(--bg); color: var(--fg);
+    }
+    body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    /* ---- toolbar ---- */
+    .toolbar {
+      display: flex; gap: 10px; flex-wrap: wrap;
+      padding: 12px 20px;
+      background: var(--toolbar-bg);
+      border-bottom: 2px solid var(--border);
+      align-items: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      flex-shrink: 0;
+    }
+    .toolbar h1 {
+      font-size: 16px;
+      margin: 0;
+      margin-right: auto;
+      font-weight: 700;
+      color: var(--accent);
+      padding-left: 12px;
+      border-left: 4px solid var(--accent);
+      line-height: 1.3;
+      letter-spacing: 0.02em;
+      max-width: 40%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .toolbar .divider { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+    .toolbar button, .toolbar select, .toolbar input {
+      padding: 6px 11px; font-size: 13px;
+      border: 1px solid var(--border);
+      background: var(--btn-bg); color: var(--fg);
+      border-radius: 5px; cursor: pointer; font-family: inherit;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .toolbar button:hover, .toolbar select:hover {
+      background: var(--btn-hover); border-color: var(--accent);
+    }
+    .toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .toolbar label {
+      font-size: 12px; color: var(--muted);
+      display: inline-flex; align-items: center; gap: 6px;
+      font-weight: 500;
+    }
+    .toolbar .picker {
+      font-weight: 600; min-width: 240px;
+      border-color: var(--accent); color: var(--fg);
+    }
+    .counter {
+      font-size: 12px; color: var(--muted); font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      padding: 0 8px;
+    }
+    .nav-btn {
+      width: 32px; height: 30px; padding: 0 !important;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 600;
+    }
+
+    /* ---- legend bar ---- */
+    .legend-bar {
+      display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+      padding: 8px 20px;
+      background: var(--bg-soft);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .legend-bar .group { display: inline-flex; align-items: center; gap: 8px; }
+    .legend-bar .group-title { font-weight: 700; color: var(--muted); font-size: 11px; }
+    .legend-bar .item { display: inline-flex; align-items: center; gap: 4px; }
+    .legend-bar .sw {
+      display: inline-block; width: 14px; height: 14px; border-radius: 3px;
+      border: 1px solid currentColor;
+    }
+    .legend-bar .sw.u { background: #dcfce7; color: #16a34a; }
+    .legend-bar .sw.i { background: #dbeafe; color: #2563eb; }
+    .legend-bar .sw.s { background: #f3e8ff; color: #9333ea; }
+    .legend-bar .sw.c { background: #fee2e2; color: #dc2626; }
+    .legend-bar svg.line { color: var(--fg); }
+
+    /* ---- stage ---- */
+    main {
+      flex: 1; min-height: 0;
+      display: flex; flex-direction: column;
+    }
+    .preview {
+      flex: 1; min-height: 0;
+      overflow: auto;
+      padding: 28px 24px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+    }
+    .preview.zoomed { justify-content: flex-start; }
+    .preview.draggable { cursor: grab; user-select: none; }
+    .preview.draggable.dragging { cursor: grabbing; }
+    .preview.draggable.dragging * { pointer-events: none; }
+    .preview svg { display: block; margin: 0 auto; }
+    .preview .svg-wrap {
+      display: inline-block;
+      transform-origin: top left;
+      transition: transform 0.12s ease;
+    }
+    .preview.dragging .svg-wrap { transition: none; }
+    .zoom-label {
+      font-size: 12px; color: var(--muted); font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      min-width: 42px; text-align: center;
+      cursor: pointer;
+    }
+    .zoom-label:hover { color: var(--accent); }
+    .error {
+      color: var(--error); padding: 16px;
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      font-size: 13px; white-space: pre-wrap; text-align: left;
+    }
+
+    /* ---- cover slide ---- */
+    .slide-cover {
+      max-width: 1100px; width: 100%;
+      padding: 36px 48px;
+      background: linear-gradient(135deg, var(--bg) 0%, var(--bg-soft) 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+      text-align: left;
+    }
+    .slide-cover .hero {
+      margin: 18px 0 24px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--bg);
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+    }
+    .slide-cover .hero img {
+      display: block; width: 100%; height: auto;
+      max-height: 56vh; object-fit: contain;
+      background: #fff;
+    }
+    .slide-cover .hero .caption {
+      padding: 8px 14px;
+      font-size: 12px; color: var(--muted);
+      border-top: 1px solid var(--border);
+      background: var(--bg-soft);
+    }
+    .slide-cover .hero .caption strong { color: var(--fg); }
+    .slide-cover .tag {
+      display: inline-block;
+      padding: 4px 12px;
+      background: var(--accent); color: white;
+      font-size: 12px; font-weight: 700;
+      border-radius: 999px;
+      letter-spacing: 0.05em;
+    }
+    .slide-cover .title {
+      font-size: 44px; font-weight: 800;
+      margin: 18px 0 8px;
+      color: var(--accent);
+      letter-spacing: 0.01em;
+    }
+    .slide-cover .subtitle {
+      font-size: 18px; font-weight: 500;
+      color: var(--fg); margin: 0 0 24px;
+      line-height: 1.5;
+    }
+    .slide-cover .meta {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 6px 16px;
+      font-size: 14px;
+      margin-bottom: 24px;
+      color: var(--fg);
+    }
+    .slide-cover .meta strong { color: var(--muted); font-weight: 600; }
+    .slide-cover .role-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-bottom: 18px;
+    }
+    .slide-cover .role-table th, .slide-cover .role-table td {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      text-align: left;
+    }
+    .slide-cover .role-table th { background: var(--btn-hover); font-weight: 700; }
+    .slide-cover .role-table .dot {
+      display: inline-block;
+      width: 12px; height: 12px; border-radius: 3px;
+      margin-right: 6px; vertical-align: middle;
+    }
+    .slide-cover .role-table .dot.u { background: #dcfce7; border: 1px solid #16a34a; }
+    .slide-cover .role-table .dot.i { background: #dbeafe; border: 1px solid #2563eb; }
+    .slide-cover .role-table .dot.s { background: #f3e8ff; border: 1px solid #9333ea; }
+    .slide-cover .role-table .dot.c { background: #fee2e2; border: 1px solid #dc2626; }
+    .slide-cover .key-msg {
+      background: #eff6ff; border-left: 4px solid var(--accent);
+      padding: 10px 14px; margin: 14px 0;
+      font-size: 13px; color: #1e3a8a;
+      border-radius: 0 6px 6px 0;
+    }
+    [data-theme="dark"] .slide-cover .key-msg {
+      background: rgba(96, 165, 250, 0.1); color: #93c5fd;
+    }
+    .slide-cover .foot {
+      font-size: 12px; color: var(--muted);
+      border-top: 1px dashed var(--border); padding-top: 12px;
+    }
+
+    /* ---- RACI 3xN grid (HTML slide) ---- */
+    .raci-wrap { max-width: 1280px; width: 100%; }
+    .raci-head {
+      margin-bottom: 16px;
+      font-size: 15px; color: var(--muted);
+      display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center;
+    }
+    .raci-head strong { color: var(--accent); font-size: 18px; }
+    .raci-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+    .raci-cell {
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    }
+    .raci-cell.has-star { border-color: var(--critical); border-width: 2px; }
+    .raci-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--fg);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 9px;
+      margin-bottom: 12px;
+      letter-spacing: 0.01em;
+    }
+    .raci-items {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+    .raci-item {
+      font-size: 15px;
+      padding: 10px 14px;
+      border-radius: 7px;
+      line-height: 1.5;
+      border: 1px solid transparent;
+    }
+    .raci-item.user { background: #dcfce7; color: #14532d; border-color: #16a34a; }
+    .raci-item.it { background: #dbeafe; color: #1e3a8a; border-color: #2563eb; }
+    .raci-item.shared { background: #f3e8ff; color: #581c87; border-color: #9333ea; }
+    .raci-item.critical { background: #fee2e2; color: #7f1d1d; border-color: #dc2626; }
+    [data-theme="dark"] .raci-item.user { background: rgba(34, 197, 94, 0.18); color: #86efac; }
+    [data-theme="dark"] .raci-item.it { background: rgba(96, 165, 250, 0.18); color: #93c5fd; }
+    [data-theme="dark"] .raci-item.shared { background: rgba(168, 85, 247, 0.18); color: #d8b4fe; }
+    [data-theme="dark"] .raci-item.critical { background: rgba(248, 113, 113, 0.18); color: #fca5a5; }
+    .raci-foot {
+      margin-top: 20px;
+      padding: 14px 18px;
+      background: var(--bg-soft);
+      border-left: 4px solid var(--accent);
+      border-radius: 0 8px 8px 0;
+      font-size: 15px;
+      color: var(--fg); line-height: 1.6;
+    }
+    .raci-foot strong { color: var(--accent); }
+
+    /* ---- 通用卡片 grid(Cards / Compare 用) ---- */
+    .cards-wrap { max-width: 1280px; width: 100%; }
+    .cards-head {
+      margin-bottom: 18px;
+      font-size: 15px; color: var(--muted);
+      display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center;
+    }
+    .cards-head strong { color: var(--accent); font-size: 19px; }
+    .cards-grid { display: grid; gap: 16px; }
+    .cards-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .cards-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .cards-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+    .card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-left-width: 5px;
+      border-radius: 10px;
+      padding: 16px 18px;
+      display: flex; flex-direction: column;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.1);
+    }
+    .card.user { border-left-color: #16a34a; }
+    .card.it { border-left-color: #2563eb; }
+    .card.shared { border-left-color: #9333ea; }
+    .card.critical { border-left-color: #dc2626; }
+    .card-badges {
+      display: flex; flex-wrap: wrap; gap: 6px;
+      margin-bottom: 10px;
+    }
+    .card-badge {
+      display: inline-block;
+      font-size: 12.5px; font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 5px;
+      align-self: flex-start;
+      letter-spacing: 0.02em;
+    }
+    .card-tag {
+      display: inline-block;
+      font-size: 11.5px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      background: var(--btn-hover);
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    [data-theme="dark"] .card-tag { background: rgba(148, 163, 184, 0.15); }
+    .card.user .card-badge { background: #dcfce7; color: #14532d; }
+    .card.it .card-badge { background: #dbeafe; color: #1e3a8a; }
+    .card.shared .card-badge { background: #f3e8ff; color: #581c87; }
+    .card.critical .card-badge { background: #fee2e2; color: #7f1d1d; }
+    [data-theme="dark"] .card.user .card-badge { background: rgba(34,197,94,0.2); color: #86efac; }
+    [data-theme="dark"] .card.it .card-badge { background: rgba(96,165,250,0.2); color: #93c5fd; }
+    [data-theme="dark"] .card.shared .card-badge { background: rgba(168,85,247,0.2); color: #d8b4fe; }
+    [data-theme="dark"] .card.critical .card-badge { background: rgba(248,113,113,0.2); color: #fca5a5; }
+    .card-title {
+      font-size: 17.5px; font-weight: 700;
+      margin: 0 0 9px;
+      color: var(--fg); line-height: 1.35;
+    }
+    .card-num {
+      font-size: 14px; color: var(--muted);
+      font-weight: 700; margin-right: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+    .card-body {
+      font-size: 15px;
+      color: var(--fg);
+      line-height: 1.6;
+    }
+    .card-body strong { color: var(--accent); }
+    .card-body code {
+      background: var(--btn-hover);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13.5px;
+      font-family: 'JetBrains Mono', Consolas, monospace;
+    }
+    .card-meta {
+      margin-top: 11px;
+      padding-top: 9px;
+      border-top: 1px dashed var(--border);
+      font-size: 13px; color: var(--muted);
+    }
+    .cards-foot {
+      margin-top: 20px;
+      padding: 14px 18px;
+      background: var(--bg-soft);
+      border-left: 4px solid var(--accent);
+      border-radius: 0 8px 8px 0;
+      font-size: 15px;
+      color: var(--fg); line-height: 1.6;
+    }
+    .cards-foot strong { color: var(--accent); }
+
+    /* ---- Before / After 對比 section(Compare 用) ---- */
+    .compare-section { margin-bottom: 18px; }
+    .compare-label {
+      font-size: 16px;
+      font-weight: 700;
+      padding: 11px 18px;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      letter-spacing: 0.02em;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .compare-section.bad .compare-label {
+      background: #fee2e2; color: #7f1d1d;
+      border-left: 5px solid #dc2626;
+    }
+    .compare-section.good .compare-label {
+      background: #dcfce7; color: #14532d;
+      border-left: 5px solid #16a34a;
+    }
+    [data-theme="dark"] .compare-section.bad .compare-label {
+      background: rgba(248, 113, 113, 0.15); color: #fca5a5;
+    }
+    [data-theme="dark"] .compare-section.good .compare-label {
+      background: rgba(34, 197, 94, 0.15); color: #86efac;
+    }
+    .compare-arrow {
+      text-align: center;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--accent);
+      padding: 10px;
+      margin: 4px 0 10px;
+      letter-spacing: 0.08em;
+    }
+  </style>
+</head>
+<body>
+  <!--
+    一個檔案內可放 N 張 slide(架構 / 流程 / 封面 / RACI / 卡片 / 對比)。
+    新增 slide → 複製任一 <script type="text/plain"> 區塊,改 id / data-label / data-order / data-kind / data-format。
+
+    slide 規約:
+      id            = 全域唯一,英數 + 連字號
+      data-label    = 工具列下拉與 slide 標題顯示文字
+      data-order    = 數字,picker / 鍵盤翻頁依此排序(不必連續,可塞 0.5 / 4.1)
+      data-kind     = "architecture" | "flow" | "cover" | "compare"(語意標記)
+      data-format   = "mermaid"(預設) | "html"(內容直接當 HTML 渲染)
+      data-desc     = 講者註記(HTML 字串,目前未渲染為獨立面板,保留以利日後擴充 / 維護備忘)
+
+    三色角色約定(全檔通用):
+      🟢 user      — 業務 / 終端使用者
+      🔵 it        — 工程 / 平台
+      🟣 shared    — 業務 + 工程共同
+      🔴 critical  — 合規 / 安全關鍵點(附加標記,非第四種角色)
+
+    Mermaid 端 classDef:user / it / shared / critical
+    HTML 端 class:card.user / .it / .shared / .critical(同名通用於 raci-item)
+
+    互動:
+      ← / → / 空白 / PageUp / PageDown — 翻頁
+      Home / End                       — 跳第一張 / 最後一張
+      + / − / 0 / F                    — 放大 / 縮小 / 重設 100% / 符合視窗
+      Ctrl + 滾輪                      — Zoom
+      左鍵拖曳                         — 平移(Mermaid SVG slide)
+  -->
+
+  <!-- ================== 0. 封面 ================== -->
+  <script type="text/plain" id="cover"
+          data-label="0. 封面"
+          data-order="0"
+          data-kind="cover"
+          data-format="html"
+          data-desc="開場 30 秒 talking points:把<系統>定位、目標讀者、三色角色責任講清楚。">
+<div class="slide-cover">
+  <span class="tag">v1.0</span>
+  <div class="title"><系統名稱></div>
+  <div class="subtitle">架構 Breakdown — <一句話定位></div>
+
+  <!--
+    若有現成的整體架構圖(JPG / PNG),把檔案放在本資料夾並改下方 src;
+    沒有就把整個 .hero 區塊整段刪掉。
+  -->
+  <div class="hero">
+    <img src="hero-architecture.jpg" alt="<系統> 整體架構圖">
+    <div class="caption"><strong>整體架構圖</strong> — 後續 slide 即根據此圖逐層拆解。</div>
+  </div>
+
+  <div class="meta">
+    <strong>用途</strong><span><Demo 簡報 / 新人 Onboarding / 跨部門對齊></span>
+    <strong>對象</strong><span><業務 / PM / Tech Lead / Backend / DevOps / QA></span>
+    <strong>導覽</strong><span>← / → 翻頁;+ / − 放大縮小;0 重設、F 符合視窗;Ctrl + 滾輪也可 zoom;右上 picker 可跳頁</span>
+  </div>
+
+  <table class="role-table">
+    <thead>
+      <tr><th style="width:18%">角色</th><th style="width:36%">公司內對應</th><th>在架構中的位置</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><span class="dot u"></span>🟢 使用者</td><td><業務 / PM / 終端使用者></td><td><例:L1 業務情境、需求 Agent></td></tr>
+      <tr><td><span class="dot i"></span>🔵 IT</td><td><Backend / DevOps / Tech Lead></td><td><例:平台底座、CI / CD、Cross-cutting></td></tr>
+      <tr><td><span class="dot s"></span>🟣 共同</td><td><QA / SME / 跨部門共同維護></td><td><例:品質、SOP、主檔資料></td></tr>
+      <tr><td><span class="dot c"></span>🔴 ★ Critical</td><td>(附加標記,不是第四種角色)</td><td><例:合規 / 安全關鍵點(Sandbox / Audit 等)></td></tr>
+    </tbody>
+  </table>
+
+  <div class="key-msg">
+    <strong>本檔重點:</strong><例:三色角色 + 合規標記 + N 個學習單元,讓<目標讀者>快速定位該讀的層>。
+  </div>
+
+  <div class="foot">
+    日期:<YYYY-MM-DD> · 維護:<owner> · 互補文件:<code><相關 spec.md></code>
+  </div>
+</div>
+  </script>
+
+  <!-- ================== 0.1 為什麼需要(Before vs After 卡片對比) ================== -->
+  <script type="text/plain" id="arch-why"
+          data-label="0.1 為什麼需要(Before vs After)"
+          data-order="0.1"
+          data-kind="compare"
+          data-format="html"
+          data-desc="用 4 對問題 ↔ 解法呈現「沒有本系統 → 4 大失控 / 有本系統 → 4 大治理」。需要業務脈絡 — 這張由使用者手填,不由 scan 模式自動產。">
+<div class="cards-wrap">
+  <div class="cards-head">
+    <strong>為什麼需要<系統>?</strong>
+    <span>· <一句話命題> ·</span>
+  </div>
+
+  <div class="compare-section bad">
+    <div class="compare-label">❌ 沒有<系統>:<痛點概要> — N 大失控</div>
+    <div class="cards-grid cols-4">
+      <div class="card critical">
+        <div class="card-badges">
+          <span class="card-badge">❌ 問題 1</span>
+          <span class="card-tag"><關鍵字></span>
+        </div>
+        <div class="card-title"><問題 1 標題></div>
+        <div class="card-body"><問題 1 描述,可用 <strong>強調</strong> 與 <code>code</code>。></div>
+      </div>
+      <div class="card critical">
+        <div class="card-badges">
+          <span class="card-badge">❌ 問題 2</span>
+          <span class="card-tag"><關鍵字></span>
+        </div>
+        <div class="card-title"><問題 2 標題></div>
+        <div class="card-body"><問題 2 描述。></div>
+      </div>
+      <div class="card critical">
+        <div class="card-badges">
+          <span class="card-badge">❌ 問題 3</span>
+          <span class="card-tag"><關鍵字></span>
+        </div>
+        <div class="card-title"><問題 3 標題></div>
+        <div class="card-body"><問題 3 描述。></div>
+      </div>
+      <div class="card critical">
+        <div class="card-badges">
+          <span class="card-badge">❌ 問題 4</span>
+          <span class="card-tag"><關鍵字></span>
+        </div>
+        <div class="card-title"><問題 4 標題></div>
+        <div class="card-body"><問題 4 描述。></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="compare-arrow">↓ 升級:<系統> 治理 ↓</div>
+
+  <div class="compare-section good">
+    <div class="compare-label">✅ 有<系統>:N 個元件對應治理 — N 大失控全收</div>
+    <div class="cards-grid cols-4">
+      <div class="card user">
+        <div class="card-badges">
+          <span class="card-badge">✅ 解法 1</span>
+          <span class="card-tag"><對應元件></span>
+        </div>
+        <div class="card-title"><解法 1 標題></div>
+        <div class="card-body"><解法 1 描述。></div>
+      </div>
+      <div class="card user">
+        <div class="card-badges">
+          <span class="card-badge">✅ 解法 2</span>
+          <span class="card-tag"><對應元件></span>
+        </div>
+        <div class="card-title"><解法 2 標題></div>
+        <div class="card-body"><解法 2 描述。></div>
+      </div>
+      <div class="card user">
+        <div class="card-badges">
+          <span class="card-badge">✅ 解法 3</span>
+          <span class="card-tag"><對應元件></span>
+        </div>
+        <div class="card-title"><解法 3 標題></div>
+        <div class="card-body"><解法 3 描述。></div>
+      </div>
+      <div class="card user">
+        <div class="card-badges">
+          <span class="card-badge">✅ 解法 4</span>
+          <span class="card-tag"><對應元件></span>
+        </div>
+        <div class="card-title"><解法 4 標題></div>
+        <div class="card-body"><解法 4 描述。></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cards-foot">
+    <strong>核心命題:</strong><一句話總結 4 對對應的核心邏輯>。
+  </div>
+</div>
+  </script>
+
+  <!-- ================== 1. 系統架構主圖(Mermaid) ================== -->
+  <script type="text/plain" id="arch"
+          data-label="1. 系統架構主圖"
+          data-order="1"
+          data-kind="architecture"
+          data-desc="<strong>層級:</strong>Edge / App(Pres + Biz + Cross-cutting)/ Data。<strong>實線:</strong>主資料流;<strong>虛線:</strong>跨切關注點(Depends 注入 / 事件 / log)。所有 DB 寫入經 Svc 單一路徑。">
+%%{init: {'flowchart': {'htmlLabels': true, 'curve': 'basis'}} }%%
+flowchart TB
+  subgraph EXT ["🌐 外部信任邊界(Untrusted)"]
+    direction LR
+    User([終端使用者])
+    Mon[/Sentry / Loki/]
+  end
+
+  subgraph EDGE ["Edge — Owner: DevOps"]
+    Proxy[Caddy / Coolify Proxy<br><i>TLS / Domain Routing</i>]
+  end
+
+  subgraph APP ["Application — Owner: Backend Team"]
+    direction TB
+    subgraph PRES ["Presentation Layer"]
+      UI[React UI<br><i>RTK Query / i18n</i>]
+    end
+    subgraph BIZ ["Business Layer"]
+      direction LR
+      API[FastAPI Routers]
+      Svc[Domain Services]
+    end
+    subgraph CROSS ["Cross-cutting Concerns"]
+      direction LR
+      Auth[Auth / RBAC<br><i>JWT httpOnly cookie</i>]
+      Log[Structured Logging]
+      Audit[Audit Trail]
+    end
+  end
+
+  subgraph DATA ["Data — Owner: DBA + Backend"]
+    DB[(PostgreSQL<br><i>業務 + 使用者 + audit</i>)]
+  end
+
+  %% 主資料流(實線)
+  User --> Proxy
+  Proxy --> UI
+  UI -->|HTTPS API| API
+  API --> Svc
+  Svc --> DB
+
+  %% 跨切關注點(虛線)
+  API -.->|Depends 注入| Auth
+  Svc -.->|事件| Audit
+  Svc -.->|結構化 log| Log
+  Log -.->|stdout JSON| Mon
+
+  classDef user fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef it fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef shared fill:#f3e8ff,stroke:#9333ea,color:#581c87
+  classDef critical fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  class User user
+  class Mon shared
+  class Proxy,UI,API,Svc,DB it
+  class Auth,Log,Audit critical
+  </script>
+
+  <!-- ================== 1.1 RACI 三角色責任分布(HTML CSS Grid) ================== -->
+  <script type="text/plain" id="arch-raci"
+          data-label="1.1 RACI 三角色責任分布"
+          data-order="1.1"
+          data-kind="architecture"
+          data-format="html"
+          data-desc="總覽:每個架構層級對應的 🟢 業務 / 🔵 IT / 🟣 共同 / 🔴 ★ Critical 責任。本頁需要組織脈絡,使用者手填。">
+<div class="raci-wrap">
+  <div class="raci-head">
+    <strong>三角色責任分布</strong>
+    <span>· N 個架構層級 × 三色 + Critical 標記 ·</span>
+  </div>
+  <div class="raci-grid">
+    <div class="raci-cell">
+      <div class="raci-title"><層級 1 — Edge></div>
+      <div class="raci-items">
+        <div class="raci-item it">🔵 IT:<例:Caddy / TLS / 域名></div>
+      </div>
+    </div>
+    <div class="raci-cell">
+      <div class="raci-title"><層級 2 — Presentation></div>
+      <div class="raci-items">
+        <div class="raci-item user">🟢 業務:<例:UI 需求 / UX 確認></div>
+        <div class="raci-item it">🔵 IT:<例:React 實作></div>
+      </div>
+    </div>
+    <div class="raci-cell has-star">
+      <div class="raci-title"><層級 3 — Business ★></div>
+      <div class="raci-items">
+        <div class="raci-item shared">🟣 共同:<例:領域邏輯定義 + IT 實作></div>
+        <div class="raci-item critical">🔴 ★ <例:授權邊界 / 計費邏輯關鍵點></div>
+      </div>
+    </div>
+    <div class="raci-cell">
+      <div class="raci-title"><層級 4 — Cross-cutting></div>
+      <div class="raci-items">
+        <div class="raci-item it">🔵 IT:<例:Auth / Logging / Audit></div>
+      </div>
+    </div>
+    <div class="raci-cell has-star">
+      <div class="raci-title"><層級 5 — Data ★></div>
+      <div class="raci-items">
+        <div class="raci-item it">🔵 IT:<例:Schema / Migration></div>
+        <div class="raci-item critical">🔴 ★ <例:備份 / 隱私 / 保留期合規></div>
+      </div>
+    </div>
+    <div class="raci-cell">
+      <div class="raci-title"><層級 6 — 外部依賴></div>
+      <div class="raci-items">
+        <div class="raci-item shared">🟣 共同:<例:第三方服務治理(IT 接 + 業務付費)></div>
+      </div>
+    </div>
+  </div>
+  <div class="raci-foot">
+    <strong>讀法:</strong><一句話讀法說明 — 例:業務主導 X 格、IT 主導 Y 格、共同 Z 格、Critical 標 N 點(<業務影響說明>)>。
+  </div>
+</div>
+  </script>
+
+  <!-- ================== 2. 元件卡片(範例,可改 cols-2/3/4) ================== -->
+  <script type="text/plain" id="arch-cards"
+          data-label="2. <元件 / 模組總覽>"
+          data-order="2"
+          data-kind="architecture"
+          data-format="html"
+          data-desc="把主架構中的關鍵元件 / 模組 / 子系統,以卡片並列呈現。本頁需要業務脈絡,使用者手填。">
+<div class="cards-wrap">
+  <div class="cards-head">
+    <strong><模組總覽 / N 大職責 / N 個元件></strong>
+    <span>· <分類邏輯,例:設計時 vs 執行時> ·</span>
+    <span style="color:#dc2626;font-weight:700;">🔴 ★ <N 個 Critical 標記重點></span>
+  </div>
+  <div class="cards-grid cols-3">
+    <div class="card user">
+      <div class="card-badges">
+        <span class="card-badge">🟢 業務</span>
+        <span class="card-tag">主導</span>
+      </div>
+      <div class="card-title"><span class="card-num">1.</span><職責 / 元件 1></div>
+      <div class="card-body"><描述 1。可用 <strong>強調</strong> 與 <code>code</code> tag。></div>
+      <div class="card-meta">觸發:<時機> · Eval:<指標></div>
+    </div>
+    <div class="card shared">
+      <div class="card-badges">
+        <span class="card-badge">🟣 共同</span>
+        <span class="card-tag"><分類></span>
+      </div>
+      <div class="card-title"><span class="card-num">2.</span><職責 / 元件 2></div>
+      <div class="card-body"><描述 2。></div>
+      <div class="card-meta">觸發:<時機></div>
+    </div>
+    <div class="card it">
+      <div class="card-badges">
+        <span class="card-badge">🔵 IT</span>
+        <span class="card-tag"><分類></span>
+      </div>
+      <div class="card-title"><span class="card-num">3.</span><職責 / 元件 3></div>
+      <div class="card-body"><描述 3。></div>
+    </div>
+    <div class="card critical">
+      <div class="card-badges">
+        <span class="card-badge">🔴 ★ Critical</span>
+        <span class="card-tag"><合規條目></span>
+      </div>
+      <div class="card-title"><span class="card-num">4.</span><Critical 元件 ★></div>
+      <div class="card-body"><Critical 描述,強調合規 / 安全要求。></div>
+    </div>
+    <div class="card it">
+      <div class="card-badges">
+        <span class="card-badge">🔵 IT</span>
+        <span class="card-tag"><分類></span>
+      </div>
+      <div class="card-title"><span class="card-num">5.</span><職責 / 元件 5></div>
+      <div class="card-body"><描述 5。></div>
+    </div>
+    <div class="card shared">
+      <div class="card-badges">
+        <span class="card-badge">🟣 共同</span>
+        <span class="card-tag"><分類></span>
+      </div>
+      <div class="card-title"><span class="card-num">6.</span><職責 / 元件 6></div>
+      <div class="card-body"><描述 6。></div>
+    </div>
+  </div>
+  <div class="cards-foot">
+    <strong>分類邏輯:</strong><例:N 個設計時元件 + M 個執行時元件,Critical X 點對應合規 N 條,沒過不可上線>。
+  </div>
+</div>
+  </script>
+
+  <!-- ================== 3. Auth 流程(Mermaid Flow) ================== -->
+  <script type="text/plain" id="flow-auth"
+          data-label="3. Auth 流程(JWT 登入)"
+          data-order="3"
+          data-kind="flow"
+          data-desc="<strong>對應架構節點:</strong>User → Proxy → UI → API → Auth → DB。<strong>為什麼:</strong>JWT 走 httpOnly cookie 防 XSS;bcrypt 密碼比對;失敗集中記 audit。">
+%%{init: {'flowchart': {'htmlLabels': true, 'curve': 'basis'}} }%%
+flowchart TB
+  Start([使用者送出帳密表單]) --> Post[UI POST /api/v1/auth/login<br>帶 email + password]
+  Post --> Find[API 查使用者<br>SELECT FROM users WHERE email]
+  Find --> Exist{使用者存在<br>且未停用?}
+  Exist -->|否| Reject[401 帳密錯誤<br>記 audit log]
+  Exist -->|是| Verify[bcrypt 比對密碼<br>asyncio.to_thread]
+  Verify --> Pass{密碼正確?}
+  Pass -->|否| Reject
+  Pass -->|是| Sign[簽發 JWT<br>放 sub / role / exp]
+  Sign --> Cookie[set_cookie<br>httponly=True<br>secure=True<br>samesite=lax]
+  Cookie --> Done([200 回登入成功])
+  Reject --> End([結束])
+  Done --> End
+
+  classDef user fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef it fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef critical fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  class Start,Done user
+  class Post,Find,Verify,Sign,Cookie it
+  class Exist,Pass,Reject critical
+  class End it
+  </script>
+
+  <!-- ================== 4. Deploy 流程(Mermaid Flow) ================== -->
+  <script type="text/plain" id="flow-deploy"
+          data-label="4. Deploy 流程(Coolify CD)"
+          data-order="4"
+          data-kind="flow"
+          data-desc="<strong>對應架構節點:</strong>External(GitHub)→ Proxy → 服務重啟。<strong>為什麼:</strong>main push 即部署 + 健康檢查失敗自動回滾。">
+%%{init: {'flowchart': {'htmlLabels': true, 'curve': 'basis'}} }%%
+flowchart TB
+  Dev([Developer push main]) --> CI[GitHub Actions CI]
+  CI --> Pass{Lint + Test + Build<br>都通過?}
+  Pass -->|否| Block[阻擋 merge / 通知]
+  Pass -->|是| Hook[GitHub Webhook 通知 Coolify]
+  Hook --> Build[Coolify pull repo<br>docker compose build]
+  Build --> Deploy[啟動新容器<br>舊容器保留 60s]
+  Deploy --> HC{健康檢查 200?<br>連續 3 次}
+  HC -->|否| Rollback[切回舊容器<br>Sentry 告警]
+  HC -->|是| Swap[Proxy 切流量到新容器]
+  Swap --> Cleanup[60s 後清除舊容器]
+  Rollback --> End([結束])
+  Cleanup --> End
+  Block --> End
+
+  classDef user fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef it fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+  classDef critical fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+  class Dev user
+  class CI,Hook,Build,Deploy,Swap,Cleanup it
+  class Pass,HC critical
+  class Block,Rollback critical
+  class End it
+  </script>
+
+  <!-- ================== 工具列 + 圖例 + 舞台 ================== -->
+  <header class="toolbar">
+    <h1 id="title">系統架構</h1>
+    <button id="prev" class="nav-btn" title="上一頁(←)">‹</button>
+    <span id="counter" class="counter">0 / 0</span>
+    <button id="next" class="nav-btn" title="下一頁(→)">›</button>
+    <select id="picker" class="picker"></select>
+    <span class="divider"></span>
+    <label>主題
+      <select id="theme">
+        <option value="default">Light</option>
+        <option value="dark">Dark</option>
+        <option value="neutral">Neutral</option>
+        <option value="forest">Forest</option>
+      </select>
+    </label>
+    <label>字體
+      <input type="number" id="font-size" value="18" min="10" max="32" step="1" style="width: 56px;">
+      <span>px</span>
+    </label>
+    <span class="divider"></span>
+    <button id="zoom-out" class="nav-btn" title="縮小(- 鍵)">−</button>
+    <span id="zoom-label" class="zoom-label" title="點擊重設為 100%(0 鍵)">100%</span>
+    <button id="zoom-in" class="nav-btn" title="放大(+ 鍵)">+</button>
+    <button id="zoom-fit" title="符合視窗(F 鍵)">Fit</button>
+    <span class="divider"></span>
+    <button id="copy-svg" title="複製 SVG 到剪貼簿">複製 SVG</button>
+    <button id="download-svg" title="下載 SVG 檔">下載 SVG</button>
+    <button id="download-png" title="下載 PNG(2× 解析度)">下載 PNG</button>
+  </header>
+
+  <div class="legend-bar">
+    <div class="group">
+      <span class="group-title">角色</span>
+      <span class="item"><span class="sw u"></span>🟢 使用者</span>
+      <span class="item"><span class="sw i"></span>🔵 IT</span>
+      <span class="item"><span class="sw s"></span>🟣 共同</span>
+      <span class="item"><span class="sw c"></span>🔴 ★ Critical</span>
+    </div>
+    <span class="divider" style="width:1px;height:18px;background:var(--border);"></span>
+    <div class="group">
+      <span class="group-title">箭頭</span>
+      <span class="item"><svg class="line" width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" stroke-width="1.6"/></svg> 強依賴</span>
+      <span class="item"><svg class="line" width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" stroke-width="1.6" stroke-dasharray="4 2"/></svg> 弱關聯 / 延伸</span>
+      <span class="item"><svg class="line" width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" stroke-width="1.6" stroke-dasharray="1 2"/></svg> 約束</span>
+      <span class="item"><svg class="line" width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="currentColor" stroke-width="2.5"/></svg> 升級 / 主幹</span>
+    </div>
+  </div>
+
+  <main>
+    <div class="preview" id="preview"></div>
+  </main>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+    const preview = document.getElementById('preview');
+    const themeSelect = document.getElementById('theme');
+    const fontSizeInput = document.getElementById('font-size');
+    const picker = document.getElementById('picker');
+    const counterEl = document.getElementById('counter');
+    const prevBtn = document.getElementById('prev');
+    const nextBtn = document.getElementById('next');
+    const titleEl = document.getElementById('title');
+    const zoomLabel = document.getElementById('zoom-label');
+    const zoomIn = document.getElementById('zoom-in');
+    const zoomOut = document.getElementById('zoom-out');
+    const zoomFitBtn = document.getElementById('zoom-fit');
+
+    let zoom = 1;
+    const ZOOM_STEPS = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5, 1.75, 2.0, 2.5, 3.0];
+
+    function findZoomIdx(z) {
+      let best = 0, diff = Infinity;
+      ZOOM_STEPS.forEach((v, i) => {
+        const d = Math.abs(v - z);
+        if (d < diff) { diff = d; best = i; }
+      });
+      return best;
+    }
+    function setZoom(z) {
+      zoom = Math.max(0.3, Math.min(4, z));
+      const wrap = preview.querySelector('.svg-wrap');
+      if (wrap) {
+        wrap.style.transform = `scale(${zoom})`;
+        const svg = wrap.querySelector('svg');
+        if (svg) {
+          const w = parseFloat(svg.dataset.origW || svg.getBoundingClientRect().width / zoom);
+          const h = parseFloat(svg.dataset.origH || svg.getBoundingClientRect().height / zoom);
+          wrap.style.width = (w * zoom) + 'px';
+          wrap.style.height = (h * zoom) + 'px';
+        }
+      }
+      preview.classList.toggle('zoomed', zoom > 1.01);
+      zoomLabel.textContent = Math.round(zoom * 100) + '%';
+    }
+    function zoomStep(dir) {
+      const idx = findZoomIdx(zoom);
+      const ni = Math.max(0, Math.min(ZOOM_STEPS.length - 1, idx + dir));
+      setZoom(ZOOM_STEPS[ni]);
+    }
+    function zoomFit() {
+      const svg = preview.querySelector('svg');
+      if (!svg) { setZoom(1); return; }
+      const w = parseFloat(svg.dataset.origW);
+      const h = parseFloat(svg.dataset.origH);
+      if (!w || !h) { setZoom(1); return; }
+      const pad = 56;
+      const fitX = (preview.clientWidth - pad) / w;
+      const fitY = (preview.clientHeight - pad) / h;
+      setZoom(Math.min(fitX, fitY, 4));
+    }
+
+    // 蒐集所有 slide 並依 data-order 排序
+    const slides = Array.from(document.querySelectorAll('script[type="text/plain"][id]'))
+      .map(el => ({
+        el,
+        id: el.id,
+        label: el.dataset.label || el.id,
+        order: parseFloat(el.dataset.order || '99'),
+        kind: el.dataset.kind || 'flow',
+        format: el.dataset.format || 'mermaid',
+      }))
+      .sort((a, b) => a.order - b.order);
+
+    let currentIndex = 0;
+    let renderToken = 0;
+
+    function buildPicker() {
+      picker.innerHTML = '';
+      slides.forEach((s) => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.label;
+        picker.appendChild(opt);
+      });
+    }
+
+    function updateCounter() {
+      counterEl.textContent = `${currentIndex + 1} / ${slides.length}`;
+      prevBtn.disabled = currentIndex === 0;
+      nextBtn.disabled = currentIndex === slides.length - 1;
+    }
+
+    function initMermaid() {
+      const theme = themeSelect.value;
+      mermaid.initialize({
+        startOnLoad: false, theme,
+        themeVariables: {
+          fontFamily: '"Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif',
+          fontSize: fontSizeInput.value + 'px',
+        },
+        flowchart: { useMaxWidth: false, htmlLabels: true },
+        sequence: { useMaxWidth: false },
+        securityLevel: 'loose',
+      });
+      document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+    }
+
+    async function render() {
+      const slide = slides[currentIndex];
+      if (!slide) return;
+      const code = slide.el.textContent.trim();
+      const token = ++renderToken;
+
+      titleEl.textContent = slide.label;
+      zoom = 1;
+
+      try {
+        if (slide.format === 'html') {
+          initMermaid(); // 仍套用 theme(dark / light)
+          preview.innerHTML = code;
+          preview.classList.remove('zoomed', 'draggable', 'dragging');
+          zoomLabel.textContent = '100%';
+        } else {
+          initMermaid();
+          const { svg } = await mermaid.render('diagram-' + token, code);
+          if (token !== renderToken) return;
+          preview.innerHTML = '<div class="svg-wrap">' + svg + '</div>';
+          preview.classList.add('draggable');
+          const svgEl = preview.querySelector('svg');
+          if (svgEl) {
+            const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
+            const origW = (vb && vb.width) || svgEl.getBoundingClientRect().width;
+            const origH = (vb && vb.height) || svgEl.getBoundingClientRect().height;
+            svgEl.dataset.origW = origW;
+            svgEl.dataset.origH = origH;
+            svgEl.removeAttribute('style');
+          }
+          elevateClusterLabels(svgEl);
+          setZoom(1);
+        }
+      } catch (e) {
+        if (token !== renderToken) return;
+        const msg = (e && (e.message || e.str)) || String(e);
+        preview.innerHTML = '<div class="error">' + escapeHtml(msg) + '</div>';
+      }
+    }
+
+    // 把 subgraph 標題抬到 SVG 最後一個 child(SVG 無 z-index,DOM 順序 = 繪製順序)。
+    // 底色:取 page bg + 75% 不透明,讓 cluster 顏色透出 ~25%;加上 cluster stroke 當細邊框。
+    function elevateClusterLabels(svg) {
+      if (!svg) return;
+      const root = svg.firstElementChild && svg.firstElementChild.tagName.toLowerCase() === 'g'
+        ? svg.firstElementChild : svg;
+      const labels = Array.from(svg.querySelectorAll('.cluster-label'));
+      if (!labels.length) return;
+      const pageBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#ffffff';
+
+      const entries = labels.map(label => {
+        const text = (label.textContent || '').trim();
+        if (!text) { label.style.opacity = '0'; return null; }
+        const cluster = label.closest('.cluster');
+        const clusterRect = cluster && cluster.querySelector(':scope > rect');
+        let stroke = '#cbd5e1';
+        if (clusterRect) {
+          stroke = clusterRect.getAttribute('stroke')
+                || getComputedStyle(clusterRect).stroke
+                || stroke;
+        }
+        return { label, ctm: label.getCTM(), bbox: label.getBBox(), stroke };
+      }).filter(Boolean);
+
+      for (const { label, ctm, bbox, stroke } of entries) {
+        if (!ctm) continue;
+        const wrapper = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        wrapper.setAttribute('transform', `matrix(${ctm.a} ${ctm.b} ${ctm.c} ${ctm.d} ${ctm.e} ${ctm.f})`);
+        wrapper.setAttribute('class', 'cluster-label-top');
+
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', bbox.x - 8);
+        rect.setAttribute('y', bbox.y - 2);
+        rect.setAttribute('width', bbox.width + 16);
+        rect.setAttribute('height', bbox.height + 4);
+        rect.setAttribute('fill', pageBg);
+        rect.setAttribute('fill-opacity', '0.78');
+        rect.setAttribute('stroke', stroke);
+        rect.setAttribute('stroke-width', '1');
+        rect.setAttribute('stroke-opacity', '0.6');
+        rect.setAttribute('rx', '4');
+        wrapper.appendChild(rect);
+
+        const clone = label.cloneNode(true);
+        clone.removeAttribute('transform');
+        wrapper.appendChild(clone);
+
+        label.style.opacity = '0';
+        root.appendChild(wrapper);
+      }
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    }
+
+    function goTo(idx) {
+      currentIndex = Math.max(0, Math.min(slides.length - 1, idx));
+      picker.value = slides[currentIndex].id;
+      updateCounter();
+      render();
+    }
+
+    function goToId(id) {
+      const idx = slides.findIndex(s => s.id === id);
+      if (idx >= 0) goTo(idx);
+    }
+
+    function downloadSVG() {
+      const svg = preview.querySelector('svg');
+      if (!svg) { flash('目前 slide 沒有 SVG 可下載'); return; }
+      const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      triggerDownload(url, slides[currentIndex].id + '.svg');
+      URL.revokeObjectURL(url);
+    }
+
+    async function downloadPNG() {
+      const svg = preview.querySelector('svg');
+      if (!svg) { flash('目前 slide 沒有 SVG 可下載'); return; }
+      const serialized = new XMLSerializer().serializeToString(svg);
+      const blob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve; img.onerror = reject; img.src = url;
+      });
+      const scale = 2;
+      const w = svg.viewBox.baseVal.width || svg.clientWidth;
+      const h = svg.viewBox.baseVal.height || svg.clientHeight;
+      const canvas = document.createElement('canvas');
+      canvas.width = w * scale; canvas.height = h * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = themeSelect.value === 'dark' ? '#0f172a' : '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      triggerDownload(canvas.toDataURL('image/png'), slides[currentIndex].id + '.png');
+    }
+
+    async function copySVG() {
+      const svg = preview.querySelector('svg');
+      if (!svg) { flash('目前 slide 沒有 SVG 可複製'); return; }
+      try {
+        await navigator.clipboard.writeText(svg.outerHTML);
+        flash('已複製 SVG');
+      } catch (e) {
+        flash('複製失敗:' + e.message);
+      }
+    }
+
+    function triggerDownload(href, filename) {
+      const a = document.createElement('a');
+      a.href = href; a.download = filename; a.click();
+    }
+
+    function flash(msg) {
+      const original = titleEl.textContent;
+      titleEl.textContent = msg;
+      setTimeout(() => { titleEl.textContent = original; }, 1500);
+    }
+
+    // 事件
+    buildPicker();
+    picker.addEventListener('change', e => goToId(e.target.value));
+    themeSelect.addEventListener('change', render);
+    fontSizeInput.addEventListener('input', render);
+    prevBtn.addEventListener('click', () => goTo(currentIndex - 1));
+    nextBtn.addEventListener('click', () => goTo(currentIndex + 1));
+    document.getElementById('download-svg').addEventListener('click', downloadSVG);
+    document.getElementById('download-png').addEventListener('click', downloadPNG);
+    document.getElementById('copy-svg').addEventListener('click', copySVG);
+
+    zoomIn.addEventListener('click', () => zoomStep(1));
+    zoomOut.addEventListener('click', () => zoomStep(-1));
+    zoomFitBtn.addEventListener('click', zoomFit);
+    zoomLabel.addEventListener('click', () => setZoom(1));
+
+    // Ctrl + 滾輪 = 放大縮小
+    preview.addEventListener('wheel', e => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      zoomStep(e.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
+
+    // 拖曳平移(只在 SVG slide 上啟用,封面 / HTML slide 保留文字選取)
+    let drag = null;
+    preview.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      if (!preview.classList.contains('draggable')) return;
+      drag = {
+        startX: e.clientX, startY: e.clientY,
+        scrollX: preview.scrollLeft, scrollY: preview.scrollTop,
+        moved: false,
+      };
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+      if (!drag) return;
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      if (!drag.moved && Math.abs(dx) + Math.abs(dy) > 3) {
+        drag.moved = true;
+        preview.classList.add('dragging');
+      }
+      if (drag.moved) {
+        preview.scrollLeft = drag.scrollX - dx;
+        preview.scrollTop = drag.scrollY - dy;
+      }
+    });
+    document.addEventListener('mouseup', () => {
+      if (!drag) return;
+      drag = null;
+      preview.classList.remove('dragging');
+    });
+    document.addEventListener('mouseleave', () => {
+      if (!drag) return;
+      drag = null;
+      preview.classList.remove('dragging');
+    });
+
+    document.addEventListener('keydown', e => {
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+        e.preventDefault(); goTo(currentIndex + 1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault(); goTo(currentIndex - 1);
+      } else if (e.key === 'Home') {
+        e.preventDefault(); goTo(0);
+      } else if (e.key === 'End') {
+        e.preventDefault(); goTo(slides.length - 1);
+      } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault(); zoomStep(1);
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault(); zoomStep(-1);
+      } else if (e.key === '0') {
+        e.preventDefault(); setZoom(1);
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault(); zoomFit();
+      }
+    });
+
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      themeSelect.value = 'dark';
+    }
+
+    // 初始
+    goTo(0);
+  </script>
+</body>
+</html>
