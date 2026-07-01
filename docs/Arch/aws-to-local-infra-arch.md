@@ -432,28 +432,47 @@ flowchart LR
   GLUE == "Route Table" ==> S3E
 ```
 
+### 建置步驟（實作除錯紀錄）
+
+逐一補齊缺的 Endpoint,每補一個就往前推進一個錯誤,直到全部到位。
+
+| Step | 動作 | 結果 / 錯誤 |
+| --- | --- | --- |
+| 1 | 建 Glue Connection(PostgreSQL;同 RDS 的 VPC、Private Subnet-A/C;初期先用 RDS SG) | 建立連線設定 |
+| 2 | 測試連線 | ❌ `Failed to assume customer's role / access to STS` — 私網無法連 sts |
+| 3 | 建 **STS** Interface Endpoint(Private DNS on、Subnet-A/C、SG-VPCE-AWS-Services) | 可 AssumeRole |
+| 4 | 再測 | ❌ `Unable to connect to Secrets Manager` — Glue 憑證存在 Secrets Manager |
+| 5 | 建 **Secrets Manager** Interface Endpoint(設定同 STS) | 可讀連線憑證 |
+| 6 | 建 **CloudWatch Logs** Interface Endpoint(Glue Job 寫執行日誌) | 可寫 Job log |
+| 7 | 建 **S3** _Gateway_ Endpoint(不是 Interface!改 Route Table `RT-ERP-Hub-Test-DB`,AWS 自動加 Prefix List `pl-xxxx`) | 可存取 S3 |
+| 8 | 建共用 `SG-VPCE-AWS-Services`(Inbound 443 ← Glue SG;Outbound All) | Endpoint 流量放行 |
+| 9 | 核對 VPC Endpoint 總表(見下) | 4 個到位 |
+| 10 | 回 Glue 測試連線 | ✅ `Connection is ready for you to use` |
+
+> ✅ 全部 Endpoint 到位後,Glue 成功 AssumeRole → 連 Secrets Manager → 寫 CloudWatch Logs → 連 PostgreSQL RDS,Connection 進入 Ready。
+
 | 對照 | NAT Gateway | VPC Endpoint（採用） |
 | --- | --- | --- |
 | 路徑 | 經公網對外 | AWS 內部 Backbone |
 | 對外暴露面 | 私網可連整個 Internet | 只到指定 AWS 服務 |
 | 符合 Private First | ✗ | ✓ |
 
-### Endpoint 清單（已建 + 規劃）
+### VPC Endpoint 總表（已建 + 規劃）
 
-已建:STS Interface Endpoint `com.amazonaws.ap-northeast-1.sts`,Private DNS Enabled,佈於 Subnet-A / Subnet-C。
+Required 四項皆已建、Private DNS Enabled、佈於 Subnet-A / Subnet-C;Optional 視後續擴充加入。
 
-| 類別 | 服務 | 型態 | 狀態 |
-| --- | --- | --- | --- |
-| Required | STS | Interface | ✅ 已建 |
-| Required | Secrets Manager | Interface | 規劃 |
-| Required | CloudWatch Logs | Interface | 規劃 |
-| Required | S3 | Gateway | 規劃 |
-| Optional | KMS | Interface | 選用 |
-| Optional | ECR API / ECR DKR | Interface | 選用（容器映像） |
-| Optional | SSM | Interface | 選用 |
+| 類別 | 服務 | 型態 | 命名 | 狀態 |
+| --- | --- | --- | --- | --- |
+| Required | STS | Interface | `vpce-sts` | ✅ 已建 |
+| Required | Secrets Manager | Interface | `vpce-secretsmanager` | ✅ 已建 |
+| Required | CloudWatch Logs | Interface | `vpce-cloudwatchlogs` | ✅ 已建 |
+| Required | S3 | Gateway | `vpce-s3` | ✅ 已建 |
+| Optional | KMS | Interface | — | 後續 |
+| Optional | ECR API / ECR DKR | Interface | — | 後續（容器映像） |
+| Optional | SSM | Interface | — | 後續 |
 
 - **Interface Endpoint**:建 ENI、吃 SG、走 Private DNS(STS / Secrets / Logs / KMS / ECR)。
-- **Gateway Endpoint**(S3 專用):不建 ENI、不吃 SG、改 Route Table。
+- **Gateway Endpoint**(S3 專用):不建 ENI、不吃 SG、改 Route Table(AWS 自動加 Prefix List `pl-xxxx` → Gateway Endpoint)。
 
 ### Security Group 策略（Role-Based）
 
@@ -464,9 +483,14 @@ flowchart LR
 
 規劃 SG 清單:`SG-DB-RDS`、`SG-ETL-Glue`、`SG-ETL-DMS`、`SG-APP-Taskiq`、`SG-VPCE-AWS-Services`。
 
+### 命名規範
+
+- **Security Group**:`SG-DB-RDS`、`SG-ETL-Glue`、`SG-ETL-DMS`、`SG-APP-Taskiq`、`SG-VPCE-AWS-Services`
+- **VPC Endpoint**:`vpce-sts`、`vpce-secretsmanager`、`vpce-cloudwatchlogs`、`vpce-s3`
+
 ### Glue Workflow（規劃）
 
-`Glue Connection → Glue Database → Crawler → Catalog → Visual ETL → S3 → Athena / RDS`
+`Glue Connection → Database → Crawler → Data Catalog → Visual ETL → S3 → Athena → Redshift → AI Platform → Data Hub`
 
 ### 設計原則
 

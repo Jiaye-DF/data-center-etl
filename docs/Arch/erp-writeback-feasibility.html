@@ -29,25 +29,25 @@
   .meta-row{display:flex;flex-wrap:wrap;gap:22px;margin-top:22px;font-size:14px;color:var(--muted)}
   .meta-row b{color:var(--navy);font-weight:600}
 
-  /* 版面：左 sidebar（貼死最左）+ 右內容 */
-  .layout{display:flex;align-items:flex-start}
-  .sidebar{flex:none;width:264px;position:sticky;top:0;align-self:flex-start;height:100vh;
-    background:#f7fafd;border-right:1px solid var(--line);overflow-y:auto;z-index:20}
-  .sb-inner{padding:20px 14px}
-  .sb-title{color:var(--orange);font-weight:800;font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;
+  /* 版面：左 sidebar（貼死最左、整條到底、內層 sticky）+ 右內容欄（含 cover） */
+  .layout{display:flex;align-items:stretch;min-height:100vh}
+  .sidebar{flex:none;width:264px;background:#f7fafd;border-right:1px solid var(--line);z-index:20}
+  .sb-inner{position:sticky;top:0;max-height:100vh;overflow-y:auto;padding:20px 14px}
+  .main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+  .sb-title{color:var(--orange);font-weight:800;font-size:14px;letter-spacing:.16em;text-transform:uppercase;
     padding:6px 10px 12px;display:flex;align-items:center;gap:7px}
   .progress{height:5px;border-radius:99px;background:rgba(15,23,42,.08);margin:0 10px 8px;overflow:hidden}
   .progress > span{display:block;height:100%;width:0;background:var(--orange);transition:width .3s ease}
-  .sb-count{color:var(--muted);font-size:12px;font-weight:600;padding:0 10px 14px}
+  .sb-count{color:var(--muted);font-size:14px;font-weight:600;padding:0 10px 14px}
   nav.toc{display:flex;flex-direction:column;gap:2px}
   nav.toc a{display:flex;align-items:center;gap:11px;font-size:14px;color:var(--muted);text-decoration:none;
     padding:10px 11px;border-radius:9px;font-weight:600;transition:all .12s;line-height:1.3}
-  nav.toc a i{flex:none;width:24px;height:24px;border-radius:7px;background:rgba(15,23,42,.06);
-    display:grid;place-items:center;font-size:12.5px;font-weight:800;font-style:normal;color:var(--navy)}
+  nav.toc a i{flex:none;width:26px;height:26px;border-radius:7px;background:rgba(15,23,42,.06);
+    display:grid;place-items:center;font-size:14px;font-weight:800;font-style:normal;color:var(--navy)}
   nav.toc a:hover{background:rgba(255,153,0,.16);color:var(--orange-d)}
   nav.toc a.active{background:var(--orange);color:#3a2400}
   nav.toc a.active i{background:rgba(0,0,0,.18);color:#3a2400}
-  .layout > .wrap{flex:1 1 auto;min-width:0;max-width:1300px;margin:0;padding:0 44px}
+  #content{width:100%;max-width:1300px;margin:0 auto;padding:0 44px}
 
   section{padding:40px 0 8px}
   section + section{border-top:1px solid var(--line)}
@@ -89,7 +89,7 @@
   td code{background:#eef2f6;color:#b4234a;padding:1px 6px;border-radius:5px;font-family:monospace;font-size:14px}
   .mono{font-family:"Cascadia Code",Consolas,monospace}
 
-  .rank{display:inline-block;font-size:13px;font-weight:800;padding:2px 9px;border-radius:6px}
+  .rank{display:inline-block;font-size:14px;font-weight:800;padding:2px 9px;border-radius:6px}
   .rank.first{background:#dcfce7;color:#166534}
   .rank.alt{background:#dbeafe;color:#1e40af}
   .rank.last{background:#fef3c7;color:#92400e}
@@ -124,28 +124,28 @@
     text-decoration:none;transition:all .14s}
   .pager a.pg.next{align-items:flex-end;text-align:right}
   .pager a.pg:hover{border-color:var(--orange);transform:translateY(-1px)}
-  .pager a.pg .k{font-size:12px;font-weight:800;color:var(--orange-d);letter-spacing:.08em}
+  .pager a.pg .k{font-size:14px;font-weight:800;color:var(--orange-d);letter-spacing:.05em}
   .pager a.pg .t{font-size:15px;font-weight:700;color:var(--navy);max-width:100%;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pager a.pg.disabled{visibility:hidden}
-  @media(max-width:640px){.pager a.pg .t{font-size:13.5px}}
+  @media(max-width:640px){.pager a.pg .t{font-size:14px}}
 
   @media(max-width:1000px){
     .layout{display:block}
-    .sidebar{width:auto;height:auto;position:sticky;top:0;box-shadow:0 2px 10px rgba(16,24,40,.18)}
-    .sb-inner{padding:10px 14px}
+    .sidebar{width:auto;position:sticky;top:0;box-shadow:0 2px 10px rgba(16,24,40,.18)}
+    .sb-inner{position:static;max-height:none;padding:10px 14px}
     .sb-title,.sb-count{display:none}
     .progress{margin:0 0 8px}
     nav.toc{flex-direction:row;flex-wrap:wrap;gap:6px}
     nav.toc a{padding:7px 10px}
-    nav.toc a i{width:20px;height:20px}
-    .layout > .wrap{padding:0 22px}
+    nav.toc a i{width:24px;height:24px}
+    #content{padding:0 22px}
   }
 
   @media print{
     .sidebar,.pager{display:none!important}
     .layout{display:block}
-    .layout > .wrap{padding:0}
+    #content{padding:0}
     body{background:#fff;font-size:14px}
     body.paged #content > section{display:block!important}
     .card,.diagram,ul.check li{box-shadow:none;break-inside:avoid}
@@ -155,19 +155,6 @@
 </style>
 </head>
 <body>
-
-<header class="cover">
-  <div class="wrap">
-    <span class="eyebrow">交接文件 · 決策前置</span>
-    <h1>ERP 回寫可行性確認流程</h1>
-    <p class="sub">確認業務應用系統能否、以及該如何把資料<b>回寫</b>到地端 ERP Oracle。核心結論:<b>不用 DMS、不直寫底表,回寫必須走 ERP 認可的官方介面(SOAP Web Service 首選)</b>。能否回寫的關鍵在 ERP 端是否提供寫入介面。</p>
-    <div class="meta-row">
-      <span><b>性質</b>　交接 / 決策前置(確認後應收斂為 ADR)</span>
-      <span><b>背景</b>　現行架構見 aws-to-local-infra-arch.html</span>
-      <span><b>狀態</b>　待 ERP 端確認(見〈四〉)</span>
-    </div>
-  </div>
-</header>
 
 <div class="layout">
   <aside class="sidebar">
@@ -187,6 +174,20 @@
       </nav>
     </div>
   </aside>
+  <main class="main">
+
+<header class="cover">
+  <div class="wrap">
+    <span class="eyebrow">交接文件 · 決策前置</span>
+    <h1>ERP 回寫可行性確認流程</h1>
+    <p class="sub">確認業務應用系統能否、以及該如何把資料<b>回寫</b>到地端 ERP Oracle。核心結論:<b>不用 DMS、不直寫底表,回寫必須走 ERP 認可的官方介面(SOAP Web Service 首選)</b>。能否回寫的關鍵在 ERP 端是否提供寫入介面。</p>
+    <div class="meta-row">
+      <span><b>性質</b>　交接 / 決策前置(確認後應收斂為 ADR)</span>
+      <span><b>背景</b>　現行架構見 aws-to-local-infra-arch.html</span>
+      <span><b>狀態</b>　待 ERP 端確認(見〈四〉)</span>
+    </div>
+  </div>
+</header>
 
 <div class="wrap" id="content">
 
@@ -364,13 +365,14 @@ flowchart TB
 </section>
 
 </div><!-- #content -->
-</div><!-- .layout -->
 
 <footer>
   <div class="wrap">
     <b>ERP 回寫可行性確認流程</b> · 交接 / 決策前置文件 · 對應 Markdown:<code>docs/Arch/erp-writeback-feasibility.md</code>
   </div>
 </footer>
+  </main>
+</div><!-- .layout -->
 
 <script>
   mermaid.initialize({

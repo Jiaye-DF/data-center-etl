@@ -29,35 +29,35 @@
   .meta-row{display:flex;flex-wrap:wrap;gap:22px;margin-top:22px;font-size:14px;color:var(--muted)}
   .meta-row b{color:var(--navy);font-weight:600}
 
-  /* 版面：左 sidebar（貼死最左、sticky 固定）+ 右內容 */
-  .layout{display:flex;align-items:flex-start}
-  .sidebar{flex:none;width:264px;position:sticky;top:0;align-self:flex-start;height:100vh;
-    background:#f7fafd;border-right:1px solid var(--line);overflow-y:auto;z-index:20}
-  .sb-inner{padding:20px 14px}
-  .sb-title{color:var(--orange);font-weight:800;font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;
+  /* 版面：左 sidebar（貼死最左、整條到底、內層 sticky）+ 右內容欄（含 cover） */
+  .layout{display:flex;align-items:stretch;min-height:100vh}
+  .sidebar{flex:none;width:264px;background:#f7fafd;border-right:1px solid var(--line);z-index:20}
+  .sb-inner{position:sticky;top:0;max-height:100vh;overflow-y:auto;padding:20px 14px}
+  .main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+  .sb-title{color:var(--orange);font-weight:800;font-size:14px;letter-spacing:.16em;text-transform:uppercase;
     padding:6px 10px 12px;display:flex;align-items:center;gap:7px}
   .progress{height:5px;border-radius:99px;background:rgba(15,23,42,.08);margin:0 10px 8px;overflow:hidden}
   .progress > span{display:block;height:100%;width:0;background:var(--orange);transition:width .3s ease}
-  .sb-count{color:var(--muted);font-size:12px;font-weight:600;padding:0 10px 14px}
+  .sb-count{color:var(--muted);font-size:14px;font-weight:600;padding:0 10px 14px}
   nav.toc{display:flex;flex-direction:column;gap:2px}
-  .sb-group{color:#8493a3;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  .sb-group{color:#8493a3;font-size:14px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
     padding:14px 12px 5px}
   .sb-group:first-child{padding-top:4px}
   nav.toc a{display:flex;align-items:center;gap:11px;font-size:14px;color:var(--muted);text-decoration:none;
     padding:10px 11px;border-radius:9px;font-weight:600;transition:all .12s;line-height:1.3}
-  nav.toc a i{flex:none;width:24px;height:24px;border-radius:7px;background:rgba(15,23,42,.06);
-    display:grid;place-items:center;font-size:12.5px;font-weight:800;font-style:normal;color:var(--navy)}
+  nav.toc a i{flex:none;width:26px;height:26px;border-radius:7px;background:rgba(15,23,42,.06);
+    display:grid;place-items:center;font-size:14px;font-weight:800;font-style:normal;color:var(--navy)}
   nav.toc a:hover{background:rgba(255,153,0,.16);color:var(--orange-d)}
   nav.toc a.active{background:var(--orange);color:#3a2400}
   nav.toc a.active i{background:rgba(0,0,0,.18);color:#3a2400}
-  .layout > .wrap{flex:1 1 auto;min-width:0;max-width:1400px;margin:0;padding:0 44px}
+  #content{width:100%;max-width:1400px;margin:0 auto;padding:0 44px}
 
   section{padding:40px 0 8px}
   section + section{border-top:1px solid var(--line)}
   h2{font-size:27px;margin:0 0 4px;display:flex;align-items:center;gap:12px;font-weight:800;color:var(--navy)}
   h2 .num{flex:none;width:38px;height:38px;border-radius:9px;background:#fff1e0;color:var(--orange-d);
     display:grid;place-items:center;font-size:16px;font-weight:800}
-  .ptag{display:inline-block;font-size:12px;font-weight:800;padding:3px 10px;border-radius:999px;margin-bottom:8px;
+  .ptag{display:inline-block;font-size:14px;font-weight:800;padding:3px 11px;border-radius:999px;margin-bottom:8px;
     letter-spacing:.05em}
   .ptag.t0{background:#eef2f6;color:#475569}
   .ptag.t1{background:#fff4e6;color:#b9560c}
@@ -134,7 +134,7 @@
   .terms dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:5px 16px;font-size:14px}
   .terms dt{font-weight:700;color:var(--orange-d)}
   .terms dd{margin:0;color:var(--ink)}
-  .terms-more{display:inline-block;margin-top:10px;font-size:13px;font-weight:700;color:var(--info);text-decoration:none}
+  .terms-more{display:inline-block;margin-top:10px;font-size:14px;font-weight:700;color:var(--info);text-decoration:none}
   .terms-more:hover{text-decoration:underline}
   @media(max-width:640px){.terms dl{grid-template-columns:1fr;gap:2px 0}.terms dd{margin:0 0 7px}}
 
@@ -151,29 +151,29 @@
     text-decoration:none;transition:all .14s}
   .pager a.pg.next{align-items:flex-end;text-align:right}
   .pager a.pg:hover{border-color:var(--orange);transform:translateY(-1px)}
-  .pager a.pg .k{font-size:12px;font-weight:800;color:var(--orange-d);letter-spacing:.08em}
+  .pager a.pg .k{font-size:14px;font-weight:800;color:var(--orange-d);letter-spacing:.05em}
   .pager a.pg .t{font-size:15px;font-weight:700;color:var(--navy);max-width:100%;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pager a.pg.disabled{visibility:hidden}
-  @media(max-width:640px){.pager a.pg .t{font-size:13.5px}}
+  @media(max-width:640px){.pager a.pg .t{font-size:14px}}
 
   @media(max-width:1000px){
     .layout{display:block}
-    .sidebar{width:auto;height:auto;position:sticky;top:0;box-shadow:0 2px 10px rgba(16,24,40,.18)}
-    .sb-inner{padding:10px 14px}
+    .sidebar{width:auto;position:sticky;top:0;box-shadow:0 2px 10px rgba(16,24,40,.18)}
+    .sb-inner{position:static;max-height:none;padding:10px 14px}
     .sb-title,.sb-count{display:none}
     .progress{margin:0 0 8px}
     nav.toc{flex-direction:row;flex-wrap:wrap;gap:6px}
     .sb-group{width:100%;padding:8px 4px 2px}
     nav.toc a{padding:7px 10px}
-    nav.toc a i{width:20px;height:20px}
-    .layout > .wrap{padding:0 22px}
+    nav.toc a i{width:24px;height:24px}
+    #content{padding:0 22px}
   }
 
   @media print{
     .sidebar,.pager{display:none!important}
     .layout{display:block}
-    .layout > .wrap{padding:0}
+    #content{padding:0}
     body{background:#fff;font-size:14px}
     body.paged #content > section{display:block!important}
     .card,.diagram,.phase,.terms{box-shadow:none;break-inside:avoid}
@@ -183,18 +183,6 @@
 </style>
 </head>
 <body>
-
-<header class="cover">
-  <div class="wrap">
-    <span class="eyebrow">架構規劃 · 端到端資料中樞</span>
-    <h1>Enterprise Data Hub — 地端 → AWS 資料中樞架構</h1>
-    <p class="sub">以原始系統方向為骨幹：地端 ERP/BPM/HRM → <b>Migration</b> → Raw-Data-Replication → <b>Glue ETL</b> → ETL-Hub → <b>Data Hub</b> → 業務系統。整合 Phase 1 實測成果，補齊整體 AWS 設施，並納入 Phase 2–4 未來規劃。</p>
-    <div class="meta-row">
-      <span><b>本期</b>　Phase 1 已實測（Full Load）· Phase 2 進行中（Glue 前置 VPC Endpoints）</span>
-      <span><b>區域</b>　AWS 東京 ap-northeast-1（AZ 1a / 1c）</span>
-    </div>
-  </div>
-</header>
 
 <div class="layout">
   <aside class="sidebar">
@@ -219,6 +207,19 @@
       </nav>
     </div>
   </aside>
+  <main class="main">
+
+<header class="cover">
+  <div class="wrap">
+    <span class="eyebrow">架構規劃 · 端到端資料中樞</span>
+    <h1>Enterprise Data Hub — 地端 → AWS 資料中樞架構</h1>
+    <p class="sub">以原始系統方向為骨幹：地端 ERP/BPM/HRM → <b>Migration</b> → Raw-Data-Replication → <b>Glue ETL</b> → ETL-Hub → <b>Data Hub</b> → 業務系統。整合 Phase 1 實測成果，補齊整體 AWS 設施，並納入 Phase 2–4 未來規劃。</p>
+    <div class="meta-row">
+      <span><b>本期</b>　Phase 1 已實測（Full Load）· Phase 2 進行中（Glue 前置 VPC Endpoints）</span>
+      <span><b>區域</b>　AWS 東京 ap-northeast-1（AZ 1a / 1c）</span>
+    </div>
+  </div>
+</header>
 
 <div class="wrap" id="content">
 
@@ -610,6 +611,25 @@ flowchart LR
     <div class="cap">圖 5 — Glue Worker 經 VPC Endpoint 走 AWS Backbone 存取 AWS API（不繞公網 / 不用 NAT）</div>
   </div>
 
+  <h3>建置步驟（實作除錯紀錄）</h3>
+  <p class="lead">實際建 Glue Connection 的過程是「逐一補齊缺的 Endpoint」——每補一個就往前推進一個錯誤，直到全部到位。</p>
+  <table>
+    <thead><tr><th>Step</th><th>動作</th><th>結果 / 錯誤</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>建 Glue Connection（PostgreSQL；選與 RDS 同 VPC、Private Subnet-A/C；初期先用 RDS SG）</td><td>建立連線設定</td></tr>
+      <tr><td>2</td><td>測試連線</td><td>❌ <code>Failed to assume customer's role / access to STS</code> — 私網無法連 sts</td></tr>
+      <tr><td>3</td><td>建 <b>STS</b> Interface Endpoint（Private DNS on、Subnet-A/C、SG-VPCE-AWS-Services）</td><td>可 AssumeRole，往前一步</td></tr>
+      <tr><td>4</td><td>再測</td><td>❌ <code>Unable to connect to Secrets Manager</code> — Glue 憑證存在 Secrets Manager</td></tr>
+      <tr><td>5</td><td>建 <b>Secrets Manager</b> Interface Endpoint（設定同 STS）</td><td>可讀連線憑證</td></tr>
+      <tr><td>6</td><td>建 <b>CloudWatch Logs</b> Interface Endpoint（Glue Job 要寫執行日誌）</td><td>可寫 Job log</td></tr>
+      <tr><td>7</td><td>建 <b>S3</b> <u>Gateway</u> Endpoint（不是 Interface！改 Route Table <code>RT-ERP-Hub-Test-DB</code>，AWS 自動加 Prefix List <code>pl-xxxx</code>）</td><td>可存取 S3</td></tr>
+      <tr><td>8</td><td>建共用 <code>SG-VPCE-AWS-Services</code>（Inbound 443 ← Glue SG；Outbound All）</td><td>Endpoint 流量放行</td></tr>
+      <tr><td>9</td><td>核對 VPC Endpoint 總表（見下）</td><td>4 個到位</td></tr>
+      <tr><td>10</td><td>回 Glue 測試連線</td><td>✅ <code>Connection is ready for you to use</code></td></tr>
+    </tbody>
+  </table>
+  <div class="callout ok"><span class="h">✅ 結果</span>全部 Endpoint 到位後，Glue 成功 <b>AssumeRole</b> → 連 <b>Secrets Manager</b> → 寫 <b>CloudWatch Logs</b> → 連 <b>PostgreSQL RDS</b>，Connection 進入 <code>Ready</code>。</div>
+
   <h3>解法：VPC Endpoint（不用 NAT Gateway）</h3>
   <p class="lead">企業 Data Center 是 Private Network，不希望 Private Subnet 透過 NAT 對外上網 → 改走 AWS Backbone。</p>
   <table>
@@ -621,23 +641,23 @@ flowchart LR
     </tbody>
   </table>
 
-  <h3>Endpoint 清單（已建 + 規劃）</h3>
-  <p class="lead">已建：STS Interface Endpoint <code>com.amazonaws.ap-northeast-1.sts</code>，Private DNS Enabled，佈於 Subnet-A / Subnet-C。</p>
+  <h3>VPC Endpoint 總表（已建 + 規劃）</h3>
+  <p class="lead">Required 四項皆已建、Private DNS Enabled、佈於 Subnet-A / Subnet-C；Optional 視後續擴充加入。</p>
   <table>
-    <thead><tr><th>類別</th><th>服務</th><th>Endpoint 型態</th><th>狀態</th></tr></thead>
+    <thead><tr><th>類別</th><th>服務</th><th>型態</th><th>命名</th><th>狀態</th></tr></thead>
     <tbody>
-      <tr><td><span class="ph">Required</span></td><td>STS</td><td>Interface</td><td>✅ 已建</td></tr>
-      <tr><td><span class="ph">Required</span></td><td>Secrets Manager</td><td>Interface</td><td>規劃</td></tr>
-      <tr><td><span class="ph">Required</span></td><td>CloudWatch Logs</td><td>Interface</td><td>規劃</td></tr>
-      <tr><td><span class="ph">Required</span></td><td>S3</td><td>Gateway</td><td>規劃</td></tr>
-      <tr><td>Optional</td><td>KMS</td><td>Interface</td><td>選用</td></tr>
-      <tr><td>Optional</td><td>ECR API / ECR DKR</td><td>Interface</td><td>選用（容器映像）</td></tr>
-      <tr><td>Optional</td><td>SSM</td><td>Interface</td><td>選用</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>STS</td><td>Interface</td><td class="mono">vpce-sts</td><td>✅ 已建</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>Secrets Manager</td><td>Interface</td><td class="mono">vpce-secretsmanager</td><td>✅ 已建</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>CloudWatch Logs</td><td>Interface</td><td class="mono">vpce-cloudwatchlogs</td><td>✅ 已建</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>S3</td><td>Gateway</td><td class="mono">vpce-s3</td><td>✅ 已建</td></tr>
+      <tr><td>Optional</td><td>KMS</td><td>Interface</td><td class="mono">—</td><td>後續</td></tr>
+      <tr><td>Optional</td><td>ECR API / ECR DKR</td><td>Interface</td><td class="mono">—</td><td>後續（容器映像）</td></tr>
+      <tr><td>Optional</td><td>SSM</td><td>Interface</td><td class="mono">—</td><td>後續</td></tr>
     </tbody>
   </table>
   <div class="grid c2">
     <div class="card"><h3 style="margin-top:0">Interface Endpoint</h3>建 <b>ENI</b>、吃 <b>Security Group</b>、走 <b>Private DNS</b>。STS / Secrets Manager / Logs / KMS / ECR 皆屬此類。</div>
-    <div class="card"><h3 style="margin-top:0">Gateway Endpoint（S3 專用）</h3>不建 ENI、不吃 SG、改 <b>Route Table</b>。與 Interface 設計不同。</div>
+    <div class="card"><h3 style="margin-top:0">Gateway Endpoint（S3 專用）</h3>不建 ENI、不吃 SG、改 <b>Route Table</b>（AWS 自動加 Prefix List <code>pl-xxxx</code> → Gateway Endpoint）。與 Interface 設計不同。</div>
   </div>
 
   <h3>Security Group 策略（Role-Based）</h3>
@@ -654,15 +674,24 @@ flowchart LR
   </div>
   <p>規劃 SG 清單：<code>SG-DB-RDS</code>、<code>SG-ETL-Glue</code>、<code>SG-ETL-DMS</code>、<code>SG-APP-Taskiq</code>、<code>SG-VPCE-AWS-Services</code>。</p>
 
+  <h3>命名規範</h3>
+  <div class="grid c2">
+    <div class="card"><h3 style="margin-top:0">Security Group</h3><code>SG-DB-RDS</code> · <code>SG-ETL-Glue</code> · <code>SG-ETL-DMS</code> · <code>SG-APP-Taskiq</code> · <code>SG-VPCE-AWS-Services</code></div>
+    <div class="card"><h3 style="margin-top:0">VPC Endpoint</h3><code>vpce-sts</code> · <code>vpce-secretsmanager</code> · <code>vpce-cloudwatchlogs</code> · <code>vpce-s3</code></div>
+  </div>
+
   <h3>Glue Workflow（規劃）</h3>
   <div class="flowbar">
     <span class="n">Glue Connection</span><span class="a">→</span>
-    <span class="n">Glue Database</span><span class="a">→</span>
+    <span class="n">Database</span><span class="a">→</span>
     <span class="n">Crawler</span><span class="a">→</span>
-    <span class="n">Catalog</span><span class="a">→</span>
+    <span class="n">Data Catalog</span><span class="a">→</span>
     <span class="n acc">Visual ETL</span><span class="a">→</span>
     <span class="n">S3</span><span class="a">→</span>
-    <span class="n">Athena / RDS</span>
+    <span class="n">Athena</span><span class="a">→</span>
+    <span class="n">Redshift</span><span class="a">→</span>
+    <span class="n">AI Platform</span><span class="a">→</span>
+    <span class="n">Data Hub</span>
   </div>
 
   <h3>設計原則</h3>
@@ -1002,7 +1031,6 @@ flowchart TB
 </section>
 
 </div><!-- #content -->
-</div><!-- .layout -->
 
 <footer>
   <div class="wrap">
@@ -1011,6 +1039,8 @@ flowchart TB
     規範優先序：docs/Design-Base/* &gt; docs/Arch/* &gt; CLAUDE.md &gt; docs/Tasks/*
   </div>
 </footer>
+  </main>
+</div><!-- .layout -->
 
 <script>
   mermaid.initialize({
