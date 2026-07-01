@@ -397,6 +397,11 @@ GRANT SELECT ON SYS.DBA_INDEXES      TO &DMS_USER;
 
 > **Phase 2 · ETL / Glue** — 建立 AWS Glue 的前置作業。
 
+> **名稱分類說明**(HTML 報告版以顏色區分,對應如下):
+> - 🔵 **AWS 服務 / 內建項目**:AWS 產品或服務內建值,固定不變 — 例:`STS`、`Secrets Manager`、`Lake Formation`、`ALL_TABLES`、`IAMAllowedPrincipals`。
+> - 🟠 **測試名稱**:綁本次測試 / 專案代號,正式環境須依命名規範重命名 — 例:`erp_migration_test_catalog`、`crawler-rds-erp-oracle-test-pg`、`RT-ERP-Hub-Test-DB`、`DS.*`。
+> - 🟣 **自定義名稱**:專案自訂但非測試專屬的命名(規範 / 角色 / 概念名)— 例:`SG-ETL-Glue`、`vpce-sts`、`Glue-ServiceRole-ERP-Hub`、`Raw-Data-Replication`、`ETL-Hub`。
+
 Phase 2 要用 AWS Glue 把 Raw 轉成 ETL-Hub。Glue Worker 跑在 Private Subnet,呼叫 AWS API 會因無對外路由而失敗 → 用 **VPC Endpoint 走 AWS Backbone** 解決,而非開 NAT Gateway。
 
 ### 問題：Glue Connection 失敗

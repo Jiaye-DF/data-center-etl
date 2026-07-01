@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <title>Enterprise Data Hub — 地端 → AWS 資料中樞架構</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <style>
@@ -82,14 +83,14 @@
   .lead{color:var(--muted);margin:6px 0 18px;font-size:16.5px}
 
   .diagram{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:20px;
-    box-shadow:var(--shadow);margin:16px 0;text-align:center;overflow:auto}
+    box-shadow:var(--shadow);margin:16px 0;text-align:center;overflow:visible}
   .popbtn{position:absolute;top:12px;right:12px;z-index:3;background:var(--orange-d);color:#fff;border:none;
     padding:7px 13px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;opacity:.9;
     font-family:inherit;display:inline-flex;align-items:center;gap:5px}
   .popbtn:hover{opacity:1;background:var(--orange-d)}
   .diagram.hero{border:2px solid var(--orange);padding:30px 20px}
   .diagram .cap{font-size:14px;color:var(--muted);margin-top:12px}
-  .mermaid{font-size:18px}
+  .mermaid{font-size:18px;max-width:100%;overflow-x:auto;overflow-y:hidden}
   .mermaid svg{height:auto!important}
 
   .flowbar{display:flex;flex-wrap:wrap;gap:7px;align-items:center;justify-content:center;margin:0 0 14px}
@@ -124,6 +125,24 @@
   td code{background:#eef2f6;color:#b4234a;padding:1px 6px;border-radius:5px;font-family:monospace;font-size:14px}
   .mono{font-family:"Cascadia Code",Consolas,monospace}
   .ph{display:inline-block;font-size:14px;font-weight:700;padding:2px 8px;border-radius:6px;background:#fff4e6;color:#b9560c}
+
+  /* 名稱分類上色：藍=AWS 服務 · 琥珀=測試名稱 · 紫=自定義名稱 */
+  code.n-svc,code.n-test,code.n-cust{padding:1px 6px;border-radius:5px;
+    font-family:"Cascadia Code",Consolas,monospace;font-size:14px;border:1px solid}
+  code.n-svc{background:#e4eefb;color:#17518a;border-color:#b9d3f0}
+  code.n-test{background:#fbe6cf;color:#9a5b00;border-color:#f0d3a3}
+  code.n-cust{background:#efeafb;color:#5b3a9e;border-color:#d6c9f2}
+  td.n-svc,td.mono.n-svc{color:#17518a;background:#eef5fc}
+  td.n-test,td.mono.n-test{color:#9a5b00;background:#fcf1e2}
+  td.n-cust,td.mono.n-cust{color:#5b3a9e;background:#f3eefb}
+  .namekey{display:flex;flex-wrap:wrap;gap:9px 18px;align-items:center;margin:12px 0 4px;padding:11px 15px;
+    background:#fbfcfe;border:1px dashed #cdd8e3;border-radius:12px;font-size:14px}
+  .namekey b{color:var(--navy)}
+  .namekey .nk{display:inline-flex;align-items:center;gap:7px}
+  .namekey .sw{width:15px;height:15px;border-radius:5px;flex:none;border:1px solid}
+  .namekey .sw.svc{background:#e4eefb;border-color:#b9d3f0}
+  .namekey .sw.test{background:#fbe6cf;border-color:#f0d3a3}
+  .namekey .sw.cust{background:#efeafb;border-color:#d6c9f2}
 
   .chip{display:inline-block;font-size:14px;font-weight:700;padding:2px 9px;border-radius:6px}
   .chip.in{background:#dcfce7;color:#166534}
@@ -595,6 +614,12 @@ flowchart LR
   <span class="ptag t2">Phase 2 · ETL / Glue</span>
   <h2><span class="num">VI</span>Glue 前置作業：VPC Endpoints</h2>
   <p class="lead">Phase 2 要用 AWS Glue 把 Raw 轉成 ETL-Hub。Glue Worker 跑在 Private Subnet，呼叫 AWS API 會因無對外路由而失敗 → 用 <b>VPC Endpoint 走 AWS Backbone</b> 解決，而非開 NAT Gateway。</p>
+  <div class="namekey">
+    <b>名稱分類</b>
+    <span class="nk"><span class="sw svc"></span>AWS 服務 / 內建項目</span>
+    <span class="nk"><span class="sw test"></span>測試名稱（正式環境要換）</span>
+    <span class="nk"><span class="sw cust"></span>自定義名稱（命名規範 / 專案取名）</span>
+  </div>
 
   <div class="callout danger"><span class="h">⛔ 問題：Glue Connection 失敗</span>建立 Glue Connection 時報 <code>Failed to assume customer's role / Verify that your VPC has access to STS</code>。根因：Glue Worker 在 Private Subnet，Route Table 只有 <code>local</code> + VGW（<code>10.200/10.240</code>→地端），<b>沒有 <code>0.0.0.0/0</code></b> → 連不到 <code>sts.ap-northeast-1.amazonaws.com</code> → AssumeRole 失敗。</div>
 
@@ -642,8 +667,8 @@ flowchart LR
       <tr><td>4</td><td>再測</td><td>❌ <code>Unable to connect to Secrets Manager</code> — Glue 憑證存在 Secrets Manager</td></tr>
       <tr><td>5</td><td>建 <b>Secrets Manager</b> Interface Endpoint（設定同 STS）</td><td>可讀連線憑證</td></tr>
       <tr><td>6</td><td>建 <b>CloudWatch Logs</b> Interface Endpoint（Glue Job 要寫執行日誌）</td><td>可寫 Job log</td></tr>
-      <tr><td>7</td><td>建 <b>S3</b> <u>Gateway</u> Endpoint（不是 Interface！改 Route Table <code>RT-ERP-Hub-Test-DB</code>，AWS 自動加 Prefix List <code>pl-xxxx</code>）</td><td>可存取 S3</td></tr>
-      <tr><td>8</td><td>建共用 <code>SG-VPCE-AWS-Services</code>（Inbound 443 ← Glue SG；Outbound All）</td><td>Endpoint 流量放行</td></tr>
+      <tr><td>7</td><td>建 <b>S3</b> <u>Gateway</u> Endpoint（不是 Interface！改 Route Table <code class="n-test">RT-ERP-Hub-Test-DB</code>，AWS 自動加 Prefix List <code>pl-xxxx</code>）</td><td>可存取 S3</td></tr>
+      <tr><td>8</td><td>建共用 <code class="n-cust">SG-VPCE-AWS-Services</code>（Inbound 443 ← Glue SG；Outbound All）</td><td>Endpoint 流量放行</td></tr>
       <tr><td>9</td><td>核對 VPC Endpoint 總表（見下）</td><td>4 個到位</td></tr>
       <tr><td>10</td><td>回 Glue 測試連線</td><td>✅ <code>Connection is ready for you to use</code></td></tr>
     </tbody>
@@ -666,13 +691,13 @@ flowchart LR
   <table>
     <thead><tr><th>類別</th><th>服務</th><th>型態</th><th>命名</th></tr></thead>
     <tbody>
-      <tr><td><span class="ph">Required</span></td><td>STS</td><td>Interface</td><td class="mono">vpce-sts</td></tr>
-      <tr><td><span class="ph">Required</span></td><td>Secrets Manager</td><td>Interface</td><td class="mono">vpce-secretsmanager</td></tr>
-      <tr><td><span class="ph">Required</span></td><td>CloudWatch Logs</td><td>Interface</td><td class="mono">vpce-cloudwatchlogs</td></tr>
-      <tr><td><span class="ph">Required</span></td><td>S3</td><td>Gateway</td><td class="mono">vpce-s3</td></tr>
-      <tr><td>Optional</td><td>KMS</td><td>Interface</td><td class="mono">—</td></tr>
-      <tr><td>Optional</td><td>ECR API / ECR DKR</td><td>Interface</td><td class="mono">—（容器映像）</td></tr>
-      <tr><td>Optional</td><td>SSM</td><td>Interface</td><td class="mono">—</td></tr>
+      <tr><td><span class="ph">Required</span></td><td class="n-svc">STS</td><td>Interface</td><td class="mono n-cust">vpce-sts</td></tr>
+      <tr><td><span class="ph">Required</span></td><td class="n-svc">Secrets Manager</td><td>Interface</td><td class="mono n-cust">vpce-secretsmanager</td></tr>
+      <tr><td><span class="ph">Required</span></td><td class="n-svc">CloudWatch Logs</td><td>Interface</td><td class="mono n-cust">vpce-cloudwatchlogs</td></tr>
+      <tr><td><span class="ph">Required</span></td><td class="n-svc">S3</td><td>Gateway</td><td class="mono n-cust">vpce-s3</td></tr>
+      <tr><td>Optional</td><td class="n-svc">KMS</td><td>Interface</td><td class="mono">—</td></tr>
+      <tr><td>Optional</td><td class="n-svc">ECR API / ECR DKR</td><td>Interface</td><td class="mono">—（容器映像）</td></tr>
+      <tr><td>Optional</td><td class="n-svc">SSM</td><td>Interface</td><td class="mono">—</td></tr>
     </tbody>
   </table>
   <div class="grid c2">
@@ -683,21 +708,21 @@ flowchart LR
   <h3>Security Group 策略（Role-Based）</h3>
   <p class="lead">以角色切 SG，而非每個 App 一個；所有 AWS Interface Endpoint 共用一個 SG。</p>
   <div class="card">
-    <b>SG-VPCE-AWS-Services</b>（STS / Secrets Manager / CloudWatch Logs / KMS / ECR 共用）— 因為都走 <b>HTTPS 443</b> 與 AWS API 通訊，共用可降低維護成本。
+    <code class="n-cust">SG-VPCE-AWS-Services</code>（STS / Secrets Manager / CloudWatch Logs / KMS / ECR 共用）— 因為都走 <b>HTTPS 443</b> 與 AWS API 通訊，共用可降低維護成本。
     <table style="margin-top:10px">
       <thead><tr><th>方向</th><th>Port</th><th>來源 / 目標</th></tr></thead>
       <tbody>
-        <tr><td><span class="chip in">Inbound</span></td><td class="mono">443</td><td>SG-ETL-Glue（未來 DMS / Taskiq 可加入）</td></tr>
+        <tr><td><span class="chip in">Inbound</span></td><td class="mono">443</td><td><code class="n-cust">SG-ETL-Glue</code>（未來 DMS / Taskiq 可加入）</td></tr>
         <tr><td><span class="chip out">Outbound</span></td><td class="mono">All</td><td>All Traffic</td></tr>
       </tbody>
     </table>
   </div>
-  <p>規劃 SG 清單：<code>SG-DB-RDS</code>、<code>SG-ETL-Glue</code>、<code>SG-ETL-DMS</code>、<code>SG-APP-Taskiq</code>、<code>SG-VPCE-AWS-Services</code>。</p>
+  <p>規劃 SG 清單：<code class="n-cust">SG-DB-RDS</code>、<code class="n-cust">SG-ETL-Glue</code>、<code class="n-cust">SG-ETL-DMS</code>、<code class="n-cust">SG-APP-Taskiq</code>、<code class="n-cust">SG-VPCE-AWS-Services</code>。</p>
 
   <h3>命名規範</h3>
   <div class="grid c2">
-    <div class="card"><h3 style="margin-top:0">Security Group</h3><code>SG-DB-RDS</code> · <code>SG-ETL-Glue</code> · <code>SG-ETL-DMS</code> · <code>SG-APP-Taskiq</code> · <code>SG-VPCE-AWS-Services</code></div>
-    <div class="card"><h3 style="margin-top:0">VPC Endpoint</h3><code>vpce-sts</code> · <code>vpce-secretsmanager</code> · <code>vpce-cloudwatchlogs</code> · <code>vpce-s3</code></div>
+    <div class="card"><h3 style="margin-top:0">Security Group</h3><code class="n-cust">SG-DB-RDS</code> · <code class="n-cust">SG-ETL-Glue</code> · <code class="n-cust">SG-ETL-DMS</code> · <code class="n-cust">SG-APP-Taskiq</code> · <code class="n-cust">SG-VPCE-AWS-Services</code></div>
+    <div class="card"><h3 style="margin-top:0">VPC Endpoint</h3><code class="n-cust">vpce-sts</code> · <code class="n-cust">vpce-secretsmanager</code> · <code class="n-cust">vpce-cloudwatchlogs</code> · <code class="n-cust">vpce-s3</code></div>
   </div>
 
   <h3>Glue Workflow（規劃）</h3>
@@ -743,6 +768,12 @@ flowchart LR
   <span class="ptag t2">Phase 2 · ETL / Glue</span>
   <h2><span class="num">VII</span>Glue Crawler + Data Catalog（Lake Formation 權限）</h2>
   <p class="lead">VPC Endpoint 到位、Glue Connection Ready 後，建 Crawler 掃描 RDS PostgreSQL，把 Metadata 寫入 Glue Data Catalog。此階段的關卡不在網路，而在 <b>Lake Formation 權限模型</b>。</p>
+  <div class="namekey">
+    <b>名稱分類</b>
+    <span class="nk"><span class="sw svc"></span>AWS 服務 / 內建項目</span>
+    <span class="nk"><span class="sw test"></span>測試名稱（正式環境要換）</span>
+    <span class="nk"><span class="sw cust"></span>自定義名稱（命名規範 / 專案取名）</span>
+  </div>
 
   <div class="flowbar">
     <span class="n acc">Glue Connection ✅</span><span class="a">→</span>
@@ -790,8 +821,8 @@ flowchart LR
 
   <h3>根因：Database 已被 Lake Formation 接管</h3>
   <div class="grid c2">
-    <div class="card"><h3 style="margin-top:0">① 預設不回溯</h3>「Use only IAM access control」只對<b>設定啟用後新建、且仍持有 <code>IAMAllowedPrincipals</code></b> 的資源生效；既有 DB 不受惠。</div>
-    <div class="card"><h3 style="margin-top:0">② 明確 Grant 會移除 IAMAllowedPrincipals</h3>一旦對該 DB 的 Table/Column 下明確 LF Grant，<code>IAMAllowedPrincipals</code> 被移除 → 資源翻轉成「LF 管控」→ 所有 principal（含 Crawler）都要明確 LF 授權。</div>
+    <div class="card"><h3 style="margin-top:0">① 預設不回溯</h3>「Use only IAM access control」只對<b>設定啟用後新建、且仍持有 <code class="n-svc">IAMAllowedPrincipals</code></b> 的資源生效；既有 DB 不受惠。</div>
+    <div class="card"><h3 style="margin-top:0">② 明確 Grant 會移除 IAMAllowedPrincipals</h3>一旦對該 DB 的 Table/Column 下明確 LF Grant，<code class="n-svc">IAMAllowedPrincipals</code> 被移除 → 資源翻轉成「LF 管控」→ 所有 principal（含 Crawler）都要明確 LF 授權。</div>
     <div class="card"><h3 style="margin-top:0">③ 缺 Database 層</h3>目前只 Grant 了 <b>Table + Column</b>，缺 <b>Database</b>（Describe + Create Table）→ Crawler 第一關就進不了。</div>
     <div class="card"><h3 style="margin-top:0">鐵證</h3>第四階段刪 DB 需 <code>Required Drop</code>，正是「DB 已被 LF 接管、連 Data Lake Admin 都要明確授權」的證明。</div>
   </div>
@@ -809,13 +840,13 @@ flowchart LR
   <p class="lead">所以看到的是「table 的 <code>Required Describe</code>」，但真正缺口在 <b>Database 層</b>。</p>
 
   <h3>解法：Lake Formation 三層權限模型（非破壞性）</h3>
-  <p class="lead">對 Principal <code>Glue-ServiceRole-ERP-Hub</code> 補齊三層 Grant，<b>不刪 DB</b>。</p>
+  <p class="lead">對 Principal <code class="n-cust">Glue-ServiceRole-ERP-Hub</code> 補齊三層 Grant，<b>不刪 DB</b>。</p>
   <table>
     <thead><tr><th>Resource</th><th>名稱</th><th>Permissions</th></tr></thead>
     <tbody>
-      <tr><td><span class="ph">Database</span></td><td class="mono">erp_migration_test_catalog</td><td>Describe · Create Table · Alter</td></tr>
-      <tr><td><span class="ph">Table</span></td><td class="mono">ALL_TABLES</td><td>Describe · Select · Insert · Alter · Delete（Drop 選用）</td></tr>
-      <tr><td><span class="ph">Column</span></td><td class="mono">ALL_COLUMNS</td><td>Select</td></tr>
+      <tr><td><span class="ph">Database</span></td><td class="mono n-test">erp_migration_test_catalog</td><td>Describe · Create Table · Alter</td></tr>
+      <tr><td><span class="ph">Table</span></td><td class="mono n-svc">ALL_TABLES</td><td>Describe · Select · Insert · Alter · Delete（Drop 選用）</td></tr>
+      <tr><td><span class="ph">Column</span></td><td class="mono n-svc">ALL_COLUMNS</td><td>Select</td></tr>
     </tbody>
   </table>
   <div class="callout warn"><span class="h">⚠ 不走刪 DB 重建那條路</span>刪除屬破壞性（且此 DB 已被 LF 管控要 <code>Drop</code> 權限）。<b>補 Database Grant 才是最小、最安全的修法</b>，補齊後根本不需要重建。</div>
@@ -823,8 +854,8 @@ flowchart LR
   <div class="callout ok"><span class="h">✅ 結果</span>補上 Database 層後重跑 Crawler → <code>Tables &gt; 0</code>，Metadata 建立成功 → 進入下一步 <b>Visual ETL</b>。</div>
 
   <h3>已排除（非主因）</h3>
-  <p>Connection Test / <code>GetSecretValue</code> / <code>GetConnection</code> 全 Success，只證明「連得到 DB、拿得到憑證」，與「能否寫進 Glue Catalog」是兩條獨立授權鏈。以下皆已驗證正常，問題單純在 <b>Data Catalog 的 Lake Formation 授權鏈</b>：</p>
-  <p><code>IAM</code> · <code>Secrets Manager</code> · <code>VPC</code> · <code>Route Table</code> · <code>Security Group</code> · <code>Glue Connection</code> · <code>PostgreSQL Authentication</code> · <code>Hybrid Access Mode</code></p>
+  <p>Connection Test / <code class="n-svc">GetSecretValue</code> / <code class="n-svc">GetConnection</code> 全 Success，只證明「連得到 DB、拿得到憑證」，與「能否寫進 Glue Catalog」是兩條獨立授權鏈。以下皆已驗證正常，問題單純在 <b>Data Catalog 的 Lake Formation 授權鏈</b>：</p>
+  <p><code class="n-svc">IAM</code> · <code class="n-svc">Secrets Manager</code> · <code class="n-svc">VPC</code> · <code class="n-svc">Route Table</code> · <code class="n-svc">Security Group</code> · <code class="n-svc">Glue Connection</code> · <code class="n-svc">PostgreSQL Authentication</code> · <code class="n-svc">Hybrid Access Mode</code></p>
 
   <div class="terms">
     <div class="terms-h">📖 本頁名詞</div>
@@ -845,6 +876,12 @@ flowchart LR
   <span class="ptag t2">Phase 2 · ETL / Glue</span>
   <h2><span class="num">VIII</span>Phase 2 流程圖</h2>
   <p class="lead">依「① 網路前置（VPC Endpoints）→ ② Glue 連線 / 掃描 → ③ Lake Formation 權限 → ④ ETL 轉換」四層，一次一步、完成驗證再下一步。關鍵設定對齊 Phase 2 實測。</p>
+  <div class="namekey">
+    <b>名稱分類</b>
+    <span class="nk"><span class="sw svc"></span>AWS 服務 / 內建項目</span>
+    <span class="nk"><span class="sw test"></span>測試名稱（正式環境要換）</span>
+    <span class="nk"><span class="sw cust"></span>自定義名稱（命名規範 / 專案取名）</span>
+  </div>
 
   <div class="diagram hero">
     <div class="mermaid">
@@ -893,16 +930,16 @@ flowchart LR
   <table>
     <thead><tr><th>#</th><th>步驟</th><th>元件 / 服務</th><th>關鍵設定</th><th>目的</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td>建共用 SG</td><td>SG-VPCE-AWS-Services</td><td>Inbound <code>443</code> ← <code>SG-ETL-Glue</code>；Outbound All</td><td>放行 Glue → Endpoint 流量</td></tr>
-      <tr><td>2</td><td>建 Interface Endpoints</td><td>STS / Secrets Manager / CloudWatch Logs</td><td>Private DNS on、佈於 Subnet-A/C、掛 <code>SG-VPCE-AWS-Services</code></td><td>私網走 Backbone：AssumeRole / 讀憑證 / 寫 log</td></tr>
-      <tr><td>3</td><td>建 S3 Gateway Endpoint</td><td>S3（Gateway）</td><td>改 Route Table <code>RT-ERP-Hub-Test-DB</code>（自動加 Prefix List <code>pl-xxxx</code>）</td><td>私網存取 S3 不繞公網</td></tr>
-      <tr><td>4</td><td>建 Glue Connection + 測試</td><td>Glue Connection（PostgreSQL）</td><td>同 RDS VPC、Private Subnet-A/C、<code>SG-ETL-Glue</code>；先 Test connection</td><td>建立並驗通 Glue → RDS 連線</td></tr>
-      <tr><td>5</td><td>建 Glue Database</td><td>Data Catalog Database</td><td><code>erp_migration_test_catalog</code></td><td>Crawler 寫入 Metadata 的目標</td></tr>
-      <tr><td>6</td><td>建 Glue Crawler</td><td>Glue Crawler</td><td>Source PostgreSQL、Include <code>erp_migration_test/%</code>、IAM Role <code>Glue-ServiceRole-ERP-Hub</code>、On-Demand</td><td>掃描來源結構</td></tr>
-      <tr><td>7</td><td>Grant Database 權限</td><td>Lake Formation</td><td>Principal <code>Glue-ServiceRole-ERP-Hub</code>；Database <b>Describe + Create Table + Alter</b></td><td>讓 Crawler 進得了 Database 層（關鍵缺口）</td></tr>
-      <tr><td>8</td><td>Grant Table / Column</td><td>Lake Formation</td><td><code>ALL_TABLES</code>（Describe/Select/Insert/Alter/Delete）、<code>ALL_COLUMNS</code>（Select）</td><td>讓 Crawler 建 / 改表 Metadata</td></tr>
+      <tr><td>1</td><td>建共用 SG</td><td><code class="n-cust">SG-VPCE-AWS-Services</code></td><td>Inbound <code>443</code> ← <code class="n-cust">SG-ETL-Glue</code>；Outbound All</td><td>放行 Glue → Endpoint 流量</td></tr>
+      <tr><td>2</td><td>建 Interface Endpoints</td><td>STS / Secrets Manager / CloudWatch Logs</td><td>Private DNS on、佈於 Subnet-A/C、掛 <code class="n-cust">SG-VPCE-AWS-Services</code></td><td>私網走 Backbone：AssumeRole / 讀憑證 / 寫 log</td></tr>
+      <tr><td>3</td><td>建 S3 Gateway Endpoint</td><td>S3（Gateway）</td><td>改 Route Table <code class="n-test">RT-ERP-Hub-Test-DB</code>（自動加 Prefix List <code>pl-xxxx</code>）</td><td>私網存取 S3 不繞公網</td></tr>
+      <tr><td>4</td><td>建 Glue Connection + 測試</td><td>Glue Connection（PostgreSQL）</td><td>同 RDS VPC、Private Subnet-A/C、<code class="n-cust">SG-ETL-Glue</code>；先 Test connection</td><td>建立並驗通 Glue → RDS 連線</td></tr>
+      <tr><td>5</td><td>建 Glue Database</td><td>Data Catalog Database</td><td><code class="n-test">erp_migration_test_catalog</code></td><td>Crawler 寫入 Metadata 的目標</td></tr>
+      <tr><td>6</td><td>建 Glue Crawler</td><td>Glue Crawler</td><td>Source PostgreSQL、Include <code class="n-test">erp_migration_test/%</code>、IAM Role <code class="n-cust">Glue-ServiceRole-ERP-Hub</code>、On-Demand</td><td>掃描來源結構</td></tr>
+      <tr><td>7</td><td>Grant Database 權限</td><td>Lake Formation</td><td>Principal <code class="n-cust">Glue-ServiceRole-ERP-Hub</code>；Database <b>Describe + Create Table + Alter</b></td><td>讓 Crawler 進得了 Database 層（關鍵缺口）</td></tr>
+      <tr><td>8</td><td>Grant Table / Column</td><td>Lake Formation</td><td><code class="n-svc">ALL_TABLES</code>（Describe/Select/Insert/Alter/Delete）、<code class="n-svc">ALL_COLUMNS</code>（Select）</td><td>讓 Crawler 建 / 改表 Metadata</td></tr>
       <tr><td>9</td><td>執行 Crawler + 驗證</td><td>Glue Crawler</td><td>On-Demand Run → 查 Data Catalog</td><td>確認 <code>Tables &gt; 0</code>、Metadata 建立成功</td></tr>
-      <tr><td>10</td><td>建 Visual ETL Job</td><td>Glue ETL（後續）</td><td>Source = Catalog → 轉換 → Target RDS <code>ETL-Hub</code></td><td>Raw → ETL-Hub 清洗轉換</td></tr>
+      <tr><td>10</td><td>建 Visual ETL Job</td><td>Glue ETL（後續）</td><td>Source = Catalog → 轉換 → Target RDS <code class="n-cust">ETL-Hub</code></td><td>Raw → ETL-Hub 清洗轉換</td></tr>
       <tr><td>11</td><td>排程編排</td><td>EventBridge + Lambda（後續）</td><td>定時觸發 ETL / 流程編排</td><td>自動化 ETL 執行</td></tr>
     </tbody>
   </table>
