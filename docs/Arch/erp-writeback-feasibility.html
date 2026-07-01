@@ -163,14 +163,14 @@
       <div class="progress"><span></span></div>
       <div class="sb-count" id="sbCount"></div>
       <nav class="toc">
-        <a href="#bg"><i>一</i><span>問題背景</span></a>
-        <a href="#concl"><i>二</i><span>結論</span></a>
-        <a href="#why"><i>三</i><span>為何不能直寫</span></a>
-        <a href="#checklist"><i>四</i><span>待確認清單</span></a>
-        <a href="#flow"><i>五</i><span>正確回寫流程</span></a>
-        <a href="#soapui"><i>六</i><span>SoapUI 角色</span></a>
-        <a href="#tree"><i>七</i><span>決策樹</span></a>
-        <a href="#next"><i>八</i><span>後續動作</span></a>
+        <a href="#bg"><i>I</i><span>問題背景</span></a>
+        <a href="#concl"><i>II</i><span>結論</span></a>
+        <a href="#why"><i>III</i><span>為何不能直寫</span></a>
+        <a href="#checklist"><i>IV</i><span>待確認清單</span></a>
+        <a href="#flow"><i>V</i><span>正確回寫流程</span></a>
+        <a href="#soapui"><i>VI</i><span>SoapUI 角色</span></a>
+        <a href="#tree"><i>VII</i><span>決策樹</span></a>
+        <a href="#next"><i>VIII</i><span>後續動作</span></a>
       </nav>
     </div>
   </aside>
@@ -184,7 +184,7 @@
     <div class="meta-row">
       <span><b>性質</b>　交接 / 決策前置(確認後應收斂為 ADR)</span>
       <span><b>背景</b>　現行架構見 aws-to-local-infra-arch.html</span>
-      <span><b>狀態</b>　待 ERP 端確認(見〈四〉)</span>
+      <span><b>狀態</b>　待 ERP 端確認(見〈IV〉)</span>
     </div>
   </div>
 </header>
@@ -193,7 +193,7 @@
 
 <!-- 問題背景 -->
 <section id="bg">
-  <h2><span class="num">一</span>問題背景</h2>
+  <h2><span class="num">I</span>問題背景</h2>
   <p class="lead">現行資料鏈是<b>單向</b>的:業務系統目前只「讀」ETL-Hub。本文件確認的是「回寫」該怎麼做。</p>
 
   <div class="flowbar">
@@ -213,10 +213,10 @@
 
 <!-- 結論 -->
 <section id="concl">
-  <h2><span class="num">二</span>結論(先講重點)</h2>
+  <h2><span class="num">II</span>結論(先講重點)</h2>
   <div class="grid c2">
     <div class="callout danger"><span class="h">✗ 不要用 DMS 回寫</span>DMS 是單向複製工具,來源端是唯讀帳號,硬做反向 task 是架構反模式。</div>
-    <div class="callout danger"><span class="h">✗ 不要直接寫 Oracle 底表</span>會跳過 ERP 商業邏輯,造成資料「看得到、但商業意義是錯的」(見〈三〉)。</div>
+    <div class="callout danger"><span class="h">✗ 不要直接寫 Oracle 底表</span>會跳過 ERP 商業邏輯,造成資料「看得到、但商業意義是錯的」(見〈III〉)。</div>
   </div>
   <div class="callout ok"><span class="h">✓ 回寫必須走 ERP 認可的官方介面</span>讓 ERP 自己執行完整邏輯。優先序如下。</div>
   <table>
@@ -227,12 +227,12 @@
       <tr><td><span class="rank last">次選</span></td><td><b>PL/SQL Package</b></td><td>DBA 封裝含商業邏輯對外提供;需 ERP 團隊額外開發維護。</td></tr>
     </tbody>
   </table>
-  <div class="callout"><span class="h">關鍵</span>能不能回寫的重點<b>不在雲端這側,而在 ERP 有沒有開對應介面</b> → 見〈四、待確認清單〉。</div>
+  <div class="callout"><span class="h">關鍵</span>能不能回寫的重點<b>不在雲端這側,而在 ERP 有沒有開對應介面</b> → 見〈IV、待確認清單〉。</div>
 </section>
 
 <!-- 為何不能直寫 -->
 <section id="why">
-  <h2><span class="num">三</span>為什麼不能直接寫 Oracle 底表</h2>
+  <h2><span class="num">III</span>為什麼不能直接寫 Oracle 底表</h2>
   <p class="lead">核心觀念:<b>ERP 底表是「結果」,不是「入口」。</b>正確的資料狀態是 ERP 跑完一整套邏輯後的產物;從結果端硬塞,資料有了但過程沒發生。</p>
   <table>
     <thead><tr><th>風險</th><th>說明</th><th>後果範例</th></tr></thead>
@@ -248,7 +248,7 @@
 
 <!-- 待確認清單 -->
 <section id="checklist">
-  <h2><span class="num">四</span>待確認清單（交接重點 — 先問 ERP / DBA）</h2>
+  <h2><span class="num">IV</span>待確認清單（交接重點 — 先問 ERP / DBA）</h2>
   <p class="lead">這是決定「能不能回寫」的關鍵,務必先問清楚再動工。</p>
   <ul class="check">
     <li><b>(a)</b> ERP 有沒有對外的 <b>SOAP Web Service</b>(或 REST API)?</li>
@@ -263,7 +263,7 @@
 
 <!-- 正確流程 -->
 <section id="flow">
-  <h2><span class="num">五</span>回寫的正確流程（確認可行後的目標架構）</h2>
+  <h2><span class="num">V</span>回寫的正確流程（確認可行後的目標架構）</h2>
   <p class="lead">入口用 ERP 官方介面,由 ERP 負責驗證與完整性,不碰底表。</p>
 
   <div class="flowbar">
@@ -311,7 +311,7 @@ flowchart LR
 
 <!-- SoapUI -->
 <section id="soapui">
-  <h2><span class="num">六</span>SoapUI 的角色（釐清）</h2>
+  <h2><span class="num">VI</span>SoapUI 的角色（釐清）</h2>
   <p class="lead">先分清楚兩件常被混在一起的東西。</p>
   <div class="grid c2">
     <div class="card"><h3 style="margin-top:0">SOAP Web Service</h3>ERP 對外的<b>官方介面</b>(協定)。回寫真正要打的對象。</div>
@@ -323,7 +323,7 @@ flowchart LR
 
 <!-- 決策樹 -->
 <section id="tree">
-  <h2><span class="num">七</span>決策樹（給接手者快速判斷）</h2>
+  <h2><span class="num">VII</span>決策樹（給接手者快速判斷）</h2>
   <div class="diagram">
     <div class="mermaid">
 flowchart TB
@@ -346,22 +346,22 @@ flowchart TB
 
 <!-- 後續動作 -->
 <section id="next">
-  <h2><span class="num">八</span>後續動作</h2>
+  <h2><span class="num">VIII</span>後續動作</h2>
   <div class="card">
     <ol style="margin:0;padding-left:20px;line-height:1.9">
-      <li>拿〈四〉的清單去問 ERP / DBA,把答案回填。</li>
+      <li>拿〈IV〉的清單去問 ERP / DBA,把答案回填。</li>
       <li>若可行:用 SoapUI 測通一支回寫操作 → 確認契約 → 在整合服務實作 → 開 SG 規則。</li>
       <li>決策確認後,依 <code>README.md</code> 規範開一份 ADR(例:<code>adr/0001-erp-writeback-via-official-api.md</code>):
         <ul style="margin:6px 0">
           <li><b>決策</b>:回寫走 ERP 官方 SOAP Web Service(或 REST)</li>
-          <li><b>拒絕方案</b>:DMS 反向 task、直寫 Oracle 底表(理由見〈三〉)</li>
+          <li><b>拒絕方案</b>:DMS 反向 task、直寫 Oracle 底表(理由見〈III〉)</li>
           <li><b>後果 / Trade-off</b>:新增整合服務與網路路徑的維運成本;架構由單向資料中樞轉為雙向整合。</li>
         </ul>
       </li>
     </ol>
   </div>
 
-  <div class="callout"><span class="h">交接備註</span>本文件停在「確認流程」階段:<b>回寫是否可行,取決於 ERP 端是否提供官方寫入介面(〈四〉待確認清單)</b>,而非雲端這側的技術限制。雲端側的做法已在〈五〉定義完成,只等 ERP 介面確認後即可實作。</div>
+  <div class="callout"><span class="h">交接備註</span>本文件停在「確認流程」階段:<b>回寫是否可行,取決於 ERP 端是否提供官方寫入介面(〈IV〉待確認清單)</b>,而非雲端這側的技術限制。雲端側的做法已在〈V〉定義完成,只等 ERP 介面確認後即可實作。</div>
 </section>
 
 </div><!-- #content -->

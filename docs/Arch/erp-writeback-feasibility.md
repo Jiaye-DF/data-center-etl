@@ -2,11 +2,11 @@
 
 > **性質**:決策前置文件。用來確認「業務應用系統能否、以及該如何回寫資料到地端 ERP Oracle」。
 > **背景來源**:現行架構見 [`aws-to-local-infra-arch.md`](aws-to-local-infra-arch.md)。
-> **狀態**:待 ERP 端確認(見〈四、待確認清單〉);確認後應收斂為一份 ADR(見 [`README.md`](README.md#adr-格式))。
+> **狀態**:待 ERP 端確認(見〈IV、待確認清單〉);確認後應收斂為一份 ADR(見 [`README.md`](README.md#adr-格式))。
 
 ---
 
-## 一、問題背景
+## I、問題背景
 
 現行 docs/Arch 這條資料鏈是**單向**的:
 
@@ -18,19 +18,19 @@ Oracle →(DMS)→ Raw-Data-Replication →(Glue ETL)→ ETL-Hub → 業務系�
 
 ---
 
-## 二、結論(先講重點)
+## II、結論(先講重點)
 
 1. **不要用 DMS 回寫。** DMS 是單向複製工具,來源端是唯讀帳號(`aws-to-local-infra-arch.md` § 六),硬做反向 task 是架構反模式。
-2. **不要直接 INSERT/UPDATE Oracle 底表。** 會跳過 ERP 商業邏輯,造成資料「看得到、但商業意義是錯的」(詳見〈三〉)。
+2. **不要直接 INSERT/UPDATE Oracle 底表。** 會跳過 ERP 商業邏輯,造成資料「看得到、但商業意義是錯的」(詳見〈III〉)。
 3. **回寫必須走 ERP 認可的官方介面**,讓 ERP 自己執行完整邏輯。優先序:
    - **SOAP Web Service**(若 ERP 有開,且涵蓋所需寫入操作)→ **首選**
    - REST API(若 ERP 有提供)→ 同等可用,通常更輕量
    - DBA 封裝的 PL/SQL Package(含商業邏輯對外提供)→ 次選,需 ERP 團隊額外開發維護
-4. **能不能回寫的關鍵不在雲端這側,而在 ERP 有沒有開對應介面** → 見〈四、待確認清單〉。
+4. **能不能回寫的關鍵不在雲端這側,而在 ERP 有沒有開對應介面** → 見〈IV、待確認清單〉。
 
 ---
 
-## 三、為什麼不能直接寫 Oracle 底表
+## III、為什麼不能直接寫 Oracle 底表
 
 核心觀念:**ERP 底表是「結果」,不是「入口」。** 正確的資料狀態是 ERP 跑完一整套邏輯後的產物;從結果端硬塞,資料有了但過程沒發生。直寫會壞在:
 
@@ -45,7 +45,7 @@ Oracle →(DMS)→ Raw-Data-Replication →(Glue ETL)→ ETL-Hub → 業務系�
 
 ---
 
-## 四、待確認清單(交接重點 — 先問 ERP / DBA)
+## IV、待確認清單(交接重點 — 先問 ERP / DBA)
 
 **這是決定「能不能回寫」的關鍵,務必先問清楚再動工:**
 
@@ -60,7 +60,7 @@ Oracle →(DMS)→ Raw-Data-Replication →(Glue ETL)→ ETL-Hub → 業務系�
 
 ---
 
-## 五、回寫的正確流程(確認可行後的目標架構)
+## V、回寫的正確流程(確認可行後的目標架構)
 
 ```mermaid
 flowchart LR
@@ -80,7 +80,7 @@ flowchart LR
 
 ---
 
-## 六、SoapUI 的角色(釐清)
+## VI、SoapUI 的角色(釐清)
 
 - **SOAP Web Service** = ERP 對外的官方介面(協定)。
 - **SoapUI** = 用來**測試 / 探索** SOAP(與 REST)介面的工具。
@@ -92,7 +92,7 @@ flowchart LR
 
 ---
 
-## 七、決策樹(給接手者快速判斷)
+## VII、決策樹(給接手者快速判斷)
 
 ```
 ERP 有 SOAP Web Service 且涵蓋所需寫入操作?
@@ -107,17 +107,17 @@ ERP 有 SOAP Web Service 且涵蓋所需寫入操作?
 
 ---
 
-## 八、後續動作
+## VIII、後續動作
 
-1. 拿〈四〉的清單去問 ERP / DBA,把答案回填。
+1. 拿〈IV〉的清單去問 ERP / DBA,把答案回填。
 2. 若可行:用 SoapUI 測通一支回寫操作 → 確認契約 → 在整合服務實作 → 開 SG 規則。
 3. 決策確認後,依 [`README.md`](README.md) 規範開一份 ADR(例:`adr/0001-erp-writeback-via-official-api.md`),
    - **決策**:回寫走 ERP 官方 SOAP Web Service(或 REST)
-   - **拒絕方案**:DMS 反向 task、直寫 Oracle 底表(理由見〈三〉)
+   - **拒絕方案**:DMS 反向 task、直寫 Oracle 底表(理由見〈III〉)
    - **後果 / Trade-off**:新增整合服務與網路路徑的維運成本;架構由單向資料中樞轉為雙向整合。
 
 ---
 
 ## 交接備註
 
-本文件停在「確認流程」階段:**回寫是否可行,取決於 ERP 端是否提供官方寫入介面(〈四〉待確認清單)**,而非雲端這側的技術限制。雲端側的做法已在〈五〉定義完成,只等 ERP 介面確認後即可實作。
+本文件停在「確認流程」階段:**回寫是否可行,取決於 ERP 端是否提供官方寫入介面(〈IV〉待確認清單)**,而非雲端這側的技術限制。雲端側的做法已在〈V〉定義完成,只等 ERP 介面確認後即可實作。

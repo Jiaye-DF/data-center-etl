@@ -192,18 +192,18 @@
       <div class="sb-count" id="sbCount"></div>
       <nav class="toc">
         <div class="sb-group">總覽</div>
-        <a href="#goal"><i>一</i><span>目標</span></a>
-        <a href="#e2e"><i>二</i><span>端到端架構圖</span></a>
+        <a href="#goal"><i>I</i><span>目標</span></a>
+        <a href="#e2e"><i>II</i><span>端到端架構圖</span></a>
         <div class="sb-group">Phase 1 · 基礎建設</div>
-        <a href="#vpc"><i>三</i><span>VPC 網路拓撲</span></a>
-        <a href="#sg"><i>四</i><span>Security Group 資料流</span></a>
-        <a href="#sop"><i>五</i><span>建置 SOP</span></a>
+        <a href="#vpc"><i>III</i><span>VPC 網路拓撲</span></a>
+        <a href="#sg"><i>IV</i><span>Security Group 資料流</span></a>
+        <a href="#sop"><i>V</i><span>建置 SOP</span></a>
         <div class="sb-group">Phase 2 · ETL / Glue</div>
-        <a href="#vpce"><i>六</i><span>Glue 前置 VPC Endpoints</span></a>
+        <a href="#vpce"><i>VI</i><span>Glue 前置 VPC Endpoints</span></a>
         <div class="sb-group">跨階段 · 參考</div>
-        <a href="#infra"><i>七</i><span>整體 AWS 設施</span></a>
-        <a href="#relmap"><i>八</i><span>設施關聯圖</span></a>
-        <a href="#glossary"><i>九</i><span>名詞解說</span></a>
+        <a href="#infra"><i>VII</i><span>整體 AWS 設施</span></a>
+        <a href="#relmap"><i>VIII</i><span>設施關聯圖</span></a>
+        <a href="#glossary"><i>IX</i><span>名詞解說</span></a>
       </nav>
     </div>
   </aside>
@@ -215,7 +215,7 @@
     <h1>Enterprise Data Hub — 地端 → AWS 資料中樞架構</h1>
     <p class="sub">以原始系統方向為骨幹：地端 ERP/BPM/HRM → <b>Migration</b> → Raw-Data-Replication → <b>Glue ETL</b> → ETL-Hub → <b>Data Hub</b> → 業務系統。整合 Phase 1 實測成果，補齊整體 AWS 設施，並納入 Phase 2–4 未來規劃。</p>
     <div class="meta-row">
-      <span><b>本期</b>　Phase 1 已實測（Full Load）· Phase 2 進行中（Glue 前置 VPC Endpoints）</span>
+      <span><b>範圍</b>　Phase 1 基礎建設（Full Load）· Phase 2 ETL / Glue（含前置 VPC Endpoints）</span>
       <span><b>區域</b>　AWS 東京 ap-northeast-1（AZ 1a / 1c）</span>
     </div>
   </div>
@@ -226,7 +226,7 @@
 <!-- 目標 -->
 <section id="goal">
   <span class="ptag t0">總覽</span>
-  <h2><span class="num">一</span>目標</h2>
+  <h2><span class="num">I</span>目標</h2>
   <p class="lead">規劃地端資料庫同步至雲端機器架構，含資料複製 / 移轉 / Hub / Center。</p>
   <div class="grid c2">
     <div class="card">
@@ -262,14 +262,14 @@
       <dt>Data Hub / Center</dt><dd>讀取 ETL-Hub 對外供應資料的應用層（EC2）。</dd>
       <dt>EC2</dt><dd>虛擬主機，執行 Data Hub / Center 運算。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
   </div>
 </section>
 
 <!-- 端到端 -->
 <section id="e2e">
   <span class="ptag t0">總覽</span>
-  <h2><span class="num">二</span>端到端總架構圖</h2>
+  <h2><span class="num">II</span>端到端總架構圖</h2>
   <p class="lead">全 Phase 資料流：來源 → 遷移 → Raw → ETL → Hub → 業務 / 分析 / AI。</p>
 
   <div class="flowbar">
@@ -355,14 +355,14 @@ flowchart TB
       <dt>RAG</dt><dd>檢索增強生成，降低 AI 幻覺（Phase 4）。</dd>
       <dt>MCP</dt><dd>AI Agent 標準化存取外部工具 / 資料的協定。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
   </div>
 </section>
 
 <!-- Phase1 VPC -->
 <section id="vpc">
   <span class="ptag t1">Phase 1 · 基礎建設</span>
-  <h2><span class="num">三</span>Phase 1 VPC 網路拓撲（實測成果）</h2>
+  <h2><span class="num">III</span>Phase 1 VPC 網路拓撲（實測成果）</h2>
   <p class="lead">已驗證 <code>Oracle → VPN → DMS → Raw-Data-Replication(RDS)</code> Full Load。每個 CIDR / 元件標示用途。</p>
 
   <div class="diagram hero">
@@ -436,14 +436,14 @@ AWS VPC 10.0.0.0/16                          用途：整體雲端私有網路
       <dt>DB Subnet Group</dt><dd>RDS 子網群組，須含 ≥2 AZ。</dd>
       <dt>VPC Endpoint</dt><dd>私網不繞公網存取 S3 等服務。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
   </div>
 </section>
 
 <!-- SG -->
 <section id="sg">
   <span class="ptag t1">Phase 1 · 基礎建設</span>
-  <h2><span class="num">四</span>Security Group 資料流（方向）</h2>
+  <h2><span class="num">IV</span>Security Group 資料流（方向）</h2>
   <p class="lead">以 SG 互相引用取代固定 IP；嚴禁 <code>0.0.0.0/0</code>。</p>
   <div class="diagram">
     <div class="mermaid">
@@ -483,14 +483,14 @@ flowchart LR
       <dt>NACL</dt><dd>子網層無狀態防火牆，排查連線問題的檢查項之一。</dd>
       <dt>CIDR</dt><dd>網段表示法，如公司 CIDR 選用來源。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
   </div>
 </section>
 
 <!-- SOP -->
 <section id="sop">
   <span class="ptag t1">Phase 1 · 基礎建設</span>
-  <h2><span class="num">五</span>Phase 1 建置 SOP</h2>
+  <h2><span class="num">V</span>Phase 1 建置 SOP</h2>
   <p class="lead">依「網路層 → 資料庫層 → 遷移層」三層，一次一步、完成驗證再下一步。關鍵設定對齊 Phase 1 實測參數。</p>
   <div class="diagram hero">
     <div class="mermaid">
@@ -566,14 +566,14 @@ flowchart LR
       <dt>LOB</dt><dd>大型欄位；本架構 Limited LOB 32KB。</dd>
       <dt>gp3</dt><dd>通用型 SSD，可線上擴充（只增不減）。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
   </div>
 </section>
 
 <!-- Phase 2 · Glue 前置 VPC Endpoints -->
 <section id="vpce">
   <span class="ptag t2">Phase 2 · ETL / Glue</span>
-  <h2><span class="num">六</span>Glue 前置作業：VPC Endpoints</h2>
+  <h2><span class="num">VI</span>Glue 前置作業：VPC Endpoints</h2>
   <p class="lead">Phase 2 要用 AWS Glue 把 Raw 轉成 ETL-Hub。Glue Worker 跑在 Private Subnet，呼叫 AWS API 會因無對外路由而失敗 → 用 <b>VPC Endpoint 走 AWS Backbone</b> 解決，而非開 NAT Gateway。</p>
 
   <div class="callout danger"><span class="h">⛔ 問題：Glue Connection 失敗</span>建立 Glue Connection 時報 <code>Failed to assume customer's role / Verify that your VPC has access to STS</code>。根因：Glue Worker 在 Private Subnet，Route Table 只有 <code>local</code> + VGW（<code>10.200/10.240</code>→地端），<b>沒有 <code>0.0.0.0/0</code></b> → 連不到 <code>sts.ap-northeast-1.amazonaws.com</code> → AssumeRole 失敗。</div>
@@ -586,7 +586,7 @@ flowchart LR
   end
   subgraph VPCEP["VPC Endpoints｜AWS Backbone"]
     direction TB
-    STS["STS<br/>Interface ✅ 已建"]
+    STS["STS<br/>Interface"]
     SM["Secrets Manager<br/>Interface"]
     LOG["CloudWatch Logs<br/>Interface"]
     S3E["S3<br/>Gateway"]
@@ -628,7 +628,7 @@ flowchart LR
       <tr><td>10</td><td>回 Glue 測試連線</td><td>✅ <code>Connection is ready for you to use</code></td></tr>
     </tbody>
   </table>
-  <div class="callout ok"><span class="h">✅ 結果</span>全部 Endpoint 到位後，Glue 成功 <b>AssumeRole</b> → 連 <b>Secrets Manager</b> → 寫 <b>CloudWatch Logs</b> → 連 <b>PostgreSQL RDS</b>，Connection 進入 <code>Ready</code>。</div>
+  <div class="callout ok"><span class="h">四個 Endpoint 的角色</span>四個到位後，Glue 才能完整 <b>AssumeRole</b>（STS）→ 讀憑證（<b>Secrets Manager</b>）→ 寫日誌（<b>CloudWatch Logs</b>）→ 存取 <b>S3</b>，並連上 <b>PostgreSQL RDS</b>。</div>
 
   <h3>解法：VPC Endpoint（不用 NAT Gateway）</h3>
   <p class="lead">企業 Data Center 是 Private Network，不希望 Private Subnet 透過 NAT 對外上網 → 改走 AWS Backbone。</p>
@@ -641,18 +641,18 @@ flowchart LR
     </tbody>
   </table>
 
-  <h3>VPC Endpoint 總表（已建 + 規劃）</h3>
-  <p class="lead">Required 四項皆已建、Private DNS Enabled、佈於 Subnet-A / Subnet-C；Optional 視後續擴充加入。</p>
+  <h3>VPC Endpoint 總表</h3>
+  <p class="lead">Required 四項為 Glue 運行所需（Private DNS Enabled、佈於 Subnet-A / Subnet-C）；Optional 依後續服務需要再加。</p>
   <table>
-    <thead><tr><th>類別</th><th>服務</th><th>型態</th><th>命名</th><th>狀態</th></tr></thead>
+    <thead><tr><th>類別</th><th>服務</th><th>型態</th><th>命名</th></tr></thead>
     <tbody>
-      <tr><td><span class="ph">Required</span></td><td>STS</td><td>Interface</td><td class="mono">vpce-sts</td><td>✅ 已建</td></tr>
-      <tr><td><span class="ph">Required</span></td><td>Secrets Manager</td><td>Interface</td><td class="mono">vpce-secretsmanager</td><td>✅ 已建</td></tr>
-      <tr><td><span class="ph">Required</span></td><td>CloudWatch Logs</td><td>Interface</td><td class="mono">vpce-cloudwatchlogs</td><td>✅ 已建</td></tr>
-      <tr><td><span class="ph">Required</span></td><td>S3</td><td>Gateway</td><td class="mono">vpce-s3</td><td>✅ 已建</td></tr>
-      <tr><td>Optional</td><td>KMS</td><td>Interface</td><td class="mono">—</td><td>後續</td></tr>
-      <tr><td>Optional</td><td>ECR API / ECR DKR</td><td>Interface</td><td class="mono">—</td><td>後續（容器映像）</td></tr>
-      <tr><td>Optional</td><td>SSM</td><td>Interface</td><td class="mono">—</td><td>後續</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>STS</td><td>Interface</td><td class="mono">vpce-sts</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>Secrets Manager</td><td>Interface</td><td class="mono">vpce-secretsmanager</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>CloudWatch Logs</td><td>Interface</td><td class="mono">vpce-cloudwatchlogs</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>S3</td><td>Gateway</td><td class="mono">vpce-s3</td></tr>
+      <tr><td>Optional</td><td>KMS</td><td>Interface</td><td class="mono">—</td></tr>
+      <tr><td>Optional</td><td>ECR API / ECR DKR</td><td>Interface</td><td class="mono">—（容器映像）</td></tr>
+      <tr><td>Optional</td><td>SSM</td><td>Interface</td><td class="mono">—</td></tr>
     </tbody>
   </table>
   <div class="grid c2">
@@ -714,14 +714,14 @@ flowchart LR
       <dt>Private DNS</dt><dd>讓 AWS 服務網域自動解析到 Endpoint 私有 IP。</dd>
       <dt>NAT Gateway</dt><dd>私網「只出不進」對外上網；本架構刻意不用。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
   </div>
 </section>
 
 <!-- 設施 -->
 <section id="infra">
   <span class="ptag tr">跨階段 · 參考</span>
-  <h2><span class="num">七</span>整體使用到的 AWS 設施</h2>
+  <h2><span class="num">VII</span>整體使用到的 AWS 設施</h2>
   <p class="lead">只給系統方向，落地實際必須的設施一併納入規劃。</p>
 
   <h3>網路 / 連線</h3>
@@ -795,14 +795,14 @@ flowchart LR
       <dt>VPC Endpoint</dt><dd>私網不繞公網存取 S3 等服務。</dd>
       <dt>Route Table</dt><dd>決定封包流向（Local / VGW / NAT，只增不刪既有）。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
   </div>
 </section>
 
 <!-- 設施關聯圖 -->
 <section id="relmap">
   <span class="ptag tr">跨階段 · 參考</span>
-  <h2><span class="num">八</span>設施關聯圖</h2>
+  <h2><span class="num">VIII</span>設施關聯圖</h2>
   <p class="lead">各 AWS 設施之間的關係:包含 / 套用 / 授權 / 提供帳密 / 加密 / 監控 / 讀寫。線條配色:<b style="color:#1f6feb">藍=資料流</b>、<b style="color:#64748b">灰=基礎連線</b>、<b style="color:#8b5cf6">紫=安全治理(SG / IAM / KMS / CloudWatch)</b>。</p>
   <div class="diagram hero">
     <div class="mermaid">
@@ -898,9 +898,9 @@ flowchart TB
 
   <h3>各階段範圍對照</h3>
   <div class="grid c4">
-    <div class="phase p1"><span class="badge">本期</span><span class="tag">Phase 1</span><h4>基礎建設 + Full Load</h4>
+    <div class="phase p1"><span class="tag">Phase 1</span><h4>基礎建設 + Full Load</h4>
       <ul><li>VPC</li><li>VPN</li><li>Route Table</li><li>Security Group</li><li>Oracle</li><li>PostgreSQL / RDS</li><li>DMS</li></ul></div>
-    <div class="phase p2"><span class="badge">進行中</span><span class="tag">Phase 2</span><h4>CDC + ETL / Glue</h4>
+    <div class="phase p2"><span class="tag">Phase 2</span><h4>CDC + ETL / Glue</h4>
       <ul><li>VPC Endpoints</li><li>CDC</li><li>EventBridge</li><li>Lambda</li><li>ETL / ETL-Hub</li><li>Glue</li></ul></div>
     <div class="phase p3"><span class="tag">Phase 3</span><h4>資料湖 + 分析</h4>
       <ul><li>S3 Data Lake</li><li>Athena</li><li>Redshift</li><li>AI Data Hub</li></ul></div>
@@ -917,14 +917,14 @@ flowchart TB
       <dt>CloudWatch</dt><dd>Logs / Metrics / Alarms 監控告警。</dd>
       <dt>CloudTrail</dt><dd>記錄 API 操作軌跡供稽核。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
   </div>
 </section>
 
 <!-- 名詞解說 -->
 <section id="glossary">
   <span class="ptag tr">跨階段 · 參考</span>
-  <h2><span class="num">九</span>名詞解說</h2>
+  <h2><span class="num">IX</span>名詞解說</h2>
   <p class="lead">本架構所有名詞的完整索引；各頁底部另有「📖 本頁名詞」就地速查。</p>
 
   <h3>網路 / 連線</h3>
@@ -1034,9 +1034,7 @@ flowchart TB
 
 <footer>
   <div class="wrap">
-    <b>Enterprise Data Hub — 地端 → AWS 資料中樞架構</b> · Phase 1（Full Load 已實測）· Phase 2（Glue 前置 VPC Endpoints 進行中）<br>
-    毀滅性操作禁令：禁止 DROP 類資料庫操作、禁止刪除 Docker volume、禁止 <code>rm -rf</code>;不可逆操作需人類負責人確認與備份。<br>
-    規範優先序：docs/Design-Base/* &gt; docs/Arch/* &gt; CLAUDE.md &gt; docs/Tasks/*
+    <b>Enterprise Data Hub — 地端 → AWS 資料中樞架構</b> · Phase 1 基礎建設 · Phase 2 ETL / Glue（含前置 VPC Endpoints）
   </div>
 </footer>
   </main>

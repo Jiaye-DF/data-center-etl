@@ -5,14 +5,14 @@
 > 架構圖報告版（可縮放 / 可列印）：[`aws-to-local-infra-arch.html`](aws-to-local-infra-arch.html)
 
 > **章節導覽（依 Phase 分類）**
-> - **總覽**：〈一〉目標 ·〈二〉端到端架構圖
-> - **Phase 1 · 基礎建設**：〈三〉VPC 網路拓撲（含 SG）·〈六〉Phase 1 關鍵參數 ·〈七〉建置 SOP
-> - **Phase 2 · ETL / Glue**：〈八〉Glue 前置：VPC Endpoints
-> - **跨階段 / 參考**：〈四〉整體 AWS 設施 ·〈五〉設施關聯圖 ·〈九〉名詞解說
+> - **總覽**：〈I〉目標 ·〈II〉端到端架構圖
+> - **Phase 1 · 基礎建設**：〈III〉VPC 網路拓撲（含 SG）·〈VI〉Phase 1 關鍵參數 ·〈VII〉建置 SOP
+> - **Phase 2 · ETL / Glue**：〈VIII〉Glue 前置：VPC Endpoints
+> - **跨階段 / 參考**：〈IV〉整體 AWS 設施 ·〈V〉設施關聯圖 ·〈IX〉名詞解說
 
 ---
 
-## 一、目標
+## I、目標
 
 規劃地端資料庫同步至雲端機器架構，含資料**複製 / 移轉 / Hub / Center**。
 
@@ -37,7 +37,7 @@
 
 ---
 
-## 二、端到端總架構圖（核心）
+## II、端到端總架構圖（核心）
 
 涵蓋全 Phase 資料流：地端來源 → 遷移 → Raw → ETL → Hub → 業務 / 分析 / AI。
 
@@ -88,7 +88,7 @@ flowchart TB
 
 ---
 
-## 三、Phase 1 VPC 網路拓撲（實測成果）
+## III、Phase 1 VPC 網路拓撲（實測成果）
 
 本期已驗證：`Oracle → VPN → DMS → Raw-Data-Replication(RDS)` Full Load。每個 CIDR / 元件標示用途。
 
@@ -165,7 +165,7 @@ flowchart LR
 
 ---
 
-## 四、整體使用到的 AWS 設施（清單）
+## IV、整體使用到的 AWS 設施（清單）
 
 > 只給系統方向，但實際落地必須的設施一併納入規劃。
 
@@ -222,7 +222,7 @@ flowchart LR
 
 ---
 
-## 五、設施關聯圖
+## V、設施關聯圖
 
 各 AWS 設施之間的關係：包含 / 套用 / 授權 / 提供帳密 / 加密 / 監控 / 讀寫。線條配色：**藍=資料流**、**灰=基礎連線**、**紫=安全治理（SG / IAM / KMS / CloudWatch）**。
 
@@ -304,11 +304,11 @@ flowchart TB
   linkStyle 15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30 stroke:#8b5cf6,stroke-width:1.5px
 ```
 
-> 各階段範圍對照見〈四、整體使用到的 AWS 設施〉的 Phase 欄。
+> 各階段範圍對照見〈IV、整體使用到的 AWS 設施〉的 Phase 欄。
 
 ---
 
-## 六、Phase 1 關鍵參數（實測）
+## VI、Phase 1 關鍵參數（實測）
 
 - **VPC/Subnet**：VPC `10.0.0.0/16`；Private `10.0.32.0/24`(AZ-a)；DB `10.0.33.0/24`(AZ-a)、`10.0.34.0/24`(AZ-c)。DB Subnet Group ≥2 AZ。
 - **Route Table**：`10.0.0.0/16`→Local、`10.200.0.0/16`→VGW、`10.240.0.0/16`→VGW（**只增不移除**）。
@@ -320,9 +320,9 @@ flowchart TB
 
 ---
 
-## 七、建置 SOP（Phase 1）
+## VII、建置 SOP（Phase 1）
 
-依「網路底層 → 資料庫 → 遷移」三層,一次一步、完成驗證再下一步。每一步的關鍵設定對齊〈六、Phase 1 關鍵參數〉。
+依「網路底層 → 資料庫 → 遷移」三層,一次一步、完成驗證再下一步。每一步的關鍵設定對齊〈VI、Phase 1 關鍵參數〉。
 
 ```mermaid
 flowchart LR
@@ -393,7 +393,7 @@ GRANT SELECT ON SYS.DBA_INDEXES      TO &DMS_USER;
 
 ---
 
-## 八、Phase 2 ｜ Glue 前置：VPC Endpoints
+## VIII、Phase 2 ｜ Glue 前置：VPC Endpoints
 
 > **Phase 2 · ETL / Glue** — 建立 AWS Glue 的前置作業。
 
@@ -421,7 +421,7 @@ flowchart LR
   end
   subgraph VPCEP["VPC Endpoints｜AWS Backbone"]
     direction TB
-    STS["STS Interface ✅ 已建"]
+    STS["STS Interface"]
     SM["Secrets Manager Interface"]
     LOG["CloudWatch Logs Interface"]
     S3E["S3 Gateway"]
@@ -449,7 +449,7 @@ flowchart LR
 | 9 | 核對 VPC Endpoint 總表(見下) | 4 個到位 |
 | 10 | 回 Glue 測試連線 | ✅ `Connection is ready for you to use` |
 
-> ✅ 全部 Endpoint 到位後,Glue 成功 AssumeRole → 連 Secrets Manager → 寫 CloudWatch Logs → 連 PostgreSQL RDS,Connection 進入 Ready。
+> 四個 Endpoint 的角色:到位後 Glue 才能完整 AssumeRole(STS)→ 讀憑證(Secrets Manager)→ 寫日誌(CloudWatch Logs)→ 存取 S3,並連上 PostgreSQL RDS。
 
 | 對照 | NAT Gateway | VPC Endpoint（採用） |
 | --- | --- | --- |
@@ -457,19 +457,19 @@ flowchart LR
 | 對外暴露面 | 私網可連整個 Internet | 只到指定 AWS 服務 |
 | 符合 Private First | ✗ | ✓ |
 
-### VPC Endpoint 總表（已建 + 規劃）
+### VPC Endpoint 總表
 
-Required 四項皆已建、Private DNS Enabled、佈於 Subnet-A / Subnet-C;Optional 視後續擴充加入。
+Required 四項為 Glue 運行所需(Private DNS Enabled、佈於 Subnet-A / Subnet-C);Optional 依後續服務需要再加。
 
-| 類別 | 服務 | 型態 | 命名 | 狀態 |
-| --- | --- | --- | --- | --- |
-| Required | STS | Interface | `vpce-sts` | ✅ 已建 |
-| Required | Secrets Manager | Interface | `vpce-secretsmanager` | ✅ 已建 |
-| Required | CloudWatch Logs | Interface | `vpce-cloudwatchlogs` | ✅ 已建 |
-| Required | S3 | Gateway | `vpce-s3` | ✅ 已建 |
-| Optional | KMS | Interface | — | 後續 |
-| Optional | ECR API / ECR DKR | Interface | — | 後續（容器映像） |
-| Optional | SSM | Interface | — | 後續 |
+| 類別 | 服務 | 型態 | 命名 |
+| --- | --- | --- | --- |
+| Required | STS | Interface | `vpce-sts` |
+| Required | Secrets Manager | Interface | `vpce-secretsmanager` |
+| Required | CloudWatch Logs | Interface | `vpce-cloudwatchlogs` |
+| Required | S3 | Gateway | `vpce-s3` |
+| Optional | KMS | Interface | — |
+| Optional | ECR API / ECR DKR | Interface | —（容器映像） |
+| Optional | SSM | Interface | — |
 
 - **Interface Endpoint**:建 ENI、吃 SG、走 Private DNS(STS / Secrets / Logs / KMS / ECR)。
 - **Gateway Endpoint**(S3 專用):不建 ENI、不吃 SG、改 Route Table(AWS 自動加 Prefix List `pl-xxxx` → Gateway Endpoint)。
@@ -501,7 +501,7 @@ Required 四項皆已建、Private DNS Enabled、佈於 Subnet-A / Subnet-C;Opti
 
 ---
 
-## 九、名詞解說
+## IX、名詞解說
 
 ### 網路 / 連線
 
