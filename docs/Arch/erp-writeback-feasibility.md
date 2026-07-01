@@ -20,7 +20,7 @@ Oracle →(DMS)→ Raw-Data-Replication →(Glue ETL)→ ETL-Hub → 業務系�
 
 ## II、結論(先講重點)
 
-1. **不要用 DMS 回寫。** DMS 是單向複製工具,來源端是唯讀帳號(`aws-to-local-infra-arch.md` § 六),硬做反向 task 是架構反模式。
+1. **不要用 DMS 回寫。** DMS 是單向複製工具,來源端是唯讀帳號(`aws-to-local-infra-arch.md` § VI Phase 1 關鍵參數),硬做反向 task 是架構反模式。
 2. **不要直接 INSERT/UPDATE Oracle 底表。** 會跳過 ERP 商業邏輯,造成資料「看得到、但商業意義是錯的」(詳見〈III〉)。
 3. **回寫必須走 ERP 認可的官方介面**,讓 ERP 自己執行完整邏輯。優先序:
    - **SOAP Web Service**(若 ERP 有開,且涵蓋所需寫入操作)→ **首選**
