@@ -6,9 +6,9 @@
 
 > **章節導覽（依 Phase 分類）**
 > - **總覽**：〈I〉目標 ·〈II〉端到端架構圖
-> - **Phase 1 · 基礎建設**：〈III〉VPC 網路拓撲（含 SG）·〈VI〉Phase 1 關鍵參數 ·〈VII〉建置 SOP
-> - **Phase 2 · ETL / Glue**：〈VIII〉Glue 前置：VPC Endpoints
-> - **跨階段 / 參考**：〈IV〉整體 AWS 設施 ·〈V〉設施關聯圖 ·〈IX〉名詞解說
+> - **Phase 1 · 基礎建設**：〈III〉VPC 網路拓撲（含 SG）·〈VI〉Phase 1 關鍵參數 ·〈VII〉Phase 1 流程圖
+> - **Phase 2 · ETL / Glue**：〈VIII〉Glue 前置：VPC Endpoints ·〈IX〉Glue Crawler + Data Catalog（Lake Formation 權限）·〈X〉Phase 2 流程圖
+> - **跨階段 / 參考**：〈IV〉整體 AWS 設施 ·〈V〉設施關聯圖 ·〈XI〉名詞解說
 
 ---
 
@@ -320,7 +320,7 @@ flowchart TB
 
 ---
 
-## VII、建置 SOP（Phase 1）
+## VII、Phase 1 流程圖
 
 依「網路底層 → 資料庫 → 遷移」三層,一次一步、完成驗證再下一步。每一步的關鍵設定對齊〈VI、Phase 1 關鍵參數〉。
 
@@ -501,7 +501,151 @@ Required 四項為 Glue 運行所需(Private DNS Enabled、佈於 Subnet-A / Sub
 
 ---
 
-## IX、名詞解說
+## IX、Phase 2 ｜ Glue Crawler + Data Catalog（Lake Formation 權限）
+
+> **Phase 2 · ETL / Glue** — VPC Endpoint 到位、Glue Connection Ready 後,建 Crawler 掃描 RDS PostgreSQL,把 Metadata 寫入 Glue Data Catalog。此階段的關卡不在網路,而在 **Lake Formation 權限模型**。
+
+Glue Workflow 推進到 `Glue Connection ✅ → Crawler → Data Catalog`:讓 Crawler 掃 `erp_migration_test`,把表結構寫入 Glue Database `erp_migration_test_catalog`。
+
+### 目標流程
+
+```mermaid
+flowchart LR
+  CONN["Glue Connection ✅<br/>glue-connection-rds-erp-oracle-test-pg"]
+  CRAWLER["Glue Crawler<br/>crawler-rds-erp-oracle-test-pg"]
+  RDS[("RDS PostgreSQL<br/>erp_migration_test")]
+  CAT["Glue Data Catalog<br/>erp_migration_test_catalog"]
+  LF{{"Lake Formation<br/>權限閘（Describe / Create Table）"}}
+
+  CONN --> CRAWLER
+  CRAWLER == "掃描 erp_migration_test/%" ==> RDS
+  CRAWLER == "寫入 Metadata" ==> CAT
+  LF -. 攔截 .-> CRAWLER
+```
+
+### 問題:Crawler 卡 Lake Formation 權限
+
+Crawler 執行後持續報:
+
+```
+Insufficient Lake Formation permission(s):
+Required Describe on erp_migration_test_ds_aaa_file
+(Database: erp_migration_test_catalog)
+```
+
+Glue Catalog `Tables = 0` — 一張 Metadata 都沒建成。
+
+### 錯誤演進(逐階段推進)
+
+每修正一層,錯誤就往前推一步,逐步逼近真正的缺口。
+
+| 階段 | 錯誤訊息 | 真正原因 |
+| --- | --- | --- |
+| 1 | `Crawler cannot be started / Verify the permissions in the IAM role` | **不是 IAM** — 是 Glue Connection 用錯 Subnet |
+| 2 | `Required Describe on erp_migration_test_catalog` | 缺 **Database** 層權限 |
+| 3 | `Required Describe on erp_migration_test_ds_aaa_file` | 開始檢查 **Table** 層權限 |
+| 4 | 刪 Database → `Required Drop on erp_migration_test_catalog` | 鐵證:該 DB 已由 **Lake Formation 接管** |
+
+### 根因:Database 已被 Lake Formation 接管
+
+1. **「Use only IAM access control」預設不回溯**:只對「設定啟用後新建、且仍持有 `IAMAllowedPrincipals`」的資源生效;既有 DB 不受惠。
+2. **明確 Grant 會移除 `IAMAllowedPrincipals`**:一旦對該 DB 的 Table/Column 下明確 LF Grant,Lake Formation 就把 `IAMAllowedPrincipals` 移除 → 資源翻轉成「LF 管控」→ 所有 principal(含 Crawler)都要明確 LF 授權。
+3. **只 Grant 了 Table + Column,缺 Database 層**(Describe + Create Table)→ Crawler 第一關就進不了。
+
+> 第四階段刪 DB 需 `Required Drop`,正是「DB 已被 LF 接管、連 Data Lake Admin 都要明確授權」的鐵證。
+
+### Crawler 授權檢查順序
+
+```mermaid
+flowchart LR
+  A["Database<br/>Describe"] --> B["Database<br/>Create_Table"] --> C["Table<br/>Describe / Alter"] --> D["寫入 / 更新<br/>Metadata"]
+```
+
+第一關 Database Describe 過不了,錯誤會往下傳到正在處理的 table,所以看到的是「table 的 Required Describe」,但真正缺口在 Database 層。
+
+### 解法:Lake Formation 三層權限模型(非破壞性)
+
+對 Principal `Glue-ServiceRole-ERP-Hub` 補齊三層 Grant,**不刪 DB**:
+
+| Resource | 名稱 | Permissions |
+| --- | --- | --- |
+| **Database** | `erp_migration_test_catalog` | Describe · Create Table · Alter |
+| **Table** | `ALL_TABLES` | Describe · Select · Insert · Alter · Delete（Drop 選用） |
+| **Column** | `ALL_COLUMNS` | Select |
+
+> ⚠️ 不走「刪 DB 讓預設重建」那條路:刪除屬破壞性(且此 DB 已被 LF 管控要 `Drop` 權限)。**補 Database Grant 才是最小、最安全的修法**,補齊後根本不需要重建。
+
+### 結果
+
+補上 Database 層後重跑 Crawler → `Tables > 0`,Metadata 建立成功 → 進入下一步 **Visual ETL**。
+
+### 已排除(非主因)
+
+`IAM` / `Secrets Manager` / `VPC` / `Route Table` / `Security Group` / `Glue Connection` / `PostgreSQL Authentication` / `Hybrid Access Mode` — 皆已驗證正常。Connection Test / `GetSecretValue` / `GetConnection` 全 Success 只證明「連得到 DB、拿得到憑證」,與「能否寫進 Glue Catalog」是兩條獨立授權鏈;問題單純在 **Data Catalog 的 Lake Formation 授權鏈**。
+
+---
+
+## X、Phase 2 流程圖
+
+> **Phase 2 · ETL / Glue** — 承接 Phase 1 落地的 Raw-Data-Replication,把 Glue 前置到 Crawler 建 Metadata 的完整順序整理成流程圖。做法與 Phase 1 一致:一次一步、完成驗證再下一步。
+
+依「① 網路前置(VPC Endpoints)→ ② Glue 連線 / 掃描 → ③ Lake Formation 權限 → ④ ETL 轉換」四層推進。
+
+```mermaid
+flowchart LR
+  subgraph EP["① 網路前置層（VPC Endpoints）"]
+    direction TB
+    SGV["1. SG-VPCE-AWS-Services<br/>Inbound 443 ← SG-ETL-Glue"]
+    IEP["2. Interface Endpoints<br/>STS · Secrets Manager · CloudWatch Logs<br/>（Private DNS on · Subnet-A/C）"]
+    GEP["3. S3 Gateway Endpoint<br/>改 Route Table（Prefix List pl-xxxx）"]
+    SGV --> IEP --> GEP
+  end
+  subgraph GL["② Glue 連線 / 掃描層"]
+    direction TB
+    CONN["4. Glue Connection<br/>PostgreSQL · 同 RDS VPC/Subnet · SG-ETL-Glue"]
+    GDB["5. Glue Database<br/>erp_migration_test_catalog"]
+    CR["6. Glue Crawler<br/>Include erp_migration_test/% · On-Demand"]
+    CONN --> GDB --> CR
+  end
+  subgraph LF["③ Lake Formation 權限層"]
+    direction TB
+    DBG["7. Grant Database<br/>Describe · Create Table · Alter"]
+    TBG["8. Grant Table / Column<br/>ALL_TABLES · ALL_COLUMNS"]
+    RUN["9. 執行 Crawler → 驗證<br/>Tables > 0"]
+    DBG --> TBG --> RUN
+  end
+  subgraph ET["④ ETL 轉換層（後續）"]
+    direction TB
+    ETLJ["10. Visual ETL Job<br/>Raw → 轉換 → ETL-Hub"]
+    SCH["11. 排程編排<br/>EventBridge → Lambda"]
+    ETLJ --> SCH
+  end
+  GEP ==> CONN
+  CR ==> DBG
+  RUN ==> ETLJ
+```
+
+### 逐步明細
+
+| # | 步驟 | 元件 / 服務 | 關鍵設定 | 目的 |
+| --- | --- | --- | --- | --- |
+| 1 | 建共用 SG | SG-VPCE-AWS-Services | Inbound `443` ← `SG-ETL-Glue`;Outbound All | 放行 Glue → Endpoint 流量 |
+| 2 | 建 Interface Endpoints | STS / Secrets Manager / CloudWatch Logs | Private DNS on、佈於 Subnet-A/C、掛 `SG-VPCE-AWS-Services` | 私網走 Backbone:AssumeRole / 讀憑證 / 寫 log |
+| 3 | 建 S3 Gateway Endpoint | S3(Gateway) | 改 Route Table `RT-ERP-Hub-Test-DB`(自動加 Prefix List `pl-xxxx`) | 私網存取 S3 不繞公網 |
+| 4 | 建 Glue Connection + 測試 | Glue Connection(PostgreSQL) | 同 RDS VPC、Private Subnet-A/C、`SG-ETL-Glue`;先 Test connection | 建立並驗通 Glue → RDS 連線 |
+| 5 | 建 Glue Database | Data Catalog Database | `erp_migration_test_catalog` | Crawler 寫入 Metadata 的目標 |
+| 6 | 建 Glue Crawler | Glue Crawler | Source PostgreSQL、Include `erp_migration_test/%`、IAM Role `Glue-ServiceRole-ERP-Hub`、On-Demand | 掃描來源結構 |
+| 7 | Grant Database 權限 | Lake Formation | Principal `Glue-ServiceRole-ERP-Hub`;Database **Describe + Create Table + Alter** | 讓 Crawler 進得了 Database 層(關鍵缺口) |
+| 8 | Grant Table / Column | Lake Formation | `ALL_TABLES`(Describe/Select/Insert/Alter/Delete)、`ALL_COLUMNS`(Select) | 讓 Crawler 建 / 改表 Metadata |
+| 9 | 執行 Crawler + 驗證 | Glue Crawler | On-Demand Run → 查 Data Catalog | 確認 `Tables > 0`、Metadata 建立成功 |
+| 10 | 建 Visual ETL Job | Glue ETL(後續) | Source = Catalog → 轉換 → Target RDS `ETL-Hub` | Raw → ETL-Hub 清洗轉換 |
+| 11 | 排程編排 | EventBridge + Lambda(後續) | 定時觸發 ETL / 流程編排 | 自動化 ETL 執行 |
+
+> **目前進度**:Step 1–9 已完成並驗證 — Crawler 與 Data Catalog 已產出,`Tables > 0`、Metadata 建立成功;Step 10–11(Visual ETL / 排程)為下一步規劃。
+
+---
+
+## XI、名詞解說
 
 ### 網路 / 連線
 
@@ -558,6 +702,9 @@ Required 四項為 Glue 運行所需(Private DNS Enabled、佈於 Subnet-A / Sub
 | AWS Glue | 無伺服器 ETL | Raw → ETL-Hub 轉換（Jobs/Crawler/Catalog） |
 | ETL | Extract-Transform-Load | 擷取 → 轉換 → 載入 |
 | Data Catalog | 資料目錄 | Glue 維護的表結構 / 中繼資料 |
+| Lake Formation | 資料湖權限治理 | 在 IAM 之上對 Glue Catalog 的 Database / Table / Column 做細粒度授權 |
+| IAMAllowedPrincipals | LF 相容群組 | 資源持有它時退回 IAM-only;被移除即翻轉成 LF 強制授權 |
+| Data Lake Administrator | 資料湖管理員 | Lake Formation 最高權限者,可授權 / 撤銷各資源 |
 | EventBridge | 事件匯流排 | 排程 / 事件觸發 ETL |
 | Lambda | 無伺服器函式 | 流程編排 / 輕量處理 |
 | EC2 | Elastic Compute Cloud | 虛擬主機（Data Hub / Center） |

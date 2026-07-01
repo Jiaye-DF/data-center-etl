@@ -31,11 +31,26 @@
 
   /* 版面：左 sidebar（貼死最左、整條到底、內層 sticky）+ 右內容欄（含 cover） */
   .layout{display:flex;align-items:stretch;min-height:100vh}
-  .sidebar{flex:none;width:264px;background:#f7fafd;border-right:1px solid var(--line);z-index:20}
+  .sidebar{flex:none;width:264px;background:#f7fafd;border-right:1px solid var(--line);z-index:20;
+    transition:width .2s ease}
   .sb-inner{position:sticky;top:0;max-height:100vh;overflow-y:auto;padding:20px 14px}
   .main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
   .sb-title{color:var(--orange);font-weight:800;font-size:14px;letter-spacing:.16em;text-transform:uppercase;
     padding:6px 10px 12px;display:flex;align-items:center;gap:7px}
+  .sb-toggle{flex:none;width:28px;height:28px;border-radius:7px;border:1px solid var(--line);
+    background:#fff;color:var(--navy);cursor:pointer;font-size:15px;font-weight:800;line-height:1;
+    display:grid;place-items:center;font-family:inherit;transition:transform .2s ease}
+  .sb-toggle:hover{background:var(--orange);color:#3a2400}
+  .sb-title-txt{flex:1 1 auto}
+  /* 收合狀態：sidebar 縮成細條，只留切換鈕 */
+  .layout.sb-collapsed .sidebar{width:44px}
+  .layout.sb-collapsed .sb-inner{padding:14px 6px}
+  .layout.sb-collapsed .sb-title{justify-content:center;padding:0}
+  .layout.sb-collapsed .sb-title-txt,
+  .layout.sb-collapsed .progress,
+  .layout.sb-collapsed .sb-count,
+  .layout.sb-collapsed nav.toc{display:none}
+  .layout.sb-collapsed .sb-toggle{transform:rotate(180deg)}
   .progress{height:5px;border-radius:99px;background:rgba(15,23,42,.08);margin:0 10px 8px;overflow:hidden}
   .progress > span{display:block;height:100%;width:0;background:var(--orange);transition:width .3s ease}
   .sb-count{color:var(--muted);font-size:14px;font-weight:600;padding:0 10px 14px}
@@ -187,7 +202,10 @@
 <div class="layout">
   <aside class="sidebar">
     <div class="sb-inner">
-      <div class="sb-title">📑 目錄（依 Phase）</div>
+      <div class="sb-title">
+        <button class="sb-toggle" id="sbToggle" type="button" title="收合 / 展開目錄" aria-label="收合目錄">«</button>
+        <span class="sb-title-txt">📑 目錄</span>
+      </div>
       <div class="progress"><span></span></div>
       <div class="sb-count" id="sbCount"></div>
       <nav class="toc">
@@ -197,13 +215,15 @@
         <div class="sb-group">Phase 1 · 基礎建設</div>
         <a href="#vpc"><i>III</i><span>VPC 網路拓撲</span></a>
         <a href="#sg"><i>IV</i><span>Security Group 資料流</span></a>
-        <a href="#sop"><i>V</i><span>建置 SOP</span></a>
+        <a href="#sop"><i>V</i><span>Phase 1 流程圖</span></a>
         <div class="sb-group">Phase 2 · ETL / Glue</div>
         <a href="#vpce"><i>VI</i><span>Glue 前置 VPC Endpoints</span></a>
+        <a href="#crawler"><i>VII</i><span>Glue Crawler + Lake Formation</span></a>
+        <a href="#sop2"><i>VIII</i><span>Phase 2 流程圖</span></a>
         <div class="sb-group">跨階段 · 參考</div>
-        <a href="#infra"><i>VII</i><span>整體 AWS 設施</span></a>
-        <a href="#relmap"><i>VIII</i><span>設施關聯圖</span></a>
-        <a href="#glossary"><i>IX</i><span>名詞解說</span></a>
+        <a href="#infra"><i>IX</i><span>整體 AWS 設施</span></a>
+        <a href="#relmap"><i>X</i><span>設施關聯圖</span></a>
+        <a href="#glossary"><i>XI</i><span>名詞解說</span></a>
       </nav>
     </div>
   </aside>
@@ -215,7 +235,7 @@
     <h1>Enterprise Data Hub — 地端 → AWS 資料中樞架構</h1>
     <p class="sub">以原始系統方向為骨幹：地端 ERP/BPM/HRM → <b>Migration</b> → Raw-Data-Replication → <b>Glue ETL</b> → ETL-Hub → <b>Data Hub</b> → 業務系統。整合 Phase 1 實測成果，補齊整體 AWS 設施，並納入 Phase 2–4 未來規劃。</p>
     <div class="meta-row">
-      <span><b>範圍</b>　Phase 1 基礎建設（Full Load）· Phase 2 ETL / Glue（含前置 VPC Endpoints）</span>
+      <span><b>範圍</b>　Phase 1 基礎建設（Full Load）· Phase 2 ETL / Glue（VPC Endpoints · Crawler + Data Catalog / Lake Formation）</span>
       <span><b>區域</b>　AWS 東京 ap-northeast-1（AZ 1a / 1c）</span>
     </div>
   </div>
@@ -262,7 +282,7 @@
       <dt>Data Hub / Center</dt><dd>讀取 ETL-Hub 對外供應資料的應用層（EC2）。</dd>
       <dt>EC2</dt><dd>虛擬主機，執行 Data Hub / Center 運算。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
   </div>
 </section>
 
@@ -355,7 +375,7 @@ flowchart TB
       <dt>RAG</dt><dd>檢索增強生成，降低 AI 幻覺（Phase 4）。</dd>
       <dt>MCP</dt><dd>AI Agent 標準化存取外部工具 / 資料的協定。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
   </div>
 </section>
 
@@ -436,7 +456,7 @@ AWS VPC 10.0.0.0/16                          用途：整體雲端私有網路
       <dt>DB Subnet Group</dt><dd>RDS 子網群組，須含 ≥2 AZ。</dd>
       <dt>VPC Endpoint</dt><dd>私網不繞公網存取 S3 等服務。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
   </div>
 </section>
 
@@ -483,14 +503,14 @@ flowchart LR
       <dt>NACL</dt><dd>子網層無狀態防火牆，排查連線問題的檢查項之一。</dd>
       <dt>CIDR</dt><dd>網段表示法，如公司 CIDR 選用來源。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
   </div>
 </section>
 
-<!-- SOP -->
+<!-- Phase 1 流程圖 -->
 <section id="sop">
   <span class="ptag t1">Phase 1 · 基礎建設</span>
-  <h2><span class="num">V</span>Phase 1 建置 SOP</h2>
+  <h2><span class="num">V</span>Phase 1 流程圖</h2>
   <p class="lead">依「網路層 → 資料庫層 → 遷移層」三層，一次一步、完成驗證再下一步。關鍵設定對齊 Phase 1 實測參數。</p>
   <div class="diagram hero">
     <div class="mermaid">
@@ -527,7 +547,7 @@ flowchart LR
   classDef mig fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
   class VPC,SUB,VPN,RT,SG net; class DBG,RDS db; class DMS,EP,TM,TASK,VER mig;
     </div>
-    <div class="cap">圖 4 — Phase 1 建置 SOP（① 網路層 → ② 資料庫層 → ③ 遷移層，大區塊水平、區塊內垂直）</div>
+    <div class="cap">圖 4 — Phase 1 流程圖（① 網路層 → ② 資料庫層 → ③ 遷移層，大區塊水平、區塊內垂直）</div>
   </div>
 
   <h3>逐步明細</h3>
@@ -566,7 +586,7 @@ flowchart LR
       <dt>LOB</dt><dd>大型欄位；本架構 Limited LOB 32KB。</dd>
       <dt>gp3</dt><dd>通用型 SSD，可線上擴充（只增不減）。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
   </div>
 </section>
 
@@ -714,14 +734,198 @@ flowchart LR
       <dt>Private DNS</dt><dd>讓 AWS 服務網域自動解析到 Endpoint 私有 IP。</dd>
       <dt>NAT Gateway</dt><dd>私網「只出不進」對外上網；本架構刻意不用。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+  </div>
+</section>
+
+<!-- Phase 2 · Glue Crawler + Lake Formation -->
+<section id="crawler">
+  <span class="ptag t2">Phase 2 · ETL / Glue</span>
+  <h2><span class="num">VII</span>Glue Crawler + Data Catalog（Lake Formation 權限）</h2>
+  <p class="lead">VPC Endpoint 到位、Glue Connection Ready 後，建 Crawler 掃描 RDS PostgreSQL，把 Metadata 寫入 Glue Data Catalog。此階段的關卡不在網路，而在 <b>Lake Formation 權限模型</b>。</p>
+
+  <div class="flowbar">
+    <span class="n acc">Glue Connection ✅</span><span class="a">→</span>
+    <span class="n">Crawler</span><span class="a">→</span>
+    <span class="n">掃描 RDS</span><span class="a">→</span>
+    <span class="n">Data Catalog</span><span class="a">→</span>
+    <span class="n acc">Visual ETL</span>
+  </div>
+
+  <div class="diagram hero">
+    <div class="mermaid">
+flowchart LR
+  CONN["Glue Connection ✅<br/>glue-connection-rds-erp-oracle-test-pg"]
+  CRAWLER["Glue Crawler<br/>crawler-rds-erp-oracle-test-pg"]
+  RDS[("RDS PostgreSQL<br/>erp_migration_test")]
+  CAT["Glue Data Catalog<br/>erp_migration_test_catalog"]
+  LF{{"Lake Formation<br/>權限閘"}}
+
+  CONN --> CRAWLER
+  CRAWLER == "掃描 erp_migration_test/%" ==> RDS
+  CRAWLER == "寫入 Metadata" ==> CAT
+  LF -. "Describe / Create Table 攔截" .-> CRAWLER
+
+  classDef p fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
+  classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  classDef gate fill:#f0ecf8,stroke:#5b4a8a,color:#3f3361;
+  class CONN,CRAWLER,CAT p; class RDS db; class LF gate;
+    </div>
+    <div class="cap">圖 6 — Glue Crawler 掃描 RDS 寫入 Data Catalog，Lake Formation 為權限閘</div>
+  </div>
+
+  <div class="callout danger"><span class="h">⛔ 問題：Crawler 卡 Lake Formation 權限</span>Crawler 執行後持續報 <code>Insufficient Lake Formation permission(s): Required Describe on erp_migration_test_ds_aaa_file</code>，Glue Catalog <code>Tables = 0</code> — 一張 Metadata 都沒建成。</div>
+
+  <h3>錯誤演進（逐階段推進）</h3>
+  <p class="lead">每修正一層，錯誤就往前推一步，逐步逼近真正的缺口。</p>
+  <table>
+    <thead><tr><th>階段</th><th>錯誤訊息</th><th>真正原因</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>Crawler cannot be started / Verify the permissions in the IAM role</code></td><td><b>不是 IAM</b> — 是 Glue Connection 用錯 Subnet</td></tr>
+      <tr><td>2</td><td><code>Required Describe on erp_migration_test_catalog</code></td><td>缺 <b>Database</b> 層權限</td></tr>
+      <tr><td>3</td><td><code>Required Describe on erp_migration_test_ds_aaa_file</code></td><td>開始檢查 <b>Table</b> 層權限</td></tr>
+      <tr><td>4</td><td>刪 Database → <code>Required Drop on erp_migration_test_catalog</code></td><td>鐵證：該 DB 已由 <b>Lake Formation 接管</b></td></tr>
+    </tbody>
+  </table>
+
+  <h3>根因：Database 已被 Lake Formation 接管</h3>
+  <div class="grid c2">
+    <div class="card"><h3 style="margin-top:0">① 預設不回溯</h3>「Use only IAM access control」只對<b>設定啟用後新建、且仍持有 <code>IAMAllowedPrincipals</code></b> 的資源生效；既有 DB 不受惠。</div>
+    <div class="card"><h3 style="margin-top:0">② 明確 Grant 會移除 IAMAllowedPrincipals</h3>一旦對該 DB 的 Table/Column 下明確 LF Grant，<code>IAMAllowedPrincipals</code> 被移除 → 資源翻轉成「LF 管控」→ 所有 principal（含 Crawler）都要明確 LF 授權。</div>
+    <div class="card"><h3 style="margin-top:0">③ 缺 Database 層</h3>目前只 Grant 了 <b>Table + Column</b>，缺 <b>Database</b>（Describe + Create Table）→ Crawler 第一關就進不了。</div>
+    <div class="card"><h3 style="margin-top:0">鐵證</h3>第四階段刪 DB 需 <code>Required Drop</code>，正是「DB 已被 LF 接管、連 Data Lake Admin 都要明確授權」的證明。</div>
+  </div>
+
+  <h3>Crawler 授權檢查順序</h3>
+  <div class="diagram">
+    <div class="mermaid">
+flowchart LR
+  A["Database<br/>Describe"] --> B["Database<br/>Create_Table"] --> C["Table<br/>Describe / Alter"] --> D["寫入 / 更新<br/>Metadata"]
+  classDef s fill:#f0ecf8,stroke:#5b4a8a,color:#3f3361;
+  class A,B,C,D s;
+    </div>
+    <div class="cap">圖 7 — Crawler 依序檢查授權；第一關 Database Describe 過不了，錯誤會往下傳到正在處理的 table</div>
+  </div>
+  <p class="lead">所以看到的是「table 的 <code>Required Describe</code>」，但真正缺口在 <b>Database 層</b>。</p>
+
+  <h3>解法：Lake Formation 三層權限模型（非破壞性）</h3>
+  <p class="lead">對 Principal <code>Glue-ServiceRole-ERP-Hub</code> 補齊三層 Grant，<b>不刪 DB</b>。</p>
+  <table>
+    <thead><tr><th>Resource</th><th>名稱</th><th>Permissions</th></tr></thead>
+    <tbody>
+      <tr><td><span class="ph">Database</span></td><td class="mono">erp_migration_test_catalog</td><td>Describe · Create Table · Alter</td></tr>
+      <tr><td><span class="ph">Table</span></td><td class="mono">ALL_TABLES</td><td>Describe · Select · Insert · Alter · Delete（Drop 選用）</td></tr>
+      <tr><td><span class="ph">Column</span></td><td class="mono">ALL_COLUMNS</td><td>Select</td></tr>
+    </tbody>
+  </table>
+  <div class="callout warn"><span class="h">⚠ 不走刪 DB 重建那條路</span>刪除屬破壞性（且此 DB 已被 LF 管控要 <code>Drop</code> 權限）。<b>補 Database Grant 才是最小、最安全的修法</b>，補齊後根本不需要重建。</div>
+
+  <div class="callout ok"><span class="h">✅ 結果</span>補上 Database 層後重跑 Crawler → <code>Tables &gt; 0</code>，Metadata 建立成功 → 進入下一步 <b>Visual ETL</b>。</div>
+
+  <h3>已排除（非主因）</h3>
+  <p>Connection Test / <code>GetSecretValue</code> / <code>GetConnection</code> 全 Success，只證明「連得到 DB、拿得到憑證」，與「能否寫進 Glue Catalog」是兩條獨立授權鏈。以下皆已驗證正常，問題單純在 <b>Data Catalog 的 Lake Formation 授權鏈</b>：</p>
+  <p><code>IAM</code> · <code>Secrets Manager</code> · <code>VPC</code> · <code>Route Table</code> · <code>Security Group</code> · <code>Glue Connection</code> · <code>PostgreSQL Authentication</code> · <code>Hybrid Access Mode</code></p>
+
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>Lake Formation</dt><dd>在 IAM 之上對 Glue Catalog 的 Database / Table / Column 做細粒度授權治理。</dd>
+      <dt>Glue Crawler</dt><dd>掃描資料源結構，把表 Metadata 寫入 Data Catalog。</dd>
+      <dt>Data Catalog</dt><dd>Glue 維護的表結構 / 中繼資料庫。</dd>
+      <dt>IAMAllowedPrincipals</dt><dd>LF 相容群組；資源持有它時退回 IAM-only，被移除即翻轉成 LF 強制授權。</dd>
+      <dt>Data Lake Administrator</dt><dd>Lake Formation 最高權限者，可授權 / 撤銷各資源。</dd>
+      <dt>Hybrid Access Mode</dt><dd>IAM 與 LF 授權並存的過渡模式；本案未使用。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+  </div>
+</section>
+
+<!-- Phase 2 · 流程圖 -->
+<section id="sop2">
+  <span class="ptag t2">Phase 2 · ETL / Glue</span>
+  <h2><span class="num">VIII</span>Phase 2 流程圖</h2>
+  <p class="lead">依「① 網路前置（VPC Endpoints）→ ② Glue 連線 / 掃描 → ③ Lake Formation 權限 → ④ ETL 轉換」四層，一次一步、完成驗證再下一步。關鍵設定對齊 Phase 2 實測。</p>
+
+  <div class="diagram hero">
+    <div class="mermaid">
+flowchart LR
+  subgraph EP["① 網路前置層（VPC Endpoints）"]
+    direction TB
+    SGV["1. SG-VPCE-AWS-Services<br/>Inbound 443 ← SG-ETL-Glue"]
+    IEP["2. Interface Endpoints<br/>STS · Secrets Manager · CloudWatch Logs<br/>（Private DNS on · Subnet-A/C）"]
+    GEP["3. S3 Gateway Endpoint<br/>改 Route Table（Prefix List pl-xxxx）"]
+    SGV --> IEP --> GEP
+  end
+  subgraph GL["② Glue 連線 / 掃描層"]
+    direction TB
+    CONN["4. Glue Connection<br/>PostgreSQL · 同 RDS VPC/Subnet · SG-ETL-Glue"]
+    GDB["5. Glue Database<br/>erp_migration_test_catalog"]
+    CR["6. Glue Crawler<br/>Include erp_migration_test/% · On-Demand"]
+    CONN --> GDB --> CR
+  end
+  subgraph LF["③ Lake Formation 權限層"]
+    direction TB
+    DBG["7. Grant Database<br/>Describe · Create Table · Alter"]
+    TBG["8. Grant Table / Column<br/>ALL_TABLES · ALL_COLUMNS"]
+    RUN["9. 執行 Crawler → 驗證<br/>Tables &gt; 0"]
+    DBG --> TBG --> RUN
+  end
+  subgraph ET["④ ETL 轉換層（後續）"]
+    direction TB
+    ETLJ["10. Visual ETL Job<br/>Raw → 轉換 → ETL-Hub"]
+    SCH["11. 排程編排<br/>EventBridge → Lambda"]
+    ETLJ --> SCH
+  end
+  GEP ==> CONN
+  CR ==> DBG
+  RUN ==> ETLJ
+
+  classDef net fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
+  classDef glue fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
+  classDef lf fill:#f0ecf8,stroke:#5b4a8a,color:#3f3361;
+  classDef etl fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  class SGV,IEP,GEP net; class CONN,GDB,CR glue; class DBG,TBG,RUN lf; class ETLJ,SCH etl;
+    </div>
+    <div class="cap">圖 8 — Phase 2 流程圖（① 網路前置 → ② Glue 連線/掃描 → ③ Lake Formation 權限 → ④ ETL 轉換）</div>
+  </div>
+
+  <h3>逐步明細</h3>
+  <table>
+    <thead><tr><th>#</th><th>步驟</th><th>元件 / 服務</th><th>關鍵設定</th><th>目的</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>建共用 SG</td><td>SG-VPCE-AWS-Services</td><td>Inbound <code>443</code> ← <code>SG-ETL-Glue</code>；Outbound All</td><td>放行 Glue → Endpoint 流量</td></tr>
+      <tr><td>2</td><td>建 Interface Endpoints</td><td>STS / Secrets Manager / CloudWatch Logs</td><td>Private DNS on、佈於 Subnet-A/C、掛 <code>SG-VPCE-AWS-Services</code></td><td>私網走 Backbone：AssumeRole / 讀憑證 / 寫 log</td></tr>
+      <tr><td>3</td><td>建 S3 Gateway Endpoint</td><td>S3（Gateway）</td><td>改 Route Table <code>RT-ERP-Hub-Test-DB</code>（自動加 Prefix List <code>pl-xxxx</code>）</td><td>私網存取 S3 不繞公網</td></tr>
+      <tr><td>4</td><td>建 Glue Connection + 測試</td><td>Glue Connection（PostgreSQL）</td><td>同 RDS VPC、Private Subnet-A/C、<code>SG-ETL-Glue</code>；先 Test connection</td><td>建立並驗通 Glue → RDS 連線</td></tr>
+      <tr><td>5</td><td>建 Glue Database</td><td>Data Catalog Database</td><td><code>erp_migration_test_catalog</code></td><td>Crawler 寫入 Metadata 的目標</td></tr>
+      <tr><td>6</td><td>建 Glue Crawler</td><td>Glue Crawler</td><td>Source PostgreSQL、Include <code>erp_migration_test/%</code>、IAM Role <code>Glue-ServiceRole-ERP-Hub</code>、On-Demand</td><td>掃描來源結構</td></tr>
+      <tr><td>7</td><td>Grant Database 權限</td><td>Lake Formation</td><td>Principal <code>Glue-ServiceRole-ERP-Hub</code>；Database <b>Describe + Create Table + Alter</b></td><td>讓 Crawler 進得了 Database 層（關鍵缺口）</td></tr>
+      <tr><td>8</td><td>Grant Table / Column</td><td>Lake Formation</td><td><code>ALL_TABLES</code>（Describe/Select/Insert/Alter/Delete）、<code>ALL_COLUMNS</code>（Select）</td><td>讓 Crawler 建 / 改表 Metadata</td></tr>
+      <tr><td>9</td><td>執行 Crawler + 驗證</td><td>Glue Crawler</td><td>On-Demand Run → 查 Data Catalog</td><td>確認 <code>Tables &gt; 0</code>、Metadata 建立成功</td></tr>
+      <tr><td>10</td><td>建 Visual ETL Job</td><td>Glue ETL（後續）</td><td>Source = Catalog → 轉換 → Target RDS <code>ETL-Hub</code></td><td>Raw → ETL-Hub 清洗轉換</td></tr>
+      <tr><td>11</td><td>排程編排</td><td>EventBridge + Lambda（後續）</td><td>定時觸發 ETL / 流程編排</td><td>自動化 ETL 執行</td></tr>
+    </tbody>
+  </table>
+  <div class="callout ok"><span class="h">✅ 目前進度</span>Step 1–9 已完成並驗證（Crawler 成功建立 Metadata，<code>Tables &gt; 0</code>）；Step 10–11（Visual ETL / 排程）為下一步規劃。</div>
+
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>VPC Endpoint</dt><dd>Private Subnet 走 AWS Backbone 存取 AWS 服務（Interface / Gateway 兩型）。</dd>
+      <dt>Glue Connection</dt><dd>Glue 連 RDS 的連線設定，含 VPC / Subnet / SG。</dd>
+      <dt>Glue Crawler</dt><dd>掃描資料源結構，把 Metadata 寫入 Data Catalog。</dd>
+      <dt>Lake Formation</dt><dd>在 IAM 之上對 Catalog 的 Database / Table / Column 細粒度授權。</dd>
+      <dt>Visual ETL</dt><dd>Glue 視覺化 ETL Job，把 Raw 轉換寫入 ETL-Hub。</dd>
+      <dt>EventBridge / Lambda</dt><dd>排程觸發 + 流程編排，驅動 ETL 自動執行。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
   </div>
 </section>
 
 <!-- 設施 -->
 <section id="infra">
   <span class="ptag tr">跨階段 · 參考</span>
-  <h2><span class="num">VII</span>整體使用到的 AWS 設施</h2>
+  <h2><span class="num">IX</span>整體使用到的 AWS 設施</h2>
   <p class="lead">只給系統方向，落地實際必須的設施一併納入規劃。</p>
 
   <h3>網路 / 連線</h3>
@@ -795,14 +999,14 @@ flowchart LR
       <dt>VPC Endpoint</dt><dd>私網不繞公網存取 S3 等服務。</dd>
       <dt>Route Table</dt><dd>決定封包流向（Local / VGW / NAT，只增不刪既有）。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
   </div>
 </section>
 
 <!-- 設施關聯圖 -->
 <section id="relmap">
   <span class="ptag tr">跨階段 · 參考</span>
-  <h2><span class="num">VIII</span>設施關聯圖</h2>
+  <h2><span class="num">X</span>設施關聯圖</h2>
   <p class="lead">各 AWS 設施之間的關係:包含 / 套用 / 授權 / 提供帳密 / 加密 / 監控 / 讀寫。線條配色:<b style="color:#1f6feb">藍=資料流</b>、<b style="color:#64748b">灰=基礎連線</b>、<b style="color:#8b5cf6">紫=安全治理(SG / IAM / KMS / CloudWatch)</b>。</p>
   <div class="diagram hero">
     <div class="mermaid">
@@ -893,7 +1097,7 @@ flowchart TB
   class IAM,SM,KMS,CW,CT sec;
   class SGD,SGR sg;
     </div>
-    <div class="cap">圖 6 — AWS 設施關聯圖（藍=資料流 · 灰=基礎連線 · 紫=安全治理）</div>
+    <div class="cap">圖 9 — AWS 設施關聯圖（藍=資料流 · 灰=基礎連線 · 紫=安全治理）</div>
   </div>
 
   <h3>各階段範圍對照</h3>
@@ -917,14 +1121,14 @@ flowchart TB
       <dt>CloudWatch</dt><dd>Logs / Metrics / Alarms 監控告警。</dd>
       <dt>CloudTrail</dt><dd>記錄 API 操作軌跡供稽核。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈IX〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
   </div>
 </section>
 
 <!-- 名詞解說 -->
 <section id="glossary">
   <span class="ptag tr">跨階段 · 參考</span>
-  <h2><span class="num">IX</span>名詞解說</h2>
+  <h2><span class="num">XI</span>名詞解說</h2>
   <p class="lead">本架構所有名詞的完整索引；各頁底部另有「📖 本頁名詞」就地速查。</p>
 
   <h3>網路 / 連線</h3>
@@ -958,6 +1162,10 @@ flowchart TB
       <tr><td><b>Private DNS</b></td><td>私有 DNS 解析</td><td>讓 AWS 服務網域自動解析到 Endpoint 的私有 IP。</td></tr>
       <tr><td><b>Glue Connection</b></td><td>Glue 連線設定</td><td>Glue 連 RDS / 資料源的連線,含 VPC / Subnet / SG。</td></tr>
       <tr><td><b>Glue Crawler</b></td><td>爬蟲</td><td>掃描資料源結構,寫入 Data Catalog。</td></tr>
+      <tr><td><b>Lake Formation</b></td><td>資料湖權限治理</td><td>在 IAM 之上對 Glue Catalog 的 Database / Table / Column 做細粒度授權;Crawler 寫 Metadata 需先過它。</td></tr>
+      <tr><td><b>IAMAllowedPrincipals</b></td><td>LF 相容群組</td><td>資源持有它時退回 IAM-only 授權;被移除即翻轉成 Lake Formation 強制授權。</td></tr>
+      <tr><td><b>Data Lake Administrator</b></td><td>資料湖管理員</td><td>Lake Formation 最高權限者,可對各資源授權 / 撤銷。</td></tr>
+      <tr><td><b>Hybrid Access Mode</b></td><td>混合授權模式</td><td>IAM 與 Lake Formation 授權並存的過渡模式;本案未使用。</td></tr>
       <tr><td><b>ECR</b></td><td>Elastic Container Registry</td><td>容器映像倉庫;跑容器化任務時需要(選用 Endpoint)。</td></tr>
       <tr><td><b>SSM</b></td><td>Systems Manager</td><td>參數 / 遠端管理;選用 Endpoint。</td></tr>
     </tbody>
@@ -1034,7 +1242,7 @@ flowchart TB
 
 <footer>
   <div class="wrap">
-    <b>Enterprise Data Hub — 地端 → AWS 資料中樞架構</b> · Phase 1 基礎建設 · Phase 2 ETL / Glue（含前置 VPC Endpoints）
+    <b>Enterprise Data Hub — 地端 → AWS 資料中樞架構</b> · Phase 1 基礎建設 · Phase 2 ETL / Glue（VPC Endpoints · Crawler + Data Catalog / Lake Formation）
   </div>
 </footer>
   </main>
@@ -1075,6 +1283,26 @@ flowchart TB
     );
     w.document.close();
   }
+
+  // 側邊目錄收合 / 展開（記住上次狀態）
+  (function initSidebarToggle(){
+    const layout = document.querySelector('.layout');
+    const btn = document.getElementById('sbToggle');
+    if(!layout || !btn){ return; }
+    let collapsed = false;
+    try{ collapsed = localStorage.getItem('awsArchSidebar') === 'collapsed'; }catch(e){}
+    function apply(){
+      layout.classList.toggle('sb-collapsed', collapsed);
+      btn.setAttribute('title', collapsed ? '展開目錄' : '收合目錄');
+      btn.setAttribute('aria-label', collapsed ? '展開目錄' : '收合目錄');
+    }
+    apply();
+    btn.addEventListener('click', function(){
+      collapsed = !collapsed;
+      try{ localStorage.setItem('awsArchSidebar', collapsed ? 'collapsed' : 'open'); }catch(e){}
+      apply();
+    });
+  })();
 
   // 渲染完成後：注入「開新視窗」按鈕，並啟用分頁閱讀模式
   mermaid.run().then(function(){
