@@ -4,6 +4,12 @@
 > **區域**：AWS 東京 `ap-northeast-1`（AZ 1a / 1c）。
 > 架構圖報告版（可縮放 / 可列印）：[`aws-to-local-infra-arch.html`](aws-to-local-infra-arch.html)
 
+> **章節導覽（依 Phase 分類）**
+> - **總覽**：〈一〉目標 ·〈二〉端到端架構圖
+> - **Phase 1 · 基礎建設**：〈三〉VPC 網路拓撲（含 SG）·〈六〉Phase 1 關鍵參數 ·〈七〉建置 SOP
+> - **Phase 2 · ETL / Glue**：〈八〉Glue 前置：VPC Endpoints
+> - **跨階段 / 參考**：〈四〉整體 AWS 設施 ·〈五〉設施關聯圖 ·〈九〉名詞解說
+
 ---
 
 ## 一、目標
@@ -316,13 +322,52 @@ flowchart TB
 
 ## 七、建置 SOP（Phase 1）
 
+依「網路底層 → 資料庫 → 遷移」三層,一次一步、完成驗證再下一步。每一步的關鍵設定對齊〈六、Phase 1 關鍵參數〉。
+
 ```mermaid
 flowchart LR
-  A[1. VPC] --> B[2. Subnet] --> C[3. VGW+VPN] --> D[4. Route Table] --> E[5. Security Group]
-  E --> F[6. RDS] --> G[7. DMS Instance] --> H[8. Endpoints+測試] --> I[9. Migration Task] --> J[10. 驗證同步]
+  subgraph NET["① 網路層（順序不可跳）"]
+    direction TB
+    VPC["1. VPC ｜ 10.0.0.0/16"]
+    SUB["2. Subnet<br/>Public 10.0.0.0/24 · Private 10.0.32.0/24(AZ-a)<br/>DB 10.0.33.0/24(AZ-a) · 10.0.34.0/24(AZ-c)"]
+    VPN["3. VGW + Site-to-Site VPN<br/>地端 ↔ 雲端 IPsec"]
+    RT["4. Route Table<br/>10.0.0.0/16→Local · 10.200/10.240→VGW（只增不刪）"]
+    SG["5. Security Group<br/>Oracle/DMS/RDS 互引用 · 禁 0.0.0.0/0"]
+    VPC --> SUB --> VPN --> RT --> SG
+  end
+  subgraph DBL["② 資料庫層"]
+    direction TB
+    DBG["DB Subnet Group（≥2 AZ）"]
+    RDS["6. RDS Raw-Data-Replication<br/>PostgreSQL db.t4g.small · gp3 20GB · 5432 · Public=No"]
+    DBG --> RDS
+  end
+  subgraph MIG["③ 遷移層"]
+    direction TB
+    DMS["7. DMS Replication Instance<br/>dms.t3.medium · 50GB · Private Subnet"]
+    EP["8. Endpoints + 測試<br/>Source Oracle 1521(唯讀) · Target PostgreSQL 5432"]
+    TM["Table Mapping 白名單<br/>DS.* · M2201.*"]
+    TASK["9. Migration Task<br/>Full Load · Drop tables · LOB 32KB · Validation Off"]
+    VER["10. 驗證同步<br/>比對筆數 / 抽樣核對"]
+    DMS --> EP --> TM --> TASK --> VER
+  end
+  SG ==> DBG
+  RDS ==> DMS
 ```
 
-由網路底層 → 資料庫 → 遷移，一次一步、完成驗證再下一步。
+### 逐步明細
+
+| # | 步驟 | 元件 / 服務 | 關鍵設定 | 目的 |
+| --- | --- | --- | --- | --- |
+| 1 | 建 VPC | VPC | `10.0.0.0/16` | 整體雲端私有網路容器 |
+| 2 | 切 Subnet | Public / Private / DB Subnet | Public `10.0.0.0/24`、Private `10.0.32.0/24`(AZ-a)、DB `10.0.33.0/24`(AZ-a)+`10.0.34.0/24`(AZ-c) | 分層隔離;DB 跨 2 AZ 供 RDS 高可用 |
+| 3 | 建 VGW + VPN | VGW / Site-to-Site VPN | IPsec、對接地端閘道 | 地端 ↔ 雲端加密通道 |
+| 4 | 設 Route Table | Route Table | `10.0.0.0/16`→Local、`10.200.0.0/16`+`10.240.0.0/16`→VGW | 導向地端網段(**只增不刪**既有) |
+| 5 | 設 Security Group | SG(Oracle / DMS / RDS) | Oracle In 1521←DMS;DMS Out 1521→Oracle、5432→RDS;RDS In 5432←DMS SG;**禁 `0.0.0.0/0`** | 執行個體層防火牆,以 SG 互引取代固定 IP |
+| 6 | 建 RDS | RDS Raw-Data-Replication + DB Subnet Group | PostgreSQL `db.t4g.small`、gp3 20GB(只增不減)、Single-AZ(Dev)、Public Access=No | 原始複製落地目標 |
+| 7 | 建 DMS 主機 | DMS Replication Instance | `dms.t3.medium`、50GB、置於 Private Subnet | 執行遷移的運算資源 |
+| 8 | 建 Endpoints + 測試 | Source / Target Endpoint | Oracle 1521 唯讀 User(非 SYS/SYSTEM)、Target PostgreSQL 5432;先 Test connection | 建立來源 / 目標連線並驗通 |
+| 9 | 建 Migration Task | DMS Task + Table Mapping | Full Load / Drop tables on target / Limited LOB 32KB / Validation Off;白名單 `DS.*`、`M2201.*` | 全量複製指定 Schema |
+| 10 | 驗證同步 | — | 比對來源 / 目標筆數、抽樣核對欄位 | 確認落地正確、資料無漏 |
 
 ---
 
@@ -348,7 +393,91 @@ GRANT SELECT ON SYS.DBA_INDEXES      TO &DMS_USER;
 
 ---
 
-## 八、名詞解說
+## 八、Phase 2 ｜ Glue 前置：VPC Endpoints
+
+> **Phase 2 · ETL / Glue** — 建立 AWS Glue 的前置作業。
+
+Phase 2 要用 AWS Glue 把 Raw 轉成 ETL-Hub。Glue Worker 跑在 Private Subnet,呼叫 AWS API 會因無對外路由而失敗 → 用 **VPC Endpoint 走 AWS Backbone** 解決,而非開 NAT Gateway。
+
+### 問題：Glue Connection 失敗
+
+建立 Glue Connection 時報:
+
+```
+Failed to assume customer's role
+Verify that your VPC has access to STS
+```
+
+根因:Glue Worker 在 Private Subnet;Route Table 只有 `local` + VGW(`10.200/10.240`→地端),**沒有 `0.0.0.0/0`** → 連不到 `sts.ap-northeast-1.amazonaws.com` → AssumeRole 失敗。
+
+### 解法：VPC Endpoint（不用 NAT Gateway）
+
+企業 Data Center 是 Private Network,不希望 Private Subnet 透過 NAT 對外上網 → 改走 AWS Backbone。
+
+```mermaid
+flowchart LR
+  subgraph PRIV["Private Subnet（無 0.0.0.0/0）"]
+    GLUE["Glue Worker"]
+  end
+  subgraph VPCEP["VPC Endpoints｜AWS Backbone"]
+    direction TB
+    STS["STS Interface ✅ 已建"]
+    SM["Secrets Manager Interface"]
+    LOG["CloudWatch Logs Interface"]
+    S3E["S3 Gateway"]
+  end
+  GLUE == "HTTPS 443" ==> STS
+  GLUE == "HTTPS 443" ==> SM
+  GLUE == "HTTPS 443" ==> LOG
+  GLUE == "Route Table" ==> S3E
+```
+
+| 對照 | NAT Gateway | VPC Endpoint（採用） |
+| --- | --- | --- |
+| 路徑 | 經公網對外 | AWS 內部 Backbone |
+| 對外暴露面 | 私網可連整個 Internet | 只到指定 AWS 服務 |
+| 符合 Private First | ✗ | ✓ |
+
+### Endpoint 清單（已建 + 規劃）
+
+已建:STS Interface Endpoint `com.amazonaws.ap-northeast-1.sts`,Private DNS Enabled,佈於 Subnet-A / Subnet-C。
+
+| 類別 | 服務 | 型態 | 狀態 |
+| --- | --- | --- | --- |
+| Required | STS | Interface | ✅ 已建 |
+| Required | Secrets Manager | Interface | 規劃 |
+| Required | CloudWatch Logs | Interface | 規劃 |
+| Required | S3 | Gateway | 規劃 |
+| Optional | KMS | Interface | 選用 |
+| Optional | ECR API / ECR DKR | Interface | 選用（容器映像） |
+| Optional | SSM | Interface | 選用 |
+
+- **Interface Endpoint**:建 ENI、吃 SG、走 Private DNS(STS / Secrets / Logs / KMS / ECR)。
+- **Gateway Endpoint**(S3 專用):不建 ENI、不吃 SG、改 Route Table。
+
+### Security Group 策略（Role-Based）
+
+以角色切 SG,而非每個 App 一個。新增 `SG-VPCE-AWS-Services` 給所有 AWS Interface Endpoint 共用(STS / Secrets / Logs / KMS / ECR),因為都走 HTTPS 443 與 AWS API 通訊 → 共用降低維護成本。
+
+- **Inbound**:HTTPS 443,Source = `SG-ETL-Glue`(未來 DMS / Taskiq 可加入)
+- **Outbound**:All Traffic
+
+規劃 SG 清單:`SG-DB-RDS`、`SG-ETL-Glue`、`SG-ETL-DMS`、`SG-APP-Taskiq`、`SG-VPCE-AWS-Services`。
+
+### Glue Workflow（規劃）
+
+`Glue Connection → Glue Database → Crawler → Catalog → Visual ETL → S3 → Athena / RDS`
+
+### 設計原則
+
+- **Private First**:核心服務全部署於 Private Subnet。
+- **Least Privilege**:Security Group 依角色切分,非全服務共用。
+- **AWS Backbone**:透過 VPC Endpoint 存取 AWS API,不繞 NAT Gateway。
+- **Scalable**:後續 Athena / Redshift / EMR / ECS / Lambda / AI Platform 免重設計 VPC。
+
+---
+
+## 九、名詞解說
 
 ### 網路 / 連線
 
@@ -365,7 +494,22 @@ GRANT SELECT ON SYS.DBA_INDEXES      TO &DMS_USER;
 | Route Table | 路由表 | 決定封包流向（只增不刪既有） |
 | Security Group | 安全群組 | 執行個體層防火牆（方向 + Port + 來源） |
 | NACL | Network ACL | 子網層無狀態防火牆 |
-| VPC Endpoint | VPC 端點 | 私網不繞公網存取 S3 等服務 |
+| VPC Endpoint | VPC 端點 | 私網不繞公網存取 S3 / STS 等 AWS 服務(走 AWS Backbone) |
+
+### VPC Endpoint / Glue 前置（Phase 2）
+
+| 名詞 | 全稱 / 類型 | 說明 |
+| --- | --- | --- |
+| STS | Security Token Service | 發放臨時安全憑證;AssumeRole 靠它換取角色權限 |
+| AssumeRole | 取得角色臨時憑證 | 服務(如 Glue)啟動時向 STS 換取 IAM Role 臨時權限 |
+| Interface Endpoint | VPC 端點(ENI 型) | 建 ENI、吃 SG、走 Private DNS(STS / Secrets / Logs 等) |
+| Gateway Endpoint | VPC 端點(路由型) | S3 專用,改 Route Table、不建 ENI / 不吃 SG |
+| ENI | Elastic Network Interface | 彈性網卡;Interface Endpoint 在子網內的網路介面 |
+| Private DNS | 私有 DNS 解析 | 讓 AWS 服務網域自動解析到 Endpoint 私有 IP |
+| Glue Connection | Glue 連線設定 | Glue 連 RDS / 資料源,含 VPC / Subnet / SG |
+| Glue Crawler | 爬蟲 | 掃描資料源結構,寫入 Data Catalog |
+| ECR | Elastic Container Registry | 容器映像倉庫;跑容器化任務時需要(選用) |
+| SSM | Systems Manager | 參數 / 遠端管理(選用 Endpoint) |
 
 ### 遷移 / 資料庫
 

@@ -18,36 +18,57 @@
     color:var(--ink);background:var(--bg);line-height:1.75;font-size:17px}
   .wrap{max-width:1560px;margin:0 auto;padding:0 30px}
 
-  header.cover{background:linear-gradient(135deg,var(--navy),#1a2533 60%,#16202c);color:#fff;
+  header.cover{background:linear-gradient(135deg,#eaf2fb,#e7eff8 55%,#f4f8fc);color:var(--navy);border-bottom:1px solid var(--line);
     padding:46px 0 38px;position:relative;overflow:hidden}
   header.cover::after{content:"";position:absolute;right:-80px;top:-80px;width:340px;height:340px;
     background:radial-gradient(circle,rgba(255,153,0,.22),transparent 70%)}
   .eyebrow{display:inline-block;letter-spacing:.18em;font-size:14px;font-weight:700;text-transform:uppercase;
     color:var(--orange);border:1px solid rgba(255,153,0,.5);padding:5px 12px;border-radius:999px;margin-bottom:16px}
   header.cover h1{font-size:34px;line-height:1.25;margin:0 0 10px;font-weight:800}
-  header.cover .sub{font-size:17px;color:#c7d2dd;max-width:880px;margin:0}
-  .meta-row{display:flex;flex-wrap:wrap;gap:22px;margin-top:22px;font-size:14px;color:#aab8c4}
-  .meta-row b{color:#fff;font-weight:600}
+  header.cover .sub{font-size:17px;color:var(--muted);max-width:880px;margin:0}
+  .meta-row{display:flex;flex-wrap:wrap;gap:22px;margin-top:22px;font-size:14px;color:var(--muted)}
+  .meta-row b{color:var(--navy);font-weight:600}
 
-  nav.toc{position:sticky;top:0;z-index:20;background:var(--navy);box-shadow:0 2px 10px rgba(16,24,40,.18)}
-  nav.toc .wrap{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:11px 30px}
-  nav.toc .lbl{color:var(--orange);font-weight:800;font-size:14px;letter-spacing:.12em;margin-right:6px;
-    display:inline-flex;align-items:center;gap:6px}
-  nav.toc a{font-size:14.5px;color:#dbe4ec;text-decoration:none;padding:6px 13px;border-radius:8px;font-weight:600;
-    border:1px solid rgba(255,255,255,.16);transition:all .12s}
-  nav.toc a:hover{background:var(--orange);color:#3a2400;border-color:var(--orange)}
+  /* 版面：左 sidebar（貼死最左、sticky 固定）+ 右內容 */
+  .layout{display:flex;align-items:flex-start}
+  .sidebar{flex:none;width:264px;position:sticky;top:0;align-self:flex-start;height:100vh;
+    background:#f7fafd;border-right:1px solid var(--line);overflow-y:auto;z-index:20}
+  .sb-inner{padding:20px 14px}
+  .sb-title{color:var(--orange);font-weight:800;font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;
+    padding:6px 10px 12px;display:flex;align-items:center;gap:7px}
+  .progress{height:5px;border-radius:99px;background:rgba(15,23,42,.08);margin:0 10px 8px;overflow:hidden}
+  .progress > span{display:block;height:100%;width:0;background:var(--orange);transition:width .3s ease}
+  .sb-count{color:var(--muted);font-size:12px;font-weight:600;padding:0 10px 14px}
+  nav.toc{display:flex;flex-direction:column;gap:2px}
+  .sb-group{color:#8493a3;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+    padding:14px 12px 5px}
+  .sb-group:first-child{padding-top:4px}
+  nav.toc a{display:flex;align-items:center;gap:11px;font-size:14px;color:var(--muted);text-decoration:none;
+    padding:10px 11px;border-radius:9px;font-weight:600;transition:all .12s;line-height:1.3}
+  nav.toc a i{flex:none;width:24px;height:24px;border-radius:7px;background:rgba(15,23,42,.06);
+    display:grid;place-items:center;font-size:12.5px;font-weight:800;font-style:normal;color:var(--navy)}
+  nav.toc a:hover{background:rgba(255,153,0,.16);color:var(--orange-d)}
+  nav.toc a.active{background:var(--orange);color:#3a2400}
+  nav.toc a.active i{background:rgba(0,0,0,.18);color:#3a2400}
+  .layout > .wrap{flex:1 1 auto;min-width:0;max-width:1400px;margin:0;padding:0 44px}
 
   section{padding:40px 0 8px}
   section + section{border-top:1px solid var(--line)}
   h2{font-size:27px;margin:0 0 4px;display:flex;align-items:center;gap:12px;font-weight:800;color:var(--navy)}
-  h2 .num{flex:none;width:38px;height:38px;border-radius:9px;background:var(--navy);color:var(--orange);
+  h2 .num{flex:none;width:38px;height:38px;border-radius:9px;background:#fff1e0;color:var(--orange-d);
     display:grid;place-items:center;font-size:16px;font-weight:800}
+  .ptag{display:inline-block;font-size:12px;font-weight:800;padding:3px 10px;border-radius:999px;margin-bottom:8px;
+    letter-spacing:.05em}
+  .ptag.t0{background:#eef2f6;color:#475569}
+  .ptag.t1{background:#fff4e6;color:#b9560c}
+  .ptag.t2{background:#eef4fb;color:#2E5C8A}
+  .ptag.tr{background:#f0ecf8;color:#5b4a8a}
   h3{font-size:19px;margin:24px 0 8px;color:var(--navy);font-weight:700}
   .lead{color:var(--muted);margin:6px 0 18px;font-size:16.5px}
 
   .diagram{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:20px;
     box-shadow:var(--shadow);margin:16px 0;text-align:center;overflow:auto}
-  .popbtn{position:absolute;top:12px;right:12px;z-index:3;background:var(--navy);color:#fff;border:none;
+  .popbtn{position:absolute;top:12px;right:12px;z-index:3;background:var(--orange-d);color:#fff;border:none;
     padding:7px 13px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;opacity:.9;
     font-family:inherit;display:inline-flex;align-items:center;gap:5px}
   .popbtn:hover{opacity:1;background:var(--orange-d)}
@@ -57,7 +78,7 @@
   .mermaid svg{height:auto!important}
 
   .flowbar{display:flex;flex-wrap:wrap;gap:7px;align-items:center;justify-content:center;margin:0 0 14px}
-  .flowbar .n{background:var(--navy);color:#fff;padding:9px 16px;border-radius:9px;font-weight:700;font-size:15px}
+  .flowbar .n{background:#eaf1f9;color:var(--navy);padding:9px 16px;border-radius:9px;font-weight:700;font-size:15px;border:1px solid #d7e3f0}
   .flowbar .n.acc{background:var(--orange);color:#3a2400}
   .flowbar .a{color:var(--orange-d);font-weight:800;font-size:19px}
 
@@ -82,7 +103,7 @@
   table{width:100%;border-collapse:collapse;font-size:14.5px;margin:8px 0;background:#fff;border:1px solid var(--line);
     border-radius:10px;overflow:hidden}
   th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
-  th{background:var(--navy);color:#fff;font-weight:600;font-size:14px}
+  th{background:#eaf1f9;color:var(--navy);font-weight:700;font-size:14px}
   tr:last-child td{border-bottom:none}
   tr:nth-child(even) td{background:#fafbfc}
   td code{background:#eef2f6;color:#b4234a;padding:1px 6px;border-radius:5px;font-family:monospace;font-size:14px}
@@ -97,23 +118,67 @@
     margin:14px 0;font-size:14.5px}
   .callout.warn{border-color:var(--warn);background:#fffbeb}
   .callout.danger{border-color:var(--danger);background:#fef2f2}
+  .callout.ok{border-color:var(--ok);background:#f0fdf4}
   .callout .h{display:block;font-weight:800;margin-bottom:2px}
 
-  .ascii{background:#0f1722;color:#cfe3ff;border-radius:12px;padding:18px;overflow:auto;
-    font-family:"Cascadia Code",Consolas,monospace;font-size:14px;line-height:1.55;white-space:pre;border:1px solid #1d2b3c}
-  pre{background:#1e293b;color:#e2e8f0;padding:15px 17px;border-radius:10px;overflow:auto;
+  .ascii{background:#f4f8fc;color:#26425e;border-radius:12px;padding:18px;overflow:auto;
+    font-family:"Cascadia Code",Consolas,monospace;font-size:14px;line-height:1.55;white-space:pre;border:1px solid #d7e3f0}
+  pre{background:#f6f8fb;color:#334155;padding:15px 17px;border-radius:10px;overflow:auto;border:1px solid var(--line);
     font-family:"Cascadia Code",Consolas,monospace;font-size:14px;line-height:1.6;margin:12px 0}
-  pre .c{color:#7c8da3}pre .k{color:#ff9d62}
+  pre .c{color:#94a3b8}pre .k{color:#c2410c}
 
-  footer{background:var(--navy);color:#aab8c4;margin-top:36px;padding:24px 0;font-size:14px}
-  footer b{color:#fff}footer code{color:#ff9d62}
+  /* 每頁名詞速查 */
+  .terms{margin:24px 0 4px;border:1px dashed #cdd8e3;border-radius:12px;background:#fbfcfe;padding:14px 18px 12px}
+  .terms-h{font-size:14px;font-weight:800;color:var(--navy);letter-spacing:.04em;margin-bottom:9px;
+    display:flex;align-items:center;gap:7px}
+  .terms dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:5px 16px;font-size:14px}
+  .terms dt{font-weight:700;color:var(--orange-d)}
+  .terms dd{margin:0;color:var(--ink)}
+  .terms-more{display:inline-block;margin-top:10px;font-size:13px;font-weight:700;color:var(--info);text-decoration:none}
+  .terms-more:hover{text-decoration:underline}
+  @media(max-width:640px){.terms dl{grid-template-columns:1fr;gap:2px 0}.terms dd{margin:0 0 7px}}
+
+  footer{background:#eef2f7;color:var(--muted);border-top:1px solid var(--line);margin-top:36px;padding:24px 0;font-size:14px}
+  footer b{color:var(--navy)}footer code{color:var(--orange-d)}
+
+  /* 分頁閱讀模式：一次只顯示一節 */
+  body.paged #content > section{display:none}
+  body.paged #content > section.active{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .pager{display:flex;gap:14px;margin:38px 0 10px;padding-top:22px;border-top:1px solid var(--line)}
+  .pager a.pg{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:4px;padding:14px 18px;
+    border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:var(--shadow);
+    text-decoration:none;transition:all .14s}
+  .pager a.pg.next{align-items:flex-end;text-align:right}
+  .pager a.pg:hover{border-color:var(--orange);transform:translateY(-1px)}
+  .pager a.pg .k{font-size:12px;font-weight:800;color:var(--orange-d);letter-spacing:.08em}
+  .pager a.pg .t{font-size:15px;font-weight:700;color:var(--navy);max-width:100%;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pager a.pg.disabled{visibility:hidden}
+  @media(max-width:640px){.pager a.pg .t{font-size:13.5px}}
+
+  @media(max-width:1000px){
+    .layout{display:block}
+    .sidebar{width:auto;height:auto;position:sticky;top:0;box-shadow:0 2px 10px rgba(16,24,40,.18)}
+    .sb-inner{padding:10px 14px}
+    .sb-title,.sb-count{display:none}
+    .progress{margin:0 0 8px}
+    nav.toc{flex-direction:row;flex-wrap:wrap;gap:6px}
+    .sb-group{width:100%;padding:8px 4px 2px}
+    nav.toc a{padding:7px 10px}
+    nav.toc a i{width:20px;height:20px}
+    .layout > .wrap{padding:0 22px}
+  }
 
   @media print{
-    nav.toc{display:none}
+    .sidebar,.pager{display:none!important}
+    .layout{display:block}
+    .layout > .wrap{padding:0}
     body{background:#fff;font-size:14px}
-    .card,.diagram,.phase{box-shadow:none;break-inside:avoid}
+    body.paged #content > section{display:block!important}
+    .card,.diagram,.phase,.terms{box-shadow:none;break-inside:avoid}
     section{break-inside:avoid}
-    header.cover{background:var(--navy)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    header.cover{background:#eaf2fb!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   }
 </style>
 </head>
@@ -125,30 +190,41 @@
     <h1>Enterprise Data Hub — 地端 → AWS 資料中樞架構</h1>
     <p class="sub">以原始系統方向為骨幹：地端 ERP/BPM/HRM → <b>Migration</b> → Raw-Data-Replication → <b>Glue ETL</b> → ETL-Hub → <b>Data Hub</b> → 業務系統。整合 Phase 1 實測成果，補齊整體 AWS 設施，並納入 Phase 2–4 未來規劃。</p>
     <div class="meta-row">
-      <span><b>本期</b>　Phase 1 已實測（Oracle → Raw-Data-Replication / Full Load）</span>
+      <span><b>本期</b>　Phase 1 已實測（Full Load）· Phase 2 進行中（Glue 前置 VPC Endpoints）</span>
       <span><b>區域</b>　AWS 東京 ap-northeast-1（AZ 1a / 1c）</span>
     </div>
   </div>
 </header>
 
-<nav class="toc">
-  <div class="wrap">
-    <span class="lbl">📑 目錄</span>
-    <a href="#goal">一、目標</a>
-    <a href="#e2e">二、端到端 Infra 流程圖</a>
-    <a href="#vpc">三、Phase 1 網路拓撲</a>
-    <a href="#sg">四、SG 資料流</a>
-    <a href="#infra">五、整體 AWS 設施</a>
-    <a href="#relmap">六、設施關聯圖</a>
-    <a href="#sop">七、建置 SOP</a>
-    <a href="#glossary">八、名詞解說</a>
-  </div>
-</nav>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sb-inner">
+      <div class="sb-title">📑 目錄（依 Phase）</div>
+      <div class="progress"><span></span></div>
+      <div class="sb-count" id="sbCount"></div>
+      <nav class="toc">
+        <div class="sb-group">總覽</div>
+        <a href="#goal"><i>一</i><span>目標</span></a>
+        <a href="#e2e"><i>二</i><span>端到端架構圖</span></a>
+        <div class="sb-group">Phase 1 · 基礎建設</div>
+        <a href="#vpc"><i>三</i><span>VPC 網路拓撲</span></a>
+        <a href="#sg"><i>四</i><span>Security Group 資料流</span></a>
+        <a href="#sop"><i>五</i><span>建置 SOP</span></a>
+        <div class="sb-group">Phase 2 · ETL / Glue</div>
+        <a href="#vpce"><i>六</i><span>Glue 前置 VPC Endpoints</span></a>
+        <div class="sb-group">跨階段 · 參考</div>
+        <a href="#infra"><i>七</i><span>整體 AWS 設施</span></a>
+        <a href="#relmap"><i>八</i><span>設施關聯圖</span></a>
+        <a href="#glossary"><i>九</i><span>名詞解說</span></a>
+      </nav>
+    </div>
+  </aside>
 
-<div class="wrap">
+<div class="wrap" id="content">
 
 <!-- 目標 -->
 <section id="goal">
+  <span class="ptag t0">總覽</span>
   <h2><span class="num">一</span>目標</h2>
   <p class="lead">規劃地端資料庫同步至雲端機器架構，含資料複製 / 移轉 / Hub / Center。</p>
   <div class="grid c2">
@@ -173,10 +249,25 @@
     </div>
   </div>
   <div class="callout">Phase 1 實測先以 <b>Oracle → Raw-Data-Replication（PostgreSQL RDS）Full Load</b> 驗證；SQL Server 與 CDC 在後續階段納入。</div>
+
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>DMS</dt><dd>AWS 資料庫遷移服務（Oracle / SQL Server → RDS）。</dd>
+      <dt>RDS</dt><dd>AWS 託管關聯式資料庫（本架構皆 PostgreSQL）。</dd>
+      <dt>Raw-Data-Replication</dt><dd>DMS 落地的原始複製 RDS，保留來源樣貌、不轉換。</dd>
+      <dt>AWS Glue</dt><dd>無伺服器 ETL，把 Raw 清洗轉換成 ETL-Hub。</dd>
+      <dt>ETL-Hub</dt><dd>Glue 轉換後的 RDS，供業務 / 分析使用。</dd>
+      <dt>Data Hub / Center</dt><dd>讀取 ETL-Hub 對外供應資料的應用層（EC2）。</dd>
+      <dt>EC2</dt><dd>虛擬主機，執行 Data Hub / Center 運算。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+  </div>
 </section>
 
 <!-- 端到端 -->
 <section id="e2e">
+  <span class="ptag t0">總覽</span>
   <h2><span class="num">二</span>端到端總架構圖</h2>
   <p class="lead">全 Phase 資料流：來源 → 遷移 → Raw → ETL → Hub → 業務 / 分析 / AI。</p>
 
@@ -248,10 +339,28 @@ flowchart TB
     </div>
     <div class="cap">圖 1 — 端到端 Infra 流程圖（VPC 內各服務與資料流，跨 Phase 1–4）</div>
   </div>
+
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>VGW / Site-to-Site VPN</dt><dd>VPC 端 VPN 落地閘道 + 地端 ↔ AWS IPsec 加密通道。</dd>
+      <dt>Full Load</dt><dd>一次性整批複製既有資料（Phase 1）。</dd>
+      <dt>CDC</dt><dd>持續同步來源增刪改（Phase 2）。</dd>
+      <dt>EventBridge</dt><dd>排程 / 事件觸發 ETL。</dd>
+      <dt>Lambda</dt><dd>無伺服器函式，流程編排 / 輕量處理。</dd>
+      <dt>S3 Data Lake</dt><dd>集中低成本物件儲存（Phase 3）。</dd>
+      <dt>Athena</dt><dd>直接對 S3 用 SQL 即席查詢。</dd>
+      <dt>Redshift</dt><dd>大規模分析 / BI 欄式資料倉儲。</dd>
+      <dt>RAG</dt><dd>檢索增強生成，降低 AI 幻覺（Phase 4）。</dd>
+      <dt>MCP</dt><dd>AI Agent 標準化存取外部工具 / 資料的協定。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+  </div>
 </section>
 
 <!-- Phase1 VPC -->
 <section id="vpc">
+  <span class="ptag t1">Phase 1 · 基礎建設</span>
   <h2><span class="num">三</span>Phase 1 VPC 網路拓撲（實測成果）</h2>
   <p class="lead">已驗證 <code>Oracle → VPN → DMS → Raw-Data-Replication(RDS)</code> Full Load。每個 CIDR / 元件標示用途。</p>
 
@@ -313,10 +422,26 @@ AWS VPC 10.0.0.0/16                          用途：整體雲端私有網路
        ├─ DB Subnet 10.0.33.0/24 (AZ-a)
        ├─ DB Subnet 10.0.34.0/24 (AZ-c)
        └─ RDS Raw-Data-Replication (db.t4g.small / 5432 / Public Access=No)</div>
+
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>VPC</dt><dd>AWS 私有虛擬網路（<code>10.0.0.0/16</code>），隔離所有資源。</dd>
+      <dt>CIDR</dt><dd>網段表示法，如 <code>10.0.32.0/24</code>。</dd>
+      <dt>AZ</dt><dd>區域內物理隔離機房（東京 1a / 1c）。</dd>
+      <dt>Subnet</dt><dd>VPC 內網段切分：Public / Private / DB。</dd>
+      <dt>IGW</dt><dd>VPC 對公網入口（僅 Public 用）。</dd>
+      <dt>NAT Gateway</dt><dd>私網「只出不進」連外。</dd>
+      <dt>DB Subnet Group</dt><dd>RDS 子網群組，須含 ≥2 AZ。</dd>
+      <dt>VPC Endpoint</dt><dd>私網不繞公網存取 S3 等服務。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+  </div>
 </section>
 
 <!-- SG -->
 <section id="sg">
+  <span class="ptag t1">Phase 1 · 基礎建設</span>
   <h2><span class="num">四</span>Security Group 資料流（方向）</h2>
   <p class="lead">以 SG 互相引用取代固定 IP；嚴禁 <code>0.0.0.0/0</code>。</p>
   <div class="diagram">
@@ -349,11 +474,225 @@ flowchart LR
       <tr><td>RDS</td><td><span class="chip in">Inbound</span></td><td class="mono">5432</td><td>公司 CIDR（選用）</td></tr>
     </tbody>
   </table>
+
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>Security Group</dt><dd>執行個體層防火牆，以方向 + Port + 來源控管，可互相引用。</dd>
+      <dt>NACL</dt><dd>子網層無狀態防火牆，排查連線問題的檢查項之一。</dd>
+      <dt>CIDR</dt><dd>網段表示法，如公司 CIDR 選用來源。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+  </div>
+</section>
+
+<!-- SOP -->
+<section id="sop">
+  <span class="ptag t1">Phase 1 · 基礎建設</span>
+  <h2><span class="num">五</span>Phase 1 建置 SOP</h2>
+  <p class="lead">依「網路層 → 資料庫層 → 遷移層」三層，一次一步、完成驗證再下一步。關鍵設定對齊 Phase 1 實測參數。</p>
+  <div class="diagram hero">
+    <div class="mermaid">
+flowchart LR
+  subgraph NET["① 網路層（順序不可跳）"]
+    direction TB
+    VPC["1. VPC ｜ 10.0.0.0/16"]
+    SUB["2. Subnet<br/>Public 10.0.0.0/24 · Private 10.0.32.0/24(AZ-a)<br/>DB 10.0.33.0/24(AZ-a) · 10.0.34.0/24(AZ-c)"]
+    VPN["3. VGW + Site-to-Site VPN<br/>地端 ↔ 雲端 IPsec"]
+    RT["4. Route Table<br/>10.0.0.0/16→Local · 10.200/10.240→VGW（只增不刪）"]
+    SG["5. Security Group<br/>Oracle/DMS/RDS 互引用 · 禁 0.0.0.0/0"]
+    VPC --> SUB --> VPN --> RT --> SG
+  end
+  subgraph DBL["② 資料庫層"]
+    direction TB
+    DBG["DB Subnet Group（≥2 AZ）"]
+    RDS["6. RDS Raw-Data-Replication<br/>PostgreSQL db.t4g.small · gp3 20GB · 5432 · Public=No"]
+    DBG --> RDS
+  end
+  subgraph MIG["③ 遷移層"]
+    direction TB
+    DMS["7. DMS Replication Instance<br/>dms.t3.medium · 50GB · Private Subnet"]
+    EP["8. Endpoints + 測試<br/>Source Oracle 1521(唯讀) · Target PostgreSQL 5432"]
+    TM["Table Mapping 白名單<br/>DS.* · M2201.*"]
+    TASK["9. Migration Task<br/>Full Load · Drop tables · LOB 32KB · Validation Off"]
+    VER["10. 驗證同步<br/>比對筆數 / 抽樣核對"]
+    DMS --> EP --> TM --> TASK --> VER
+  end
+  SG ==> DBG
+  RDS ==> DMS
+
+  classDef net fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
+  classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  classDef mig fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
+  class VPC,SUB,VPN,RT,SG net; class DBG,RDS db; class DMS,EP,TM,TASK,VER mig;
+    </div>
+    <div class="cap">圖 4 — Phase 1 建置 SOP（① 網路層 → ② 資料庫層 → ③ 遷移層，大區塊水平、區塊內垂直）</div>
+  </div>
+
+  <h3>逐步明細</h3>
+  <table>
+    <thead><tr><th>#</th><th>步驟</th><th>元件 / 服務</th><th>關鍵設定</th><th>目的</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>建 VPC</td><td>VPC</td><td><code>10.0.0.0/16</code></td><td>整體雲端私有網路容器</td></tr>
+      <tr><td>2</td><td>切 Subnet</td><td>Public / Private / DB Subnet</td><td>Public <code>10.0.0.0/24</code>、Private <code>10.0.32.0/24</code>(AZ-a)、DB <code>10.0.33.0/24</code>(AZ-a)+<code>10.0.34.0/24</code>(AZ-c)</td><td>分層隔離；DB 跨 2 AZ 供 RDS 高可用</td></tr>
+      <tr><td>3</td><td>建 VGW + VPN</td><td>VGW / Site-to-Site VPN</td><td>IPsec、對接地端閘道</td><td>地端 ↔ 雲端加密通道</td></tr>
+      <tr><td>4</td><td>設 Route Table</td><td>Route Table</td><td><code>10.0.0.0/16</code>→Local、<code>10.200.0.0/16</code>+<code>10.240.0.0/16</code>→VGW</td><td>導向地端網段（只增不刪既有）</td></tr>
+      <tr><td>5</td><td>設 Security Group</td><td>SG（Oracle / DMS / RDS）</td><td>Oracle In 1521←DMS；DMS Out 1521→Oracle、5432→RDS；RDS In 5432←DMS SG；禁 <code>0.0.0.0/0</code></td><td>執行個體層防火牆，SG 互引取代固定 IP</td></tr>
+      <tr><td>6</td><td>建 RDS</td><td>RDS Raw-Data-Replication + DB Subnet Group</td><td>PostgreSQL <code>db.t4g.small</code>、gp3 20GB(只增不減)、Single-AZ(Dev)、Public=No</td><td>原始複製落地目標</td></tr>
+      <tr><td>7</td><td>建 DMS 主機</td><td>DMS Replication Instance</td><td><code>dms.t3.medium</code>、50GB、置於 Private Subnet</td><td>執行遷移的運算資源</td></tr>
+      <tr><td>8</td><td>建 Endpoints + 測試</td><td>Source / Target Endpoint</td><td>Oracle 1521 唯讀 User(非 SYS/SYSTEM)、Target PostgreSQL 5432；先 Test connection</td><td>建立來源 / 目標連線並驗通</td></tr>
+      <tr><td>9</td><td>建 Migration Task</td><td>DMS Task + Table Mapping</td><td>Full Load / Drop tables on target / Limited LOB 32KB / Validation Off；白名單 <code>DS.*</code>、<code>M2201.*</code></td><td>全量複製指定 Schema</td></tr>
+      <tr><td>10</td><td>驗證同步</td><td>—</td><td>比對來源 / 目標筆數、抽樣核對欄位</td><td>確認落地正確、資料無漏</td></tr>
+    </tbody>
+  </table>
+  <details style="margin-top:12px">
+    <summary style="cursor:pointer;font-weight:700;color:var(--navy)">附錄：Oracle 最小權限 SQL（dba_registry 錯誤時套用）</summary>
+    <pre><span class="c">-- 以 DBA 執行;&amp;DMS_USER 換成實際唯讀帳號</span>
+<span class="k">GRANT</span> CREATE SESSION   <span class="k">TO</span> &amp;DMS_USER;
+<span class="k">GRANT</span> SELECT <span class="k">ANY</span> TABLE  <span class="k">TO</span> &amp;DMS_USER;
+<span class="k">GRANT</span> SELECT <span class="k">ON</span> SYS.V_$DATABASE   <span class="k">TO</span> &amp;DMS_USER;
+<span class="k">GRANT</span> SELECT <span class="k">ON</span> SYS.DBA_REGISTRY  <span class="k">TO</span> &amp;DMS_USER;
+<span class="k">GRANT</span> SELECT <span class="k">ON</span> SYS.DBA_TABLES    <span class="k">TO</span> &amp;DMS_USER;
+<span class="k">GRANT</span> SELECT <span class="k">ON</span> SYS.DBA_TAB_COLUMNS <span class="k">TO</span> &amp;DMS_USER;</pre>
+  </details>
+
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>Endpoint</dt><dd>DMS 來源 / 目標連線設定（Host / Port / 帳密）。</dd>
+      <dt>Table Mapping</dt><dd>白名單指定同步 Schema（<code>DS.*</code> / <code>M2201.*</code>）。</dd>
+      <dt>Full Load</dt><dd>一次性整批複製既有資料。</dd>
+      <dt>LOB</dt><dd>大型欄位；本架構 Limited LOB 32KB。</dd>
+      <dt>gp3</dt><dd>通用型 SSD，可線上擴充（只增不減）。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+  </div>
+</section>
+
+<!-- Phase 2 · Glue 前置 VPC Endpoints -->
+<section id="vpce">
+  <span class="ptag t2">Phase 2 · ETL / Glue</span>
+  <h2><span class="num">六</span>Glue 前置作業：VPC Endpoints</h2>
+  <p class="lead">Phase 2 要用 AWS Glue 把 Raw 轉成 ETL-Hub。Glue Worker 跑在 Private Subnet，呼叫 AWS API 會因無對外路由而失敗 → 用 <b>VPC Endpoint 走 AWS Backbone</b> 解決，而非開 NAT Gateway。</p>
+
+  <div class="callout danger"><span class="h">⛔ 問題：Glue Connection 失敗</span>建立 Glue Connection 時報 <code>Failed to assume customer's role / Verify that your VPC has access to STS</code>。根因：Glue Worker 在 Private Subnet，Route Table 只有 <code>local</code> + VGW（<code>10.200/10.240</code>→地端），<b>沒有 <code>0.0.0.0/0</code></b> → 連不到 <code>sts.ap-northeast-1.amazonaws.com</code> → AssumeRole 失敗。</div>
+
+  <div class="diagram hero">
+    <div class="mermaid">
+flowchart LR
+  subgraph PRIV["Private Subnet（無 0.0.0.0/0）"]
+    GLUE["Glue Worker"]
+  end
+  subgraph VPCEP["VPC Endpoints｜AWS Backbone"]
+    direction TB
+    STS["STS<br/>Interface ✅ 已建"]
+    SM["Secrets Manager<br/>Interface"]
+    LOG["CloudWatch Logs<br/>Interface"]
+    S3E["S3<br/>Gateway"]
+  end
+  subgraph API["AWS Service API"]
+    direction TB
+    A1["sts.*"]
+    A2["secretsmanager.*"]
+    A3["logs.*"]
+    A4["s3.*"]
+  end
+  GLUE == "HTTPS 443" ==> STS --> A1
+  GLUE == "HTTPS 443" ==> SM --> A2
+  GLUE == "HTTPS 443" ==> LOG --> A3
+  GLUE == "Route Table" ==> S3E --> A4
+
+  classDef p fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
+  classDef e fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
+  classDef a fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  class GLUE p; class STS,SM,LOG,S3E e; class A1,A2,A3,A4 a;
+    </div>
+    <div class="cap">圖 5 — Glue Worker 經 VPC Endpoint 走 AWS Backbone 存取 AWS API（不繞公網 / 不用 NAT）</div>
+  </div>
+
+  <h3>解法：VPC Endpoint（不用 NAT Gateway）</h3>
+  <p class="lead">企業 Data Center 是 Private Network，不希望 Private Subnet 透過 NAT 對外上網 → 改走 AWS Backbone。</p>
+  <table>
+    <thead><tr><th>對照</th><th>NAT Gateway</th><th>VPC Endpoint（採用）</th></tr></thead>
+    <tbody>
+      <tr><td>路徑</td><td>經公網對外</td><td>AWS 內部 Backbone</td></tr>
+      <tr><td>對外暴露面</td><td>私網可連整個 Internet</td><td>只到指定 AWS 服務</td></tr>
+      <tr><td>符合 Private First</td><td>✗</td><td>✓</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Endpoint 清單（已建 + 規劃）</h3>
+  <p class="lead">已建：STS Interface Endpoint <code>com.amazonaws.ap-northeast-1.sts</code>，Private DNS Enabled，佈於 Subnet-A / Subnet-C。</p>
+  <table>
+    <thead><tr><th>類別</th><th>服務</th><th>Endpoint 型態</th><th>狀態</th></tr></thead>
+    <tbody>
+      <tr><td><span class="ph">Required</span></td><td>STS</td><td>Interface</td><td>✅ 已建</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>Secrets Manager</td><td>Interface</td><td>規劃</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>CloudWatch Logs</td><td>Interface</td><td>規劃</td></tr>
+      <tr><td><span class="ph">Required</span></td><td>S3</td><td>Gateway</td><td>規劃</td></tr>
+      <tr><td>Optional</td><td>KMS</td><td>Interface</td><td>選用</td></tr>
+      <tr><td>Optional</td><td>ECR API / ECR DKR</td><td>Interface</td><td>選用（容器映像）</td></tr>
+      <tr><td>Optional</td><td>SSM</td><td>Interface</td><td>選用</td></tr>
+    </tbody>
+  </table>
+  <div class="grid c2">
+    <div class="card"><h3 style="margin-top:0">Interface Endpoint</h3>建 <b>ENI</b>、吃 <b>Security Group</b>、走 <b>Private DNS</b>。STS / Secrets Manager / Logs / KMS / ECR 皆屬此類。</div>
+    <div class="card"><h3 style="margin-top:0">Gateway Endpoint（S3 專用）</h3>不建 ENI、不吃 SG、改 <b>Route Table</b>。與 Interface 設計不同。</div>
+  </div>
+
+  <h3>Security Group 策略（Role-Based）</h3>
+  <p class="lead">以角色切 SG，而非每個 App 一個；所有 AWS Interface Endpoint 共用一個 SG。</p>
+  <div class="card">
+    <b>SG-VPCE-AWS-Services</b>（STS / Secrets Manager / CloudWatch Logs / KMS / ECR 共用）— 因為都走 <b>HTTPS 443</b> 與 AWS API 通訊，共用可降低維護成本。
+    <table style="margin-top:10px">
+      <thead><tr><th>方向</th><th>Port</th><th>來源 / 目標</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip in">Inbound</span></td><td class="mono">443</td><td>SG-ETL-Glue（未來 DMS / Taskiq 可加入）</td></tr>
+        <tr><td><span class="chip out">Outbound</span></td><td class="mono">All</td><td>All Traffic</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>規劃 SG 清單：<code>SG-DB-RDS</code>、<code>SG-ETL-Glue</code>、<code>SG-ETL-DMS</code>、<code>SG-APP-Taskiq</code>、<code>SG-VPCE-AWS-Services</code>。</p>
+
+  <h3>Glue Workflow（規劃）</h3>
+  <div class="flowbar">
+    <span class="n">Glue Connection</span><span class="a">→</span>
+    <span class="n">Glue Database</span><span class="a">→</span>
+    <span class="n">Crawler</span><span class="a">→</span>
+    <span class="n">Catalog</span><span class="a">→</span>
+    <span class="n acc">Visual ETL</span><span class="a">→</span>
+    <span class="n">S3</span><span class="a">→</span>
+    <span class="n">Athena / RDS</span>
+  </div>
+
+  <h3>設計原則</h3>
+  <div class="grid c4">
+    <div class="card"><h3 style="margin-top:0">Private First</h3>核心服務全部署於 Private Subnet。</div>
+    <div class="card"><h3 style="margin-top:0">Least Privilege</h3>Security Group 依角色切分，非全服務共用。</div>
+    <div class="card"><h3 style="margin-top:0">AWS Backbone</h3>透過 VPC Endpoint 存取 AWS API，不繞 NAT Gateway。</div>
+    <div class="card"><h3 style="margin-top:0">Scalable</h3>後續 Athena / Redshift / EMR / ECS / Lambda / AI Platform 免重設計 VPC。</div>
+  </div>
+
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>STS</dt><dd>Security Token Service，發臨時憑證；AssumeRole 靠它。</dd>
+      <dt>AssumeRole</dt><dd>取得 IAM Role 的臨時權限；Glue 啟動時呼叫 STS 執行。</dd>
+      <dt>VPC Endpoint</dt><dd>Private Subnet 不繞公網、走 AWS Backbone 存取 AWS 服務。</dd>
+      <dt>Interface Endpoint</dt><dd>建 ENI + 吃 SG + Private DNS（STS / Secrets / Logs…）。</dd>
+      <dt>Gateway Endpoint</dt><dd>S3 專用，改 Route Table、不建 ENI / 不吃 SG。</dd>
+      <dt>ENI</dt><dd>Elastic Network Interface，Interface Endpoint 在子網內的網卡。</dd>
+      <dt>Private DNS</dt><dd>讓 AWS 服務網域自動解析到 Endpoint 私有 IP。</dd>
+      <dt>NAT Gateway</dt><dd>私網「只出不進」對外上網；本架構刻意不用。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+  </div>
 </section>
 
 <!-- 設施 -->
 <section id="infra">
-  <h2><span class="num">五</span>整體使用到的 AWS 設施</h2>
+  <span class="ptag tr">跨階段 · 參考</span>
+  <h2><span class="num">七</span>整體使用到的 AWS 設施</h2>
   <p class="lead">只給系統方向，落地實際必須的設施一併納入規劃。</p>
 
   <h3>網路 / 連線</h3>
@@ -367,7 +706,7 @@ flowchart LR
       <tr><td>VGW + Site-to-Site VPN</td><td>地端 ↔ 雲端</td><td><span class="ph">1</span></td></tr>
       <tr><td>Route Table（Local / VGW / NAT）</td><td>路由（只增不刪既有）</td><td><span class="ph">1</span></td></tr>
       <tr><td>Security Group（Oracle/DMS/RDS/EC2/Glue）</td><td>流量控管（禁 0.0.0.0/0）</td><td><span class="ph">1</span></td></tr>
-      <tr><td>VPC Endpoint（S3 Gateway）</td><td>私網存取 S3 不繞公網</td><td><span class="ph">1–3</span></td></tr>
+      <tr><td>VPC Endpoint（STS / Secrets / Logs Interface + S3 Gateway）</td><td>Private Subnet 走 Backbone 存取 AWS API</td><td><span class="ph">2</span></td></tr>
     </tbody>
   </table>
 
@@ -388,7 +727,7 @@ flowchart LR
           <tr><td>AWS Glue（Jobs / Crawler / Catalog）</td><td><span class="ph">2</span></td></tr>
           <tr><td>EventBridge（排程觸發）</td><td><span class="ph">2</span></td></tr>
           <tr><td>Lambda（編排）</td><td><span class="ph">2</span></td></tr>
-          <tr><td>EC2（Data Hub / Center）</td><td><span class="ph">1–2</span></td></tr>
+          <tr><td>EC2（Data Hub / Center · Taskiq）</td><td><span class="ph">1–2</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -417,11 +756,24 @@ flowchart LR
   </div>
 
   <div class="callout warn"><span class="h">⚠ 影響正式環境</span>Route Table 與 Security Group 屬共享資源：新增前確認不影響既有正式流量；任何 Route 移除或 SG 開 <code>0.0.0.0/0</code> 需人類負責人複核。</div>
+
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>Multi-AZ</dt><dd>另一 AZ 待命副本，故障自動切換（正式環境建議）。</dd>
+      <dt>gp3</dt><dd>通用型 SSD，可線上擴充容量（只增不減）。</dd>
+      <dt>Data Catalog</dt><dd>Glue 維護的表結構 / 中繼資料。</dd>
+      <dt>VPC Endpoint</dt><dd>私網不繞公網存取 S3 等服務。</dd>
+      <dt>Route Table</dt><dd>決定封包流向（Local / VGW / NAT，只增不刪既有）。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
+  </div>
 </section>
 
 <!-- 設施關聯圖 -->
 <section id="relmap">
-  <h2><span class="num">六</span>設施關聯圖</h2>
+  <span class="ptag tr">跨階段 · 參考</span>
+  <h2><span class="num">八</span>設施關聯圖</h2>
   <p class="lead">各 AWS 設施之間的關係:包含 / 套用 / 授權 / 提供帳密 / 加密 / 監控 / 讀寫。線條配色:<b style="color:#1f6feb">藍=資料流</b>、<b style="color:#64748b">灰=基礎連線</b>、<b style="color:#8b5cf6">紫=安全治理(SG / IAM / KMS / CloudWatch)</b>。</p>
   <div class="diagram hero">
     <div class="mermaid">
@@ -512,51 +864,39 @@ flowchart TB
   class IAM,SM,KMS,CW,CT sec;
   class SGD,SGR sg;
     </div>
-    <div class="cap">圖 4 — AWS 設施關聯圖（藍=資料流 · 灰=基礎連線 · 紫=安全治理）</div>
+    <div class="cap">圖 6 — AWS 設施關聯圖（藍=資料流 · 灰=基礎連線 · 紫=安全治理）</div>
   </div>
 
   <h3>各階段範圍對照</h3>
   <div class="grid c4">
     <div class="phase p1"><span class="badge">本期</span><span class="tag">Phase 1</span><h4>基礎建設 + Full Load</h4>
       <ul><li>VPC</li><li>VPN</li><li>Route Table</li><li>Security Group</li><li>Oracle</li><li>PostgreSQL / RDS</li><li>DMS</li></ul></div>
-    <div class="phase p2"><span class="tag">Phase 2</span><h4>CDC + ETL</h4>
-      <ul><li>CDC</li><li>EventBridge</li><li>Lambda</li><li>ETL / ETL-Hub</li><li>Glue</li></ul></div>
+    <div class="phase p2"><span class="badge">進行中</span><span class="tag">Phase 2</span><h4>CDC + ETL / Glue</h4>
+      <ul><li>VPC Endpoints</li><li>CDC</li><li>EventBridge</li><li>Lambda</li><li>ETL / ETL-Hub</li><li>Glue</li></ul></div>
     <div class="phase p3"><span class="tag">Phase 3</span><h4>資料湖 + 分析</h4>
       <ul><li>S3 Data Lake</li><li>Athena</li><li>Redshift</li><li>AI Data Hub</li></ul></div>
     <div class="phase p4"><span class="tag">Phase 4</span><h4>AI 平台</h4>
       <ul><li>AI Knowledge Base</li><li>RAG</li><li>MCP</li><li>Agent Platform</li></ul></div>
   </div>
-</section>
 
-<!-- SOP -->
-<section id="sop">
-  <h2><span class="num">七</span>Phase 1 建置 SOP</h2>
-  <div class="diagram">
-    <div class="mermaid">
-flowchart LR
-  A[1. VPC] --> B[2. Subnet] --> C[3. VGW+VPN] --> D[4. Route Table] --> E[5. Security Group]
-  E --> F[6. RDS] --> G[7. DMS Instance] --> H[8. Endpoints+測試] --> I[9. Migration Task] --> J[10. 驗證同步]
-  classDef d fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
-  class A,B,C,D,E,F,G,H,I,J d;
-    </div>
-    <div class="cap">圖 5 — 建置順序（網路底層 → 資料庫 → 遷移）</div>
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>IAM Role</dt><dd>授予服務（DMS / Glue / Lambda / EC2）最小必要權限。</dd>
+      <dt>Secrets Manager</dt><dd>集中保管 DB 帳密 / 金鑰。</dd>
+      <dt>KMS</dt><dd>靜態加密金鑰管理（RDS / S3 加密）。</dd>
+      <dt>CloudWatch</dt><dd>Logs / Metrics / Alarms 監控告警。</dd>
+      <dt>CloudTrail</dt><dd>記錄 API 操作軌跡供稽核。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈九〉</a>
   </div>
-  <details style="margin-top:12px">
-    <summary style="cursor:pointer;font-weight:700;color:var(--navy)">附錄：Oracle 最小權限 SQL（dba_registry 錯誤時套用）</summary>
-    <pre><span class="c">-- 以 DBA 執行;&amp;DMS_USER 換成實際唯讀帳號</span>
-<span class="k">GRANT</span> CREATE SESSION   <span class="k">TO</span> &amp;DMS_USER;
-<span class="k">GRANT</span> SELECT <span class="k">ANY</span> TABLE  <span class="k">TO</span> &amp;DMS_USER;
-<span class="k">GRANT</span> SELECT <span class="k">ON</span> SYS.V_$DATABASE   <span class="k">TO</span> &amp;DMS_USER;
-<span class="k">GRANT</span> SELECT <span class="k">ON</span> SYS.DBA_REGISTRY  <span class="k">TO</span> &amp;DMS_USER;
-<span class="k">GRANT</span> SELECT <span class="k">ON</span> SYS.DBA_TABLES    <span class="k">TO</span> &amp;DMS_USER;
-<span class="k">GRANT</span> SELECT <span class="k">ON</span> SYS.DBA_TAB_COLUMNS <span class="k">TO</span> &amp;DMS_USER;</pre>
-  </details>
 </section>
 
 <!-- 名詞解說 -->
 <section id="glossary">
-  <h2><span class="num">八</span>名詞解說</h2>
-  <p class="lead">本架構出現的 AWS 服務、網路名詞與專案自訂命名一覽。</p>
+  <span class="ptag tr">跨階段 · 參考</span>
+  <h2><span class="num">九</span>名詞解說</h2>
+  <p class="lead">本架構所有名詞的完整索引；各頁底部另有「📖 本頁名詞」就地速查。</p>
 
   <h3>網路 / 連線</h3>
   <table>
@@ -565,15 +905,32 @@ flowchart LR
       <tr><td><b>VPC</b></td><td>Virtual Private Cloud</td><td>AWS 上的私有虛擬網路,本架構用 <code>10.0.0.0/16</code> 隔離所有資源。</td></tr>
       <tr><td><b>CIDR</b></td><td>網段表示法</td><td>如 <code>10.0.32.0/24</code>,`/24` 代表可用 256 個 IP;用來劃分子網範圍。</td></tr>
       <tr><td><b>AZ</b></td><td>Availability Zone</td><td>同區域內物理隔離的機房(本架構用東京 1a / 1c),跨 AZ 提升可用性。</td></tr>
-      <tr><td><b>Subnet</b></td><td>子網</td><td>VPC 內的網段切分:Public(對外)、Private(DMS)、DB(RDS)。</td></tr>
+      <tr><td><b>Subnet</b></td><td>子網</td><td>VPC 內的網段切分:Public(對外)、Private(DMS / Glue)、DB(RDS)。</td></tr>
       <tr><td><b>IGW</b></td><td>Internet Gateway</td><td>VPC 對公網的進出入口,只有 Public Subnet 經它通網際網路。</td></tr>
-      <tr><td><b>NAT Gateway</b></td><td>網路位址轉換閘道</td><td>讓私有子網「只出不進」連外(套件更新 / 呼叫 AWS API),外部無法主動連入。</td></tr>
+      <tr><td><b>NAT Gateway</b></td><td>網路位址轉換閘道</td><td>讓私有子網「只出不進」連外;本架構 Phase 2 刻意改用 VPC Endpoint 而不開 NAT。</td></tr>
       <tr><td><b>VGW</b></td><td>Virtual Private Gateway</td><td>VPC 端的 VPN 落地閘道,與地端對接 Site-to-Site VPN。</td></tr>
       <tr><td><b>Site-to-Site VPN</b></td><td>站對站 VPN</td><td>地端機房 ↔ AWS 之間的 IPsec 加密通道。</td></tr>
       <tr><td><b>Route Table</b></td><td>路由表</td><td>決定封包往哪走(Local / VGW / NAT);本架構只新增、不移除既有路由。</td></tr>
       <tr><td><b>Security Group</b></td><td>SG / 安全群組</td><td>執行個體層級的虛擬防火牆,以「方向 + Port + 來源」控管,可互相引用。</td></tr>
       <tr><td><b>NACL</b></td><td>Network ACL</td><td>子網層級的無狀態防火牆,排查連線問題時的檢查項之一。</td></tr>
-      <tr><td><b>VPC Endpoint</b></td><td>VPC 端點</td><td>讓私網不經公網即可存取 S3 等 AWS 服務(本架構用 S3 Gateway Endpoint)。</td></tr>
+      <tr><td><b>VPC Endpoint</b></td><td>VPC 端點</td><td>讓私網不經公網即可存取 S3 / STS 等 AWS 服務(走 AWS Backbone)。</td></tr>
+    </tbody>
+  </table>
+
+  <h3>VPC Endpoint / Glue 前置（Phase 2）</h3>
+  <table>
+    <thead><tr><th>名詞</th><th>全稱 / 類型</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td><b>STS</b></td><td>Security Token Service</td><td>發放臨時安全憑證的服務;AssumeRole 靠它換取角色權限。</td></tr>
+      <tr><td><b>AssumeRole</b></td><td>取得角色臨時憑證</td><td>服務(如 Glue)啟動時向 STS 換取 IAM Role 的臨時權限。</td></tr>
+      <tr><td><b>Interface Endpoint</b></td><td>VPC 端點(ENI 型)</td><td>在子網建 ENI、吃 SG、走 Private DNS,存取 STS / Secrets / Logs 等。</td></tr>
+      <tr><td><b>Gateway Endpoint</b></td><td>VPC 端點(路由型)</td><td>S3 專用,改 Route Table、不建 ENI / 不吃 SG。</td></tr>
+      <tr><td><b>ENI</b></td><td>Elastic Network Interface</td><td>彈性網卡;Interface Endpoint 在子網內的網路介面。</td></tr>
+      <tr><td><b>Private DNS</b></td><td>私有 DNS 解析</td><td>讓 AWS 服務網域自動解析到 Endpoint 的私有 IP。</td></tr>
+      <tr><td><b>Glue Connection</b></td><td>Glue 連線設定</td><td>Glue 連 RDS / 資料源的連線,含 VPC / Subnet / SG。</td></tr>
+      <tr><td><b>Glue Crawler</b></td><td>爬蟲</td><td>掃描資料源結構,寫入 Data Catalog。</td></tr>
+      <tr><td><b>ECR</b></td><td>Elastic Container Registry</td><td>容器映像倉庫;跑容器化任務時需要(選用 Endpoint)。</td></tr>
+      <tr><td><b>SSM</b></td><td>Systems Manager</td><td>參數 / 遠端管理;選用 Endpoint。</td></tr>
     </tbody>
   </table>
 
@@ -604,7 +961,7 @@ flowchart LR
       <tr><td><b>Data Catalog</b></td><td>資料目錄</td><td>Glue 維護的表結構/中繼資料庫,供 Athena/Glue 查詢用。</td></tr>
       <tr><td><b>EventBridge</b></td><td>事件匯流排</td><td>以排程或事件觸發 ETL 流程(Phase 2)。</td></tr>
       <tr><td><b>Lambda</b></td><td>無伺服器函式</td><td>輕量程式碼執行,做流程編排或小型處理(Phase 2)。</td></tr>
-      <tr><td><b>EC2</b></td><td>Elastic Compute Cloud</td><td>虛擬主機;本架構執行 Data Hub / Center 應用。</td></tr>
+      <tr><td><b>EC2</b></td><td>Elastic Compute Cloud</td><td>虛擬主機;本架構執行 Data Hub / Center 與 Taskiq / Scheduler。</td></tr>
     </tbody>
   </table>
 
@@ -644,11 +1001,12 @@ flowchart LR
   </table>
 </section>
 
-</div>
+</div><!-- #content -->
+</div><!-- .layout -->
 
 <footer>
   <div class="wrap">
-    <b>Enterprise Data Hub — 地端 → AWS 資料中樞架構</b> · 本期 Phase 1（基礎建設 + Full Load，已實測）<br>
+    <b>Enterprise Data Hub — 地端 → AWS 資料中樞架構</b> · Phase 1（Full Load 已實測）· Phase 2（Glue 前置 VPC Endpoints 進行中）<br>
     毀滅性操作禁令：禁止 DROP 類資料庫操作、禁止刪除 Docker volume、禁止 <code>rm -rf</code>;不可逆操作需人類負責人確認與備份。<br>
     規範優先序：docs/Design-Base/* &gt; docs/Arch/* &gt; CLAUDE.md &gt; docs/Tasks/*
   </div>
@@ -690,7 +1048,7 @@ flowchart LR
     w.document.close();
   }
 
-  // 渲染完成後，為每張圖注入「開新視窗」按鈕
+  // 渲染完成後：注入「開新視窗」按鈕，並啟用分頁閱讀模式
   mermaid.run().then(function(){
     document.querySelectorAll('.diagram').forEach(function(d){
       if(!d.querySelector('svg')){ return; }
@@ -701,7 +1059,70 @@ flowchart LR
       b.addEventListener('click', function(){ popDiagram(b); });
       d.insertBefore(b, d.firstChild);
     });
+    initPaged();
   });
+
+  // 分頁閱讀：一次只顯示一節，左側 sidebar 導覽，底部卡片式上/下一節
+  function initPaged(){
+    const content = document.getElementById('content');
+    if(!content){ return; }
+    const layout = document.querySelector('.layout');
+    const sections = Array.from(content.querySelectorAll(':scope > section'));
+    const navLinks = Array.from(document.querySelectorAll('nav.toc a'));
+    if(sections.length < 2){ return; }
+    document.body.classList.add('paged');
+
+    const progBar = document.querySelector('.progress > span');
+    const countEl = document.getElementById('sbCount');
+
+    const pager = document.createElement('div');
+    pager.className = 'pager';
+    const prev = document.createElement('a');
+    const next = document.createElement('a');
+    prev.className = 'pg prev'; next.className = 'pg next';
+    prev.href = next.href = 'javascript:void(0)';
+    pager.appendChild(prev); pager.appendChild(next);
+    content.appendChild(pager);
+
+    let cur = 0;
+    function titleOf(i){
+      const h = sections[i].querySelector('h2');
+      return h ? h.textContent.replace(/\s+/g, ' ').trim() : ('第 ' + (i + 1) + ' 節');
+    }
+    function show(i, scroll){
+      cur = Math.max(0, Math.min(sections.length - 1, i));
+      sections.forEach(function(s, k){ s.classList.toggle('active', k === cur); });
+      navLinks.forEach(function(a){
+        a.classList.toggle('active', a.getAttribute('href') === '#' + sections[cur].id);
+      });
+      prev.classList.toggle('disabled', cur === 0);
+      next.classList.toggle('disabled', cur === sections.length - 1);
+      prev.innerHTML = cur === 0 ? '' : '<span class="k">← 上一節</span><span class="t">' + titleOf(cur - 1) + '</span>';
+      next.innerHTML = cur === sections.length - 1 ? '' : '<span class="k">下一節 →</span><span class="t">' + titleOf(cur + 1) + '</span>';
+      if(progBar){ progBar.style.width = ((cur + 1) / sections.length * 100) + '%'; }
+      if(countEl){ countEl.textContent = '第 ' + (cur + 1) + ' / ' + sections.length + ' 節'; }
+      if(scroll){ window.scrollTo({ top: layout ? layout.offsetTop : 0, behavior: 'smooth' }); }
+    }
+    function goto(id){
+      const idx = sections.findIndex(function(s){ return s.id === id; });
+      if(idx >= 0){ show(idx, true); return true; }
+      return false;
+    }
+    navLinks.concat(Array.from(content.querySelectorAll('a[href^="#"]'))).forEach(function(a){
+      a.addEventListener('click', function(e){
+        const id = a.getAttribute('href').slice(1);
+        if(id && goto(id)){ e.preventDefault(); }
+      });
+    });
+    prev.addEventListener('click', function(){ show(cur - 1, true); });
+    next.addEventListener('click', function(){ show(cur + 1, true); });
+    document.addEventListener('keydown', function(e){
+      if(e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)){ return; }
+      if(e.key === 'ArrowLeft'){ show(cur - 1, true); }
+      if(e.key === 'ArrowRight'){ show(cur + 1, true); }
+    });
+    show(0, false);
+  }
 </script>
 </body>
 </html>
