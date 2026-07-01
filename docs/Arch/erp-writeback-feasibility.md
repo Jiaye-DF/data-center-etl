@@ -18,7 +18,7 @@ Oracle →(DMS)→ Raw-Data-Replication →(Glue ETL)→ ETL-Hub → 業務系�
 
 ---
 
-## II、結論(先講重點)
+## II、結論與決策樹(先講重點)
 
 1. **不要用 DMS 回寫。** DMS 是單向複製工具,來源端是唯讀帳號(`aws-to-local-infra-arch.md` § VI Phase 1 關鍵參數),硬做反向 task 是架構反模式。
 2. **不要直接 INSERT/UPDATE Oracle 底表。** 會跳過 ERP 商業邏輯,造成資料「看得到、但商業意義是錯的」(詳見〈III〉)。
@@ -27,6 +27,19 @@ Oracle →(DMS)→ Raw-Data-Replication →(Glue ETL)→ ETL-Hub → 業務系�
    - REST API(若 ERP 有提供)→ 同等可用,通常更輕量
    - DBA 封裝的 PL/SQL Package(含商業邏輯對外提供)→ 次選,需 ERP 團隊額外開發維護
 4. **能不能回寫的關鍵不在雲端這側,而在 ERP 有沒有開對應介面** → 見〈IV、待確認清單〉。
+
+### 介面決策樹(給接手者快速判斷)
+
+```
+ERP 有 SOAP Web Service 且涵蓋所需寫入操作?
+├─ 是 ─────────────────────────► 用 SOAP Web Service 回寫 ✅(首選)
+└─ 否
+   ├─ 有 REST API 且涵蓋? ──────► 用 REST API 回寫 ✅
+   └─ 都沒有
+      └─ DBA 可封裝 PL/SQL Package? ─► 用 Package 回寫 ✅(次選)
+                                  └─ 否 ─► 回寫暫不可行,需 ERP 團隊先開介面 ⛔
+                                          (絕不直寫底表 / 不用 DMS 反向)
+```
 
 ---
 
@@ -45,7 +58,7 @@ Oracle →(DMS)→ Raw-Data-Replication →(Glue ETL)→ ETL-Hub → 業務系�
 
 ---
 
-## IV、待確認清單(交接重點 — 先問 ERP / DBA)
+## IV、待確認清單
 
 **這是決定「能不能回寫」的關鍵,務必先問清楚再動工:**
 
@@ -60,7 +73,7 @@ Oracle →(DMS)→ Raw-Data-Replication →(Glue ETL)→ ETL-Hub → 業務系�
 
 ---
 
-## V、回寫的正確流程(確認可行後的目標架構)
+## V、回寫流程與後續(確認可行後的目標架構)
 
 ```mermaid
 flowchart LR
@@ -78,9 +91,7 @@ flowchart LR
 3. **網路方向要新開一條**:現行 SG 只有 `DMS SG → Oracle 1521`;回寫需新增 `整合服務 → ERP 介面 port`(走同一條 Site-to-Site VPN,**只增不刪**既有規則,符合現行規範)。
 4. **權限帳號分離**:回寫用「可寫但受限」的 ERP 帳號 / 介面授權,跟 DMS 唯讀帳號完全分開。
 
----
-
-## VI、SoapUI 的角色(釐清)
+### SoapUI 的角色(釐清)
 
 - **SOAP Web Service** = ERP 對外的官方介面(協定)。
 - **SoapUI** = 用來**測試 / 探索** SOAP(與 REST)介面的工具。
@@ -90,24 +101,7 @@ flowchart LR
 - ✅ **開發 / 測試階段**:拿 SoapUI 打 ERP 的 SOAP endpoint,確認 operation、WSDL、欄位、回執、錯誤碼 → 摸清介面契約。
 - ❌ **不要**把 SoapUI 當 production 回寫元件。正式環境應由整合服務**用程式碼的 SOAP/REST client** 呼叫,才有重試 / 佇列 / 稽核 / 錯誤處理。
 
----
-
-## VII、決策樹(給接手者快速判斷)
-
-```
-ERP 有 SOAP Web Service 且涵蓋所需寫入操作?
-├─ 是 ─────────────────────────► 用 SOAP Web Service 回寫 ✅(首選)
-└─ 否
-   ├─ 有 REST API 且涵蓋? ──────► 用 REST API 回寫 ✅
-   └─ 都沒有
-      └─ DBA 可封裝 PL/SQL Package? ─► 用 Package 回寫 ✅(次選)
-                                  └─ 否 ─► 回寫暫不可行,需 ERP 團隊先開介面 ⛔
-                                          (絕不直寫底表 / 不用 DMS 反向)
-```
-
----
-
-## VIII、後續動作
+### 後續動作
 
 1. 拿〈IV〉的清單去問 ERP / DBA,把答案回填。
 2. 若可行:用 SoapUI 測通一支回寫操作 → 確認契約 → 在整合服務實作 → 開 SG 規則。

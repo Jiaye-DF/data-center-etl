@@ -183,13 +183,10 @@
       <div class="sb-count" id="sbCount"></div>
       <nav class="toc">
         <a href="#bg"><i>I</i><span>問題背景</span></a>
-        <a href="#concl"><i>II</i><span>結論</span></a>
+        <a href="#concl"><i>II</i><span>結論與決策樹</span></a>
         <a href="#why"><i>III</i><span>為何不能直寫</span></a>
         <a href="#checklist"><i>IV</i><span>待確認清單</span></a>
-        <a href="#flow"><i>V</i><span>正確回寫流程</span></a>
-        <a href="#soapui"><i>VI</i><span>SoapUI 角色</span></a>
-        <a href="#tree"><i>VII</i><span>決策樹</span></a>
-        <a href="#next"><i>VIII</i><span>後續動作</span></a>
+        <a href="#flow"><i>V</i><span>回寫流程與後續</span></a>
       </nav>
     </div>
   </aside>
@@ -232,7 +229,7 @@
 
 <!-- 結論 -->
 <section id="concl">
-  <h2><span class="num">II</span>結論(先講重點)</h2>
+  <h2><span class="num">II</span>結論與決策樹(先講重點)</h2>
   <div class="grid c2">
     <div class="callout danger"><span class="h">✗ 不要用 DMS 回寫</span>DMS 是單向複製工具,來源端是唯讀帳號,硬做反向 task 是架構反模式。</div>
     <div class="callout danger"><span class="h">✗ 不要直接寫 Oracle 底表</span>會跳過 ERP 商業邏輯,造成資料「看得到、但商業意義是錯的」(見〈III〉)。</div>
@@ -247,6 +244,26 @@
     </tbody>
   </table>
   <div class="callout"><span class="h">關鍵</span>能不能回寫的重點<b>不在雲端這側,而在 ERP 有沒有開對應介面</b> → 見〈IV、待確認清單〉。</div>
+
+  <h3>介面決策樹(給接手者快速判斷)</h3>
+  <div class="diagram">
+    <div class="mermaid">
+flowchart TB
+  Q1{"ERP 有 SOAP Web Service<br/>且涵蓋所需寫入操作?"}
+  Q1 -->|是| A1["用 SOAP Web Service 回寫 ✅ 首選"]
+  Q1 -->|否| Q2{"有 REST API 且涵蓋?"}
+  Q2 -->|是| A2["用 REST API 回寫 ✅"]
+  Q2 -->|否| Q3{"DBA 可封裝<br/>PL/SQL Package?"}
+  Q3 -->|是| A3["用 Package 回寫 ✅ 次選"]
+  Q3 -->|否| A4["回寫暫不可行 ⛔<br/>需 ERP 團隊先開介面<br/>(絕不直寫底表 / 不用 DMS 反向)"]
+
+  classDef q fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
+  classDef ok fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  classDef no fill:#fee2e2,stroke:#dc2626,color:#991b1b;
+  class Q1,Q2,Q3 q; class A1,A2,A3 ok; class A4 no;
+    </div>
+    <div class="cap">圖 1 — 回寫介面決策樹</div>
+  </div>
 </section>
 
 <!-- 為何不能直寫 -->
@@ -267,7 +284,7 @@
 
 <!-- 待確認清單 -->
 <section id="checklist">
-  <h2><span class="num">IV</span>待確認清單（交接重點 — 先問 ERP / DBA）</h2>
+  <h2><span class="num">IV</span>待確認清單</h2>
   <p class="lead">這是決定「能不能回寫」的關鍵,務必先問清楚再動工。</p>
   <ul class="check">
     <li><b>(a)</b> ERP 有沒有對外的 <b>SOAP Web Service</b>(或 REST API)?</li>
@@ -282,7 +299,7 @@
 
 <!-- 正確流程 -->
 <section id="flow">
-  <h2><span class="num">V</span>回寫的正確流程（確認可行後的目標架構）</h2>
+  <h2><span class="num">V</span>回寫流程與後續（確認可行後的目標架構）</h2>
   <p class="lead">入口用 ERP 官方介面,由 ERP 負責驗證與完整性,不碰底表。</p>
 
   <div class="flowbar">
@@ -315,7 +332,7 @@ flowchart LR
   classDef erp fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
   class BIZ biz; class WQ,INT mid; class API,ORA erp;
     </div>
-    <div class="cap">圖 1 — ERP 回寫目標流程(業務系統 → outbox → 整合服務 → ERP 官方介面 → Oracle)</div>
+    <div class="cap">圖 2 — ERP 回寫目標流程(業務系統 → outbox → 整合服務 → ERP 官方介面 → Oracle)</div>
   </div>
 
   <div class="grid c2">
@@ -326,11 +343,8 @@ flowchart LR
   </div>
 
   <div class="callout warn"><span class="h">⚠ 影響正式環境</span>Route Table 與 Security Group 屬共享資源:新增前確認不影響既有正式流量;任何 Route 移除或 SG 開 <code>0.0.0.0/0</code> 需人類負責人複核。</div>
-</section>
 
-<!-- SoapUI -->
-<section id="soapui">
-  <h2><span class="num">VI</span>SoapUI 的角色（釐清）</h2>
+  <h3>SoapUI 的角色(釐清)</h3>
   <p class="lead">先分清楚兩件常被混在一起的東西。</p>
   <div class="grid c2">
     <div class="card"><h3 style="margin-top:0">SOAP Web Service</h3>ERP 對外的<b>官方介面</b>(協定)。回寫真正要打的對象。</div>
@@ -338,34 +352,8 @@ flowchart LR
   </div>
   <div class="callout ok"><span class="h">✓ 適合(開發 / 測試階段)</span>拿 SoapUI 打 ERP 的 SOAP endpoint,確認 operation、WSDL、欄位、回執、錯誤碼 → 摸清介面契約。</div>
   <div class="callout danger"><span class="h">✗ 不適合(正式環境)</span>不要把 SoapUI 當 production 回寫元件。正式環境應由整合服務<b>用程式碼的 SOAP/REST client</b> 呼叫,才有重試 / 佇列 / 稽核 / 錯誤處理。</div>
-</section>
 
-<!-- 決策樹 -->
-<section id="tree">
-  <h2><span class="num">VII</span>決策樹（給接手者快速判斷）</h2>
-  <div class="diagram">
-    <div class="mermaid">
-flowchart TB
-  Q1{"ERP 有 SOAP Web Service<br/>且涵蓋所需寫入操作?"}
-  Q1 -->|是| A1["用 SOAP Web Service 回寫 ✅ 首選"]
-  Q1 -->|否| Q2{"有 REST API 且涵蓋?"}
-  Q2 -->|是| A2["用 REST API 回寫 ✅"]
-  Q2 -->|否| Q3{"DBA 可封裝<br/>PL/SQL Package?"}
-  Q3 -->|是| A3["用 Package 回寫 ✅ 次選"]
-  Q3 -->|否| A4["回寫暫不可行 ⛔<br/>需 ERP 團隊先開介面<br/>(絕不直寫底表 / 不用 DMS 反向)"]
-
-  classDef q fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
-  classDef ok fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
-  classDef no fill:#fee2e2,stroke:#dc2626,color:#991b1b;
-  class Q1,Q2,Q3 q; class A1,A2,A3 ok; class A4 no;
-    </div>
-    <div class="cap">圖 2 — 回寫介面決策樹</div>
-  </div>
-</section>
-
-<!-- 後續動作 -->
-<section id="next">
-  <h2><span class="num">VIII</span>後續動作</h2>
+  <h3>後續動作</h3>
   <div class="card">
     <ol style="margin:0;padding-left:20px;line-height:1.9">
       <li>拿〈IV〉的清單去問 ERP / DBA,把答案回填。</li>
