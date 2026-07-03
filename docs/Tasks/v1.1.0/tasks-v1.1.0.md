@@ -16,7 +16,7 @@
 | 004 | ETL 設定管理 API(表清單/啟停/mapping/Comment) | pending | ✗ | 001,003 | `backend/app/api/v1/etl_tables.py` / `api/v1/__init__.py` / `schemas/etl_config.py` / `services/etl_config_service.py` / `repositories/etl_config_repo.py` / `tests/test_etl_config_api.py` |
 | 005 | 排程 / 執行紀錄與詳細 log / 手動觸發 API | pending | ✗ | 004,007 | `backend/app/api/v1/schedules.py` / `api/v1/runs.py` / `api/v1/__init__.py` / `schemas/schedule.py` / `schemas/run.py` / `services/schedule_service.py` / `repositories/schedule_repo.py` / `repositories/run_repo.py` / `tests/test_schedule_api.py` / `tests/test_runs_api.py` |
 | 006 | ETL 執行核心(純 Python,DB 設定驅動 + 逐表詳細 log) | done(worker: claude-B) | ✓ | 001 | `backend/app/etl/`(engine/reader/writer/comments/transforms)/ `tests/test_etl_engine.py` / `tests/test_etl_transforms.py` |
-| 007 | taskiq + redis 排程服務(broker/worker/scheduler) | pending | ✓ | 006 | `backend/app/worker/`(broker/tasks/scheduler)/ `tests/test_worker.py` |
+| 007 | taskiq + redis 排程服務(broker/worker/scheduler) | done(worker: claude-B) | ✓ | 006 | `backend/app/worker/`(broker/tasks/scheduler)/ `tests/test_worker.py` |
 | 008 | v1.0.0 mapping 設定匯入自有 DB(seed) | done(worker: claude-C) | ✓ | 001 | `backend/scripts/seed_etl_config.py` / `tests/test_seed_etl_config.py` |
 | 009 | 前端登入頁(雙軌)+ 後台佈局殼 + auth guard | pending | ✓ | 002,003 | `frontend/src/app/login/page.tsx` / `middleware.ts` / `app/(main)/layout.tsx` / `app/(main)/page.tsx` / `lib/api/authApi.ts` / `lib/auth/useAuth.ts` / `app/error.tsx` / `app/global-error.tsx` |
 | 010 | 前端 Data Table 管理頁(清單/啟停/mapping/Comment) | pending | ✓ | 004,009 | `frontend/src/app/(main)/tables/*` / `lib/api/etlConfigApi.ts` / `components/tables/*` |

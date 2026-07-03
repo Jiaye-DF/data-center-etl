@@ -1,7 +1,7 @@
 ---
 id: task-007
 title: taskiq + redis 排程服務(broker / worker task / scheduler)
-status: pending
+status: done
 parallel: true
 depends_on: [task-006]
 affected_files:
