@@ -1,6 +1,7 @@
 # Tasks v1.1.0
 
-> 狀態:未開始(已完成 0/13)
+> 狀態:未開始(已完成 0/12)
+> 變更:2026-07-03 移除 task-013(Coolify 部署收口)— 部署與 AWS/EC2 建立由 user 人工執行(見 propose 變更紀錄);系統面交付止於 task-012。
 > 來源:`propose-v1.1.0.md`(scope 地板,禁動)
 > 範圍:ETL 管理後台(既有 `backend/` `frontend/` 骨架上開發)+ taskiq/redis 排程 + 容器內 ETL 執行 + Coolify 部署。taskiq / redis 不在鎖定技術棧,經 user 明示採用(propose 已註記)。v1.0.0 `etl/`(Glue 版)**凍結**:僅唯讀參考,任何 task 不得修改。
 > 執行環境註記:各 task Acceptance 指令為 bash 語法;本機為 Windows,worker 一律以 **Git Bash** 執行驗證指令。
@@ -21,19 +22,18 @@
 | 010 | 前端 Data Table 管理頁(清單/啟停/mapping/Comment) | pending | ✓ | 004,009 | `frontend/src/app/(main)/tables/*` / `lib/api/etlConfigApi.ts` / `components/tables/*` |
 | 011 | 前端排程管理 + 執行紀錄/逐表詳細 log 頁 | pending | ✓ | 005,009 | `frontend/src/app/(main)/schedules/*` / `app/(main)/runs/*` / `lib/api/scheduleApi.ts` / `lib/api/runApi.ts` / `components/runs/RunLogTable.tsx` |
 | 012 | Docker 化(etl_ prefix image + redis/worker/scheduler) | pending | ✓ | 007 | `docker-compose.yml` / `backend/Dockerfile` / `.env.example` |
-| 013 | Coolify 部署 EC2 + RDS 端到端驗收(收口) | pending | ✗ | 008,010,011,012 | `README.md` / `docs/Tasks/v1.1.0/deploy-runbook.md` |
 
 ## 拆解摘要
 
-- **總數**:13 個 task,預估 ~44 hr;後端 8、前端 3、部署 2
+- **總數**:12 個 task,預估 ~41 hr;後端 8、前端 3、部署 1(Coolify 實際部署由 user 人工執行,不在 task 內)
 - **起手可認領(無依賴)**:task-001
 - **依賴鏈**:
   - 後端 API:`001 → 002 → 003 → 004 → 005`(003–005 共用 `api/v1/__init__.py`,**序列化**,故標 ✗)
   - ETL 執行:`001 → 006 → 007`(與 API 鏈**可並行**)
   - seed:`001 → 008`(可並行)
   - 前端:`(002,003) → 009 → (010 ∥ 011)`(010/011 檔案不重疊可並行,但分別等 004/005)
-  - 收口:`(008,010,011,012) → 013`
-- **阻塞點**:001 全域前置;`api/v1/__init__.py` 使後端 API 鏈序列化;005 需等 007(手動觸發 enqueue);013 為版本收口
+  - 收口:全 task done 後由 **user 人工**執行 Coolify / AWS 部署與正式環境驗收
+- **阻塞點**:001 全域前置;`api/v1/__init__.py` 使後端 API 鏈序列化;005 需等 007(手動觸發 enqueue)
 - **關鍵設計約束(避免同檔互鎖)**:
   1. **依賴鎖版集中 task-001**:`pyproject.toml` / `uv.lock` 只有 001 動,其餘 task 一律不改
   2. **`api/v1/__init__.py` 匯集模式由 002 建立**,003/004/005 依賴鏈序列化後各自掛 router
@@ -53,7 +53,7 @@
 | ETL 容器內執行(不依賴 Glue) | 006 |
 | 登入與權限(雙軌 + init_admin env) | 002,003,009 |
 | Docker 化(etl_ prefix) | 012 |
-| Coolify 部署於 EC2 | 013 |
+| 可部署產物(image + env 範本;部署本身 user 人工) | 012 |
 
 ## 驗收標準覆蓋(propose 驗收逐條)
 
@@ -61,12 +61,12 @@
 | --- | --- | --- |
 | compose up 全服務 healthy | 012 | 本地可驗 |
 | image 全 `etl_` prefix | 012 | 本地可驗 |
-| 排程到點自動執行 + 紀錄 | 007(機制)/ 013(實跑) | 013 屬人工 |
-| 手動觸發成功 + Comment 非空 | 005,006(機制)/ 013(實跑) | 013 屬人工 |
-| 逐表詳細 log(含失敗 stack trace) | 006(單元測試)/ 011(UI)/ 013(實跑) | 混合 |
-| 停用表不處理且 log 可證 | 004,006(測試)/ 013(實跑) | 混合 |
-| viewer 寫入 403 | 002,004,005(測試)/ 013(實測) | 本地可驗 |
-| init_admin env 登入 + 缺 env fail-fast | 002(測試)/ 013(實測) | 本地可驗 |
-| DF-SSO 登入完成 | 003,009 / 013(實測) | 013 屬人工 |
-| Coolify 部署 + EC2 寫入 RDS | 013 | 人工 |
-| v1.0.0 `etl/` 無異動 | 全 task 約束 / 013 收口檢查 | 本地可驗 |
+| 排程到點自動執行 + 紀錄 | 007(機制;本地 compose 可實測) | 正式環境由 user 部署後自驗 |
+| 手動觸發成功 + Comment 非空 | 005,006(機制 + 測試;本地可實測) | 正式環境由 user 自驗 |
+| 逐表詳細 log(含失敗 stack trace) | 006(單元測試)/ 011(UI) | 本地可驗 |
+| 停用表不處理且 log 可證 | 004,006(測試) | 本地可驗 |
+| viewer 寫入 403 | 002,004,005(測試) | 本地可驗 |
+| init_admin env 登入 + 缺 env fail-fast | 002(測試) | 本地可驗 |
+| DF-SSO 登入完成 | 003,009 | 需 DF-SSO 可達,可本地驗 |
+| Coolify 部署 + EC2 寫入 RDS | —(user 人工,不拆 task) | user 自驗 |
+| v1.0.0 `etl/` 無異動 | 全 task 約束(各 task Acceptance) | 本地可驗 |

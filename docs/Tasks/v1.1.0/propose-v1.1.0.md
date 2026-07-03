@@ -16,7 +16,7 @@
 - **ETL 容器內執行(不依賴 Glue / Spark)**:worker 直連來源 `erp_migration_test` 與目標 `erp_etl_hub_test`(RDS PostgreSQL)完成 DS 搬移與 GAT_FILE/GAQ_FILE → M2201 對應轉換;沿用 v1.0.0 的 mapping 規則與「每欄位必帶繁中 Comment」要求;容器化設計參考 `ERP-ETL-test`。
 - **登入與權限(雙軌)**:接 DF-SSO 登入,**並**支援本地帳號密碼登入;初始管理員(init_admin)帳密由**環境變數**注入、首次啟動自動建立(禁寫入 repo / yaml);自有 DB 存本地帳號(密碼雜湊)與角色 / 權限對應;至少 admin(可改設定 / 排程)與 viewer(唯讀)兩種角色。
 - **Docker 化**:所有 image 名稱一律 `etl_` prefix(如 `etl_frontend` / `etl_backend` / `etl_worker`);應用服務就 `frontend` / `backend` 兩個,加上排程(taskiq worker / scheduler)、redis 與自有 DB;docker-compose 本地可完整起跑。
-- **Coolify 部署於 EC2**:本版含正式部署;EC2 需可連線 RDS 進行讀寫(Security Group / 網路放行為前置)。
+- **可部署產物**:提供 Coolify 可用的 image(`etl_` prefix)與 env 範本;**實際部署由 user 人工執行**(含 AWS 雲端與 EC2 機器建立,不拆 task)。
 
 ## Out of Scope
 
@@ -25,6 +25,7 @@
 - `DS` / `M2201` 以外的 ERP schema / 表格轉換。
 - ETL 執行的水平擴充 / 分散式運算(單 worker 容器即可,資料量不需 Spark)。
 - 通知 / 告警(執行失敗僅記錄於執行紀錄,不發信 / 不接 IM)。
+- **Coolify 正式部署與 AWS 雲端 / EC2 機器建立**:由 user 人工執行,不拆 task;部署後的正式環境驗收(EC2 → RDS 實跑)亦由 user 自驗。
 
 ## 對外承諾
 
@@ -32,7 +33,7 @@
 - 排程到點自動執行 ETL,結果(成功 / 失敗)可於後台查得;目標 `erp_etl_hub_test` 資料與 v1.0.0 相同承諾:表名沿用原始 `table_name`、每欄位帶繁中 Comment。
 - 權限控管:viewer 角色無法改設定 / 排程(API 拒絕 + 前端隱藏)。
 - 所有 docker image 以 `etl_` 開頭;docker-compose 一鍵本地起跑。
-- Coolify 部署於 EC2 後,worker 可實際寫入 RDS 完成一次 ETL。
+- 交付 Coolify 可部署的 image(`etl_` prefix)與 env 範本;user 人工部署於 EC2 後,worker 可實際寫入 RDS 完成一次 ETL(由 user 自驗)。
 
 ## 風險與相依
 
@@ -52,8 +53,12 @@
 - 後台表清單頁列出所有納管 Data Table;停用其中一表後再執行,該表不被處理且 log 可證。
 - viewer 角色呼叫設定 / 排程之寫入 API 回 403。
 - 以環境變數注入的 init_admin 帳密可完成本地登入取得 admin 權限;缺 init_admin 環境變數時啟動 fail-fast(不以預設帳密起服務);DF-SSO 登入流程可完成並對應到既有角色。
-- Coolify 部署於 EC2 後:服務 health endpoint 回 200,且於正式環境成功執行一次 ETL 寫入 RDS。
+- (user 人工驗收)Coolify 部署於 EC2 後:服務 health endpoint 回 200,且於正式環境成功執行一次 ETL 寫入 RDS。
 - v1.0.0 `etl/`(Glue 版)無異動(`git diff --stat` 不含 `etl/` 既有檔案的修改)。
+
+## 變更紀錄
+
+- 2026-07-03:Coolify 正式部署與 AWS 雲端 / EC2 建立改為 **user 人工執行**,自 In Scope 移除、列 Out of Scope;對應移除 task-013(部署收口),系統面交付止於 task-012(image + compose + env 範本)。理由:user 指示部署與機器建立親自處理。
 
 ---
 
