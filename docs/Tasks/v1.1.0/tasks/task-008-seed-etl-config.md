@@ -1,7 +1,7 @@
 ---
 id: task-008
 title: v1.0.0 mapping 設定匯入自有 DB(seed)
-status: pending
+status: done
 parallel: true
 depends_on: [task-001]
 affected_files:
