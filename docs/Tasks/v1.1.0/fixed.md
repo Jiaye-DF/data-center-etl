@@ -45,3 +45,25 @@
 - **修正**:本機以 gitignored `backend/.env` / 根 `.env` 補 `INIT_ADMIN_*` dev 值,單獨執行 `test_models_v110.py` 已恢復綠;`.env*.example` 補欄位留待收口或 task-012(其 affected_files 含 `.env.example`)處理
 - **規範參照**:`docs/Design-Base/00-overview/02-secrets.md § .env*.example 規則(新增 secret 欄位 → 同步全層 example)`
 - **後續**:收口時把 `INIT_ADMIN_USERNAME` / `INIT_ADMIN_PASSWORD`(placeholder 值)補進三個 `.env.*.example`;CI 若單檔跑 `test_models_v110.py` 需先注入 env;reflect 候選 — 新增必填 env 的 task 應自動把 `.env*.example` 列入 affected_files
+
+## §5 — now_tw() 未能落在規範指定的 `app/utils/datetime.py`,暫置 `app/etl/engine.py`
+
+- **時間**:2026-07-03T17:40+08:00
+- **commit / PR**:task-006 commit(ETL 執行核心)
+- **影響檔案**:`backend/app/etl/engine.py`、`backend/app/utils/datetime.py`(未建,僅受限)
+- **問題**:`05-timezone.md` 規定時間取得統一寫 `app/utils/datetime.py` 並 export `now_tw()` / `to_tw(dt)`,各層 import 同一處、禁各 service 自寫;task-006 需要 now_tw 但 `app/utils/*` 不在 affected_files 白名單,依 multi-agent 硬約束不得新建
+- **根因**:task 拆解時未把「首個需要時間函式的 task 應建立 `app/utils/datetime.py`」的規範連動檔納入任何 task 的 affected_files(與 §1 / §4 同型:規範義務與檔案白名單互斥)
+- **修正**:`now_tw()` 暫實作於 `backend/app/etl/engine.py` 並由 `app.etl` re-export,行為完全對齊規範(aware,Asia/Taipei);後續 task(005 / 007)需要時間函式時 import `app.etl.now_tw`,勿另寫
+- **規範參照**:`docs/Design-Base/00-overview/05-timezone.md § 後端 datetime 實踐`
+- **後續**:收口時把 now_tw 搬至 `app/utils/datetime.py` 並改各處 import(或由首個 affected_files 含該路徑的 task 順手搬);reflect 候選 — 拆 task 時共用 util 檔應指派唯一 owner task
+
+## §6 — 本機 Windows 無 tzdata,`ZoneInfo("Asia/Taipei")` 直接 raise,fallback 固定 +8
+
+- **時間**:2026-07-03T17:40+08:00
+- **commit / PR**:task-006 commit(ETL 執行核心)
+- **影響檔案**:`backend/app/etl/engine.py`、`backend/pyproject.toml`(未改,僅受限)
+- **問題**:`05-timezone.md` 範式為 `datetime.now(ZoneInfo("Asia/Taipei"))`,但 Windows 無系統 IANA tz 資料庫且 `tzdata` 套件未列依賴,實跑即 `ZoneInfoNotFoundError`,測試在本機必紅
+- **根因**:依賴鎖版(task-001)未涵蓋 `tzdata`(Linux container 有系統 tzdata 所以未被發現;跨平台差異未納入鎖版考量),而 task-006 依規不得動 `pyproject.toml`
+- **修正**:`engine.py` 以 try/except fallback:`ZoneInfo("Asia/Taipei")` 失敗時改 `timezone(timedelta(hours=8), "Asia/Taipei")`;台灣無 DST,行為等價,容器內(有 tzdata)仍走 ZoneInfo 正軌
+- **規範參照**:`docs/Design-Base/00-overview/05-timezone.md § 後端 datetime 實踐`
+- **後續**:收口時評估把 `tzdata==2025.*` 補進 pyproject(僅 task-001 / 收口可動),屆時 fallback 可保留為防禦;task-012 Dockerfile 須依規安裝系統 tzdata + `TZ=Asia/Taipei`

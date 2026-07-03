@@ -1,7 +1,7 @@
 ---
 id: task-006
 title: ETL 執行核心(純 Python,DB 設定驅動 + 逐表詳細 log)
-status: pending
+status: done
 parallel: true
 depends_on: [task-001]
 affected_files:
