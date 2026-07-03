@@ -81,7 +81,14 @@ def run(spark: Any, config: dict[str, Any]) -> None:
         columns = _table_columns(table_def)
         comments = _table_comments(table_def)
 
-        source_df = read_table(spark, _SOURCE_SCHEMA, table_name)
+        # 效能參數由 yaml 表定義供給(可省略):partition 分區並行讀、fetchsize 逐批列數
+        read_kwargs: dict[str, Any] = {}
+        if table_def.get("partition") is not None:
+            read_kwargs["partition"] = table_def["partition"]
+        if table_def.get("fetchsize") is not None:
+            read_kwargs["fetchsize"] = int(table_def["fetchsize"])
+
+        source_df = read_table(spark, _SOURCE_SCHEMA, table_name, **read_kwargs)
         transformed = _transform_df(source_df, columns)
         # transformed.columns == columns == comments.keys(),確保 writer comment 涵蓋全欄
         write_table(transformed, _TARGET_SCHEMA, table_name, comments)

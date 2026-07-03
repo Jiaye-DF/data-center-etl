@@ -35,3 +35,7 @@ Thumbs.db
 
 # Harness task workflow runs (本機執行紀錄，不進版控)
 docs/Tasks/*/workflow/
+
+# 部署打包產物(deploy_s3.sh 產生後即上傳,不進版控)
+etl.zip
+etl_pkg.zip

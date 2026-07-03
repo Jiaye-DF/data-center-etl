@@ -39,7 +39,35 @@ aws s3 sync "${ETL_DIR}" "${DEST}" \
   --exclude "tests/*" \
   --exclude "**/__pycache__/*" \
   --exclude "*.pyc" \
-  --exclude ".pytest_cache/*"
+  --exclude ".pytest_cache/*" \
+  --exclude "etl_pkg.zip"
+
+# --- 4) 打包子套件 zip(Glue --extra-py-files 只吃檔案,不吃目錄)-------------
+#     zip 根層即 common/ jobs/ transforms/,Glue 加進 sys.path 後 import common 可解析。
+#     用 python stdlib zipfile,不依賴系統 zip 指令(Windows Git Bash 常缺)。
+PY_BIN="$(command -v python || command -v python3)"
+PKG_ZIP="${ETL_DIR}/etl_pkg.zip"
+rm -f "${PKG_ZIP}"
+(
+  cd "${ETL_DIR}"
+  "${PY_BIN}" - <<'EOF'
+import zipfile
+from pathlib import Path
+
+with zipfile.ZipFile("etl_pkg.zip", "w", zipfile.ZIP_DEFLATED) as zf:
+    for pkg in ("common", "jobs", "transforms"):
+        for path in sorted(Path(pkg).rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            zf.write(path, path.as_posix())
+print("etl_pkg.zip 打包完成")
+EOF
+)
+aws s3 cp "${PKG_ZIP}" "${DEST}etl_pkg.zip"
+rm -f "${PKG_ZIP}"
 
 echo "上傳完成。"
-echo "提示:Glue Job 的 Script location 請指向 ${DEST}main.py"
+echo "提示:Glue Job 設定對應值 —"
+echo "  Script location : ${DEST}main.py"
+echo "  --extra-py-files: ${DEST}etl_pkg.zip"
+echo "  --config-s3-uri : ${DEST}config/   (job argument;改 S3 上 yaml 下次 run 生效)"

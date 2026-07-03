@@ -2,3 +2,5 @@
 # pyspark 版本對齊 AWS Glue 4.0 runtime(Spark 3.5)。
 pyspark==3.5.1
 PyYAML==6.0.2
+# boto3 供本地讀 S3 config / Secrets Manager 用;Glue runtime 已內建,不需 --additional-python-modules
+boto3==1.35.91

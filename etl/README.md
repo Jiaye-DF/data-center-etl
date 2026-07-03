@@ -86,6 +86,10 @@ bash etl/scripts/deploy_s3.sh
 `deploy_s3.sh` 以 `aws s3 sync` 上傳 `etl/`,排除 `tests/`、`__pycache__/`、`*.pyc`、`.pytest_cache/`;
 **不加** `--delete`(不刪 S3 既有物件)。上傳後 `main.py` 位於 `s3://$ETL_BUCKET/$ETL_PREFIX/main.py`。
 
+腳本同時把 `common/ jobs/ transforms/` 打包為 **`etl_pkg.zip`** 一併上傳
+(Glue `--extra-py-files` 只接受檔案清單、**不接受目錄**;zip 根層即套件目錄,
+Glue 加進 sys.path 後 `import common` / `import jobs` 可直接解析)。
+
 驗證上傳:
 
 ```bash
@@ -108,19 +112,24 @@ aws glue create-job \
   --glue-version "4.0" \
   --connections '{"Connections":["<your-glue-connection-name>"]}' \
   --default-arguments '{
-    "--extra-py-files": "s3://'"$ETL_BUCKET"'/'"$ETL_PREFIX"'common/,s3://'"$ETL_BUCKET"'/'"$ETL_PREFIX"'jobs/,s3://'"$ETL_BUCKET"'/'"$ETL_PREFIX"'transforms/",
+    "--extra-py-files": "s3://'"$ETL_BUCKET"'/'"$ETL_PREFIX"'etl_pkg.zip",
     "--additional-python-modules": "pyyaml",
+    "--config-s3-uri": "s3://'"$ETL_BUCKET"'/'"$ETL_PREFIX"'config/",
+    "--source-db-secret-id": "<source-db-secret-name>",
+    "--target-db-secret-id": "<target-db-secret-name>",
     "--job-language": "python"
   }'
 ```
 
 重點:
 
-- **`--additional-python-modules pyyaml`**:`common/config.py` 需要 PyYAML;Glue 執行環境預設**不含** PyYAML,務必帶上,否則 import 失敗。
-- **`--extra-py-files`**:`main.py` 以 `importlib` 動態載入 `jobs.*` / `common.*` / `transforms.*`,需把這些子套件一併帶入 Glue 的 Python path(可打包成 `.zip` 上傳後指向該 zip,或如上逐目錄帶入;實作時擇一並確認 import path 一致)。config yaml 隨上傳,Glue 執行時以相對路徑讀取。
+- **`--additional-python-modules pyyaml`**:`common/config.py` 需要 PyYAML;Glue 執行環境預設**不含** PyYAML,務必帶上,否則 import 失敗(boto3 Glue 已內建,不必列)。
+- **`--extra-py-files` 指向單一 zip**:`main.py` 以 `importlib` 動態載入 `jobs.*` / `common.*` / `transforms.*`;`deploy_s3.sh` 已打包 `etl_pkg.zip`,直接指向即可。**不可**指向 S3「目錄」(該參數只接受檔案清單)。
+- **`--config-s3-uri`**:config yaml **不會**隨 `--extra-py-files` 進到執行環境;`main.py` 依此參數用 boto3 從 S3 直讀 `config/*.yaml` 與 `config/mapping/*.yaml`。**改 S3 上的 yaml,下次 run 直接生效,不需重新部署程式碼、不需改 Job 定義**(見〈設定與效能調校〉)。
+- **DB 憑證走 Secrets Manager**:Glue **沒有**設定 OS 環境變數的介面,`SOURCE_DB_*` / `TARGET_DB_*` env 在 Glue 上不存在。`main.py` 啟動時依 `--source-db-secret-id` / `--target-db-secret-id` 從 Secrets Manager 解出 `host / port / dbname / username / password`(RDS 標準 secret 格式)填入 process env;本地執行時既有 env 一律優先,行為不變。
 - **JDBC driver**:PostgreSQL 走 `org.postgresql.Driver`(見 `common/writer.py`)。Glue 4.0 內建 PostgreSQL JDBC driver;若版本不符可透過 `--extra-jars` 指向 S3 上的 `postgresql-*.jar`。
-- **Glue Connection**:綁定 VPC / Subnet / Security Group,讓 Glue 能連到 RDS(來源 / 目標庫);JDBC 帳密建議由 Secrets Manager 提供。
-- 傳給程式的 job 名稱(`--job ds_migrate` / `--job m2201`)於步驟 3 用 `--arguments` 注入。
+- **Glue Connection**:綁定 VPC / Subnet / Security Group,讓 Glue 能連到 RDS(來源 / 目標庫)。
+- 傳給程式的 job 名稱(`--job ds_migrate` / `--job m2201`)於步驟 3 用 `--arguments` 注入;Glue 自動注入的內建參數(`--JOB_NAME` 等)由 `main.py` 的 `parse_known_args` 忽略,不會報錯。
 
 驗證 Job 存在:
 
@@ -199,5 +208,50 @@ psql "postgresql://$TARGET_DB_USER:$TARGET_DB_PASSWORD@$TARGET_DB_HOST:$TARGET_D
 ### 部署最容易踩雷的點
 
 1. **PyYAML 依賴**:Glue 執行環境**不含** PyYAML,`common/config.py` 一 import 就會 `ModuleNotFoundError`。務必在 Job 帶 `--additional-python-modules pyyaml`。
-2. **子套件 import path**:`main.py` 以 `importlib` 動態載入 `jobs.*` / `common.*` / `transforms.*`。若 `--extra-py-files` 未正確涵蓋這些目錄(或未打包成可被 Python path 解析的 zip),Glue 上會 `ModuleNotFoundError: No module named 'jobs'`。建議把 `etl/` 打包為單一 zip 並確認執行時工作目錄 / sys.path 能解析到頂層套件。
-3. **(延伸)Glue Connection 網路**:Glue 需經 Connection 綁定的 VPC / Subnet / Security Group 才連得到 RDS;Security Group 未放行 5432 或 Subnet 無 NAT / VPC endpoint 會導致連線逾時(常見於 Glue 卡在 RUNNING 後 FAILED)。
+2. **子套件 import path**:`main.py` 以 `importlib` 動態載入 `jobs.*` / `common.*` / `transforms.*`。`--extra-py-files` 必須指向 `deploy_s3.sh` 產的 `etl_pkg.zip`(單一 zip),指向目錄或漏帶會 `ModuleNotFoundError: No module named 'jobs'`。
+3. **config yaml 不會自己出現在執行環境**:忘記帶 `--config-s3-uri` 時,Glue 上 `load_config()` 找不到本地 `config/` 會 `FileNotFoundError`。務必在 default arguments 帶 `--config-s3-uri`。
+4. **DB 憑證**:Glue 上沒有 `SOURCE_DB_*` / `TARGET_DB_*` env;忘記帶 `--source-db-secret-id` / `--target-db-secret-id` 會在 reader / writer fail-fast「缺少來源 DB 連線 env」。
+5. **(延伸)Glue Connection 網路**:Glue 需經 Connection 綁定的 VPC / Subnet / Security Group 才連得到 RDS;Security Group 未放行 5432 或 Subnet 無 NAT / VPC endpoint 會導致連線逾時(常見於 Glue 卡在 RUNNING 後 FAILED)。
+
+---
+
+## 設定與效能調校
+
+### 改 yaml 的生效方式(不需重新部署)
+
+config 由 `--config-s3-uri` 指向的 S3 位置**於每次 run 啟動時讀取**:
+
+```bash
+# 只改設定:直接改本地 yaml 後同步 config/ 即可(或重跑完整 deploy_s3.sh)
+aws s3 sync etl/config/ "s3://$ETL_BUCKET/${ETL_PREFIX}config/"
+# 下一次 start-job-run 即讀到新值;不需重 create-job、不需重傳 etl_pkg.zip
+```
+
+改 `.py` 程式碼才需要重跑 `deploy_s3.sh`(重傳 `main.py` + `etl_pkg.zip`)。
+
+### 大表 / 大量表效能(來源約 5000 張表時必讀)
+
+**單表讀取**:mapping yaml 的表定義支援效能欄位(皆可省略,省略走預設):
+
+```yaml
+tables:
+  GAT_FILE:
+    fetchsize: 20000        # JDBC 逐批抓取列數,預設 10000
+    partition:              # 大表必設:以數值欄切 N 個並行連線讀取
+      column: pid           # 單調遞增的數值欄(主鍵 / serial)
+      num_partitions: 8
+      lower_bound: 1
+      upper_bound: 5000000  # 該欄實際 min/max 範圍
+    columns:
+      ...
+```
+
+- 無 `partition` → 單連線整表拉(小表可接受;大表會慢且 driver 可能 OOM)
+- 寫入端已預設 `batchsize=10000` + `reWriteBatchedInserts=true`(PostgreSQL 批次寫入最佳化)
+
+**量級注意(5000 張表)**:
+
+1. **UDF 是最大瓶頸**:`ds_migrate_job._transform_df` 對每欄掛 Python UDF,每個值都經 Python 序列化往返,吞吐比原生 Spark 函式(`F.trim` / `cast` / `F.when`)慢一個量級以上。表數量大時應改寫 transforms 為原生 column expression(行為不變,僅執行路徑不同)。
+2. **拆批執行**:5000 張表塞單一 job run 會跑數小時且中途失敗需整批重來;建議按 schema / 表名區段拆多個 run(`--arguments` 傳不同 mapping 子集),或以 Glue Workflow / Step Functions 編排。
+3. **來源 DB 連線壓力**:`num_partitions` × 並行 run 數 = 對來源 RDS 的同時連線數,調高前先確認來源 `max_connections` 與工作時段負載。
+4. **Comment 逐條執行**:`writer._apply_comments` 每欄一條 `COMMENT ON COLUMN`;5000 表 × 平均欄數的往返可觀,若成為瓶頸可改單連線批次執行(同 statement 多 execute 已是單連線,通常可接受)。

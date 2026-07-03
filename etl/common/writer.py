@@ -52,6 +52,11 @@ def _jdbc_url(params: dict[str, str]) -> str:
     return f"jdbc:postgresql://{params['host']}:{params['port']}/{params['database']}"
 
 
+# JDBC 批次寫入預設值:batchsize 控制單批 INSERT 列數;
+# reWriteBatchedInserts 讓 PostgreSQL driver 把批次改寫為 multi-values INSERT(吞吐差距可達一個量級)
+_DEFAULT_BATCHSIZE = 10_000
+
+
 def write_table(
     df: Any,
     schema: str,
@@ -59,12 +64,14 @@ def write_table(
     comments: dict[str, str],
     *,
     mode: str = "overwrite",
+    batchsize: int = _DEFAULT_BATCHSIZE,
 ) -> None:
     """把 DataFrame 落地到 erp_etl_hub_test.<schema>.<table>,寫入後套用欄位 Comment。
 
     - 表名沿用原始 table_name;欄位清單取自 df.columns。
     - comments 須涵蓋每一欄位,缺描述由 ddl.build_column_comments raise(不靜默略過)。
     - 目標連線走 env(TARGET_DB_*)。
+    - 寫入以 batchsize 分批 + reWriteBatchedInserts=true(PostgreSQL 批次寫入最佳化)。
     """
     params = target_conn_params()
     url = _jdbc_url(params)
@@ -81,9 +88,9 @@ def write_table(
     dbtable = f"{quote_ident(schema)}.{quote_ident(table)}"
     df.write.format("jdbc").option("url", url).option("dbtable", dbtable).option(
         "user", props["user"]
-    ).option("password", props["password"]).option("driver", props["driver"]).mode(
-        mode
-    ).save()
+    ).option("password", props["password"]).option("driver", props["driver"]).option(
+        "batchsize", str(int(batchsize))
+    ).option("reWriteBatchedInserts", "true").mode(mode).save()
 
     _apply_comments(url, params, comment_stmts)
     log_event(_logger, "目標表寫入完成並套用欄位 Comment", table=table, rows=len(columns))

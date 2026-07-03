@@ -76,19 +76,66 @@ def _jdbc_credentials() -> tuple[str, str]:
     return user, password  # type: ignore[return-value]
 
 
-def read_table(spark: Any, schema: str, table: str) -> Any:
+# JDBC 讀取預設 fetchsize:PostgreSQL driver 預設逐批很小,大表逐列往返極慢
+_DEFAULT_FETCHSIZE = 10_000
+
+# partition 設定必備鍵(mapping yaml 的 tables.<表>.partition 區塊)
+_PARTITION_REQUIRED_KEYS = ("column", "num_partitions", "lower_bound", "upper_bound")
+
+
+def partition_options(partition: dict[str, Any] | None) -> dict[str, str]:
+    """把 yaml 的 partition 區塊轉為 Spark JDBC 分區選項;None 回傳空 dict。
+
+    需求鍵:column / num_partitions / lower_bound / upper_bound(缺任一 raise,
+    不靜默退回單連線 — 設了一半代表 yaml 寫錯)。column 經識別字白名單驗證。
+    """
+    if partition is None:
+        return {}
+    missing = [k for k in _PARTITION_REQUIRED_KEYS if partition.get(k) is None]
+    if missing:
+        raise ValueError(f"partition 設定缺少必要鍵:{missing};需求:{list(_PARTITION_REQUIRED_KEYS)}")
+    column = str(partition["column"])
+    if not _IDENT_RE.match(column):
+        raise ValueError(f"非法 partition column:{column!r}")
+    return {
+        "partitionColumn": column,
+        "numPartitions": str(int(partition["num_partitions"])),
+        "lowerBound": str(partition["lower_bound"]),
+        "upperBound": str(partition["upper_bound"]),
+    }
+
+
+def read_table(
+    spark: Any,
+    schema: str,
+    table: str,
+    *,
+    fetchsize: int = _DEFAULT_FETCHSIZE,
+    partition: dict[str, Any] | None = None,
+) -> Any:
     """以 Spark JDBC 從來源 erp_migration_test 讀 schema.table,回傳 Spark DataFrame。
 
     schema 須在白名單({DS, M2201});schema / table 經識別字引號化後作為 dbtable,
     不可注入。連線資訊全數來自 env(見 build_jdbc_url / _jdbc_credentials)。
+
+    效能:
+    - fetchsize 控制 driver 逐批抓取列數(預設 10000)。
+    - partition 給定時以 partitionColumn 切 numPartitions 個並行連線讀取
+      (大表必設;鍵見 partition_options docstring,通常放在 mapping yaml 的表定義)。
     """
     dbtable = qualified_table(schema, table)
     url = build_jdbc_url()
     user, password = _jdbc_credentials()
+    part_opts = partition_options(partition)
 
     logger = get_logger("etl.reader")
-    # 只 log schema / table,禁 log URL / user / password
-    log_event(logger, "讀取來源表", table=f"{schema}.{table}")
+    # 只 log schema / table / 分區數,禁 log URL / user / password
+    log_event(
+        logger,
+        "讀取來源表",
+        table=f"{schema}.{table}",
+        partitions=part_opts.get("numPartitions", "1"),
+    )
 
     reader = (
         spark.read.format("jdbc")
@@ -97,5 +144,8 @@ def read_table(spark: Any, schema: str, table: str) -> Any:
         .option("dbtable", dbtable)
         .option("user", user)
         .option("password", password)
+        .option("fetchsize", str(int(fetchsize)))
     )
+    for key, value in part_opts.items():
+        reader = reader.option(key, value)
     return reader.load()
