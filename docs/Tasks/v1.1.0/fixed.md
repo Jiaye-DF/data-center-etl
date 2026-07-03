@@ -177,3 +177,14 @@
 - **修正**:`RunTriggerResponse` 定為 `{task_id: str, run_uid: UUID | null}`;就地執行 broker(pytest 的 InMemoryBroker `await_inplace`)已同步跑完 → 以結果 `run_pid` 換 uid 回傳(測試可驗全欄位),redis 佇列模式回 `null`,前端(task-011)應以 run 清單(最新在前)查看觸發結果
 - **規範參照**:—(非違規;跨 task 介面契約缺口)
 - **後續**:若 production 需要「觸發即得 run uid」,收口或下版本把 `run_etl` 改為可收 API 預建之 run 識別(uid),API 先建 `etl_runs(status=pending)` 再 enqueue;task-011 前端實作時注意 `run_uid` 可能為 null;reflect 候選 — 拆 task 時跨 task 的 API ↔ worker 介面契約應指定唯一 owner
+
+## §16 — 前端 ApiEnvelope / unwrap / 錯誤 detail 萃取跨檔重複,共用型別檔無 owner task
+
+- **時間**:2026-07-03T17:52+08:00
+- **commit / PR**:task-010 commit(前端 Data Table 管理頁)
+- **影響檔案**:`frontend/src/lib/api/etlConfigApi.ts`、`frontend/src/lib/api/authApi.ts`(未改,僅受限)、`frontend/src/app/login/page.tsx`(未改,僅受限)
+- **問題**:`05-components.md` 規定跨檔 ≥ 2 次使用的 Type / utility 必抽共用檔(如 `types/api.ts` / `utils/`),但後端統一回應信封 `ApiEnvelope<T>` 與 `unwrap()` 已在 task-009 的 `authApi.ts` 定義(未 export),RTK Query 錯誤物件的 detail 萃取(`extractDetail`)亦 inline 於 `login/page.tsx`;task-010 需要同型別與同邏輯,而 `types/` / `utils/` 新檔與 task-009 檔案均不在 task-010 affected_files 白名單
+- **根因**:與 §1 / §4 / §5 / §7 同型 — 拆 task 時前端「跨 API 檔共用單元」(回應信封型別、unwrap、錯誤萃取)未指派唯一 owner task,規範義務(reuse 必抽)與檔案白名單互斥
+- **修正**:task-010 在 `etlConfigApi.ts` 內重複定義 `ApiEnvelope` / `unwrap`,並將錯誤萃取以 `extractApiErrorDetail(error, fallback)` 具名 export(單一定義供 tables 清單 / 明細 / MappingEditor 三處共用);task-011 需要時 import `etlConfigApi.extractApiErrorDetail`,勿再自寫
+- **規範參照**:`docs/Design-Base/02-frontend/05-components.md § Reuse 規則(Type / utility 跨檔 ≥ 2 必抽)`
+- **後續**:收口時把 `ApiEnvelope` / `unwrap` 抽至 `frontend/src/types/api.ts`(或 `lib/api/envelope.ts`)、`extractApiErrorDetail` 抽至 `utils/`,並改 `authApi.ts` / `login/page.tsx` / `etlConfigApi.ts` 三處 import;reflect 候選 — 拆 task 時共用型別 / util 檔應指派唯一 owner task(與 §5 後端同型)
