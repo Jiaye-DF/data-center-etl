@@ -165,4 +165,15 @@
 - **根因**:task-001 鎖定的 redis-py 8.0.1 將 `DEFAULT_SOCKET_TIMEOUT` 從 None 改為 5 秒(read timeout);taskiq-redis 1.2.3 `ListQueueBroker.listen()` 以無限期 `BRPOP` 阻塞等待、且只 catch `ConnectionError` 不 catch `TimeoutError` → 佇列閒置超過 5 秒必炸並殺死 receiver。task-007 開發時以 InMemoryBroker 跑測試,redis 實連路徑未被驗證;修法在 `broker.py`(如 `ListQueueBroker(url=..., socket_timeout=None)` 傳入 connection_kwargs,或改用 RedisStreamBroker),但該檔屬 task-007 白名單,task-012 依 multi-agent 硬約束不得修改;REDIS_URL query 參數無法表達 `socket_timeout=None`(from_url 只收 float),env 層無解
 - **修正**:task-012 範圍內未修(僅白名單三檔);compose 服務層以 restart 策略 + healthcheck 保底,功能可用。待 task-007 owner / 收口在 `broker.py` 補 `socket_timeout=None`(一行)後迴圈即消失
 - **規範參照**:—(非違規;鎖版組合相容性 bug,與 §3 passlib/bcrypt 同型)
-- **後續**:收口(或 task-005 動 worker 相關檔時)在 `create_broker()` 對 `ListQueueBroker` 傳 `socket_timeout=None` 並實連 redis 驗證;reflect 候選 — 依賴鎖版後應對「間接依賴 major 升版」跑一次實連煙霧測試,InMemory 測試替身蓋不到此類問題
+- **後續**:收口(或 task-005 動 worker 相關檔時)在 `create_broker()` 對 `ListQueueBroker` 傳 `socket_timeout=None` 並實連 redis 驗證;reflect 候選 — 依賴鎖版後應對「間接依賴 major 升版」跑一次實連煙霧測試,InMemory 測試替身蓋不到此類問題。另註:task-005 的 affected_files 不含 `app/worker/*`,本條仍待收口處理
+
+## §15 — 手動觸發「回傳 run uid」在佇列模式(redis broker)下無法保證,回應改為 nullable
+
+- **時間**:2026-07-03T17:42+08:00
+- **commit / PR**:task-005 commit(排程 / 執行紀錄 / 手動觸發 API)
+- **影響檔案**:`backend/app/services/schedule_service.py`、`backend/app/schemas/run.py`、`backend/app/worker/tasks.py`(未改,僅受限)
+- **問題**:task-005 範圍要點要求手動觸發「回傳 run uid」,但 task-007 的 `run_etl` task 於 **worker 端**才建立 `etl_runs` 紀錄(`store.create_run` 在 task 內);production 佇列模式(redis ListQueueBroker)下 API enqueue 當下 run 尚不存在,無法取得 run uid,而 `run_etl` 簽章(`trigger_type / schedule_pid / etl_table_pid`)不收外部預建的 run 識別,`app/worker/tasks.py` 又不在 task-005 白名單不得修改
+- **根因**:拆解時 task-005(回傳 run uid)與 task-007(run 由 worker 建立)的介面契約未對齊 — enqueue 型架構下「觸發即得 run uid」需要「API 預建 run + task 收 run 識別」的協作設計,兩 task 各自實作時無人擁有該跨檔契約
+- **修正**:`RunTriggerResponse` 定為 `{task_id: str, run_uid: UUID | null}`;就地執行 broker(pytest 的 InMemoryBroker `await_inplace`)已同步跑完 → 以結果 `run_pid` 換 uid 回傳(測試可驗全欄位),redis 佇列模式回 `null`,前端(task-011)應以 run 清單(最新在前)查看觸發結果
+- **規範參照**:—(非違規;跨 task 介面契約缺口)
+- **後續**:若 production 需要「觸發即得 run uid」,收口或下版本把 `run_etl` 改為可收 API 預建之 run 識別(uid),API 先建 `etl_runs(status=pending)` 再 enqueue;task-011 前端實作時注意 `run_uid` 可能為 null;reflect 候選 — 拆 task 時跨 task 的 API ↔ worker 介面契約應指定唯一 owner

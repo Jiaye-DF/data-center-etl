@@ -1,7 +1,7 @@
 ---
 id: task-005
 title: 排程 / 執行紀錄與詳細 log / 手動觸發 API
-status: pending
+status: done
 parallel: false
 depends_on: [task-004, task-007]
 affected_files:
