@@ -89,3 +89,69 @@
 - **修正**:本 task 範圍內以「SSO 端點即時回源 + JWT 效期對齊 cookie 86400s + process-local 撤銷註記」落地;偏離處於 `sso_service.py` 註解標記
 - **規範參照**:`docs/Design-Base/90-third-party-service/08-df-sso.md § 4 條硬性契約 #1 / 兩種整合模式(模式 B)`
 - **後續**:task-004/005 掛權限或收口時,`deps.get_current_user` 應補 provider 分流(`provider=="sso"` → 回源中央或查共享撤銷表);task-007/012 redis 就緒後,撤銷註記可遷至 redis 使多 worker 一致;reflect 候選 — 雙軌登入專案應指定「守衛分流」的唯一 owner task
+
+## §9 — Dockerfile 版本鎖定線被推翻:python 3.14.1-slim / uv 0.11.20(規範表為 3.14.0 / 0.5.18)
+
+- **時間**:2026-07-03T18:40+08:00
+- **commit / PR**:task-012 commit(Docker 化)
+- **影響檔案**:`backend/Dockerfile`、`docs/Design-Base/00-overview/01-versions.md`(未改,僅受限)、`docs/Design-Base/06-Coolify-CD/02-dockerfile-backend.md`(未改,僅受限)
+- **問題**:`02-dockerfile-backend.md` 模板鎖 `python:3.14.0-slim` + `ghcr.io/astral-sh/uv:0.5.18`,但 task-001 產出的 `pyproject.toml` 鎖 `requires-python == 3.14.1.*`、`uv.lock` 為 revision 3 格式(需 uv >= 0.8 才能解析);照規範版本 build 必失敗(python 版本不符 requires-python + uv 0.5.18 讀不了 lock)
+- **根因**:與 §1 同型 — `01-versions.md` / Dockerfile 模板的版本表未隨 task-001 實際鎖定線同步,且該兩檔屬 Design-Base 不在任何 task 白名單;Sources of Truth(pyproject / uv.lock)與規範表分歧時,build 只能跟 lock 走
+- **修正**:`backend/Dockerfile` 鎖 `python:3.14.1-slim`(對齊 requires-python)與 `ghcr.io/astral-sh/uv:0.11.20`(對齊本機產 lock 的 uv 版本,鎖到 patch、禁 latest);其餘(multi-stage / 非 root / tzdata+curl / TZ / HEALTHCHECK / 精準 COPY)完全按模板
+- **規範參照**:`docs/Design-Base/06-Coolify-CD/02-dockerfile-backend.md § 規則(Python image tag / uv image tag)`、`docs/Design-Base/00-overview/01-versions.md § 鎖定線`
+- **後續**:收口時把 `01-versions.md`(Python 3.14.1 / uv 0.11.x)與 `02-dockerfile-backend.md` 模板版本改為以 pyproject / uv.lock 為準;reflect 候選 — 規範版本表改引用 Sources of Truth 而非硬編版號
+
+## §10 — `(main)/page.tsx` 與既有根 `app/page.tsx` 同路由衝突,根 page 須刪除但不在白名單
+
+- **時間**:2026-07-03T21:30+08:00
+- **commit / PR**:task-009 commit(前端登入頁 + 後台佈局殼)
+- **影響檔案**:`frontend/src/app/page.tsx`(刪除)、`frontend/src/app/(main)/page.tsx`
+- **問題**:task-009 affected_files 指定新增 `app/(main)/page.tsx`(route group 解析為 `/`),但骨架既有 `app/page.tsx` 同樣解析為 `/`,兩者並存 Next.js build 直接失敗(parallel pages resolve to the same path);根 page 的刪除未列入任何 task 的 affected_files
+- **根因**:拆解時以「新增檔案」視角列白名單,未盤點 route group 與既有骨架頁面的路由重疊 — `(main)` 是 URL 不可見的分組,`(main)/page.tsx` 必然頂替根 `/`
+- **修正**:刪除 `frontend/src/app/page.tsx`(骨架佔位頁,無業務內容),`/` 由 `(main)/page.tsx`(總覽)接手;build 全綠(task-009 commit)
+- **規範參照**:—(非違規;拆解白名單缺口,與 §1/§4/§5/§7 同型)
+- **後續**:reflect 候選 — 拆 task 時新增 route group 頁面應同步盤點被頂替的既有頁面並列入 affected_files
+
+## §11 — 前端 i18n 規範(UI 文字一律 i18n key)於本版被推翻:骨架無 i18n 基建且禁增依賴
+
+- **時間**:2026-07-03T21:30+08:00
+- **commit / PR**:task-009 commit
+- **影響檔案**:`frontend/src/app/login/page.tsx`、`frontend/src/app/(main)/layout.tsx`、`frontend/src/app/(main)/page.tsx`、`frontend/src/app/error.tsx`
+- **問題**:`02-frontend/00-overview.md` 規定「UI 文字一律 i18n key;字典依模組分檔」,但 frontend 骨架無任何 i18n 基建(無字典目錄、package.json 無 i18n 套件),而依賴鎖版僅 task-001 可動(且 001 只管 backend)、字典檔亦不在 task-009 白名單
+- **根因**:v1.1.0 拆解未包含 i18n 基建 task;規範義務(i18n)與 multi-agent 白名單 / 禁增依賴硬約束互斥(與 §1 同型),且本後台目前僅 zh-TW 單語系
+- **修正**:task-009 前端 UI 文字以繁中字串常數落檔(集中於元件頂部 const,非散落 JSX),未引入 i18n key;`global-error` 硬編碼本屬規範允許例外
+- **規範參照**:`docs/Design-Base/02-frontend/00-overview.md § i18n(永遠遵守)`(本版情境被推翻)
+- **後續**:010/011 沿用同做法保持一致;若未來需多語系,另開 task 建 i18n 基建並回收字串;reflect 候選 — i18n 規範補「單語系內部工具可豁免」條款或拆解時強制配 i18n 基建 task
+
+## §12 — SSO 按鈕所需 `NEXT_PUBLIC_SSO_URL` / `NEXT_PUBLIC_SSO_APP_ID` 的 env 登記檔不在白名單
+
+- **時間**:2026-07-03T21:30+08:00
+- **commit / PR**:task-009 commit
+- **影響檔案**:`frontend/.env.local.example`(白名單外,已補)、`frontend/src/app/login/page.tsx`
+- **問題**:task 範圍要點寫「SSO 按鈕導向 backend SSO 端點(task-003)」,但 task-003 僅有 callback / me / logout / back-channel 四端點,無 authorize 入口 — DF-SSO 契約的登入起點是中央 `<SSO_URL>/api/auth/sso/authorize`,前端組此 URL 需要可公開 env `NEXT_PUBLIC_SSO_URL` / `NEXT_PUBLIC_SSO_APP_ID`,而 env 登記檔(`frontend/.env.local.example`)不在 task-009 affected_files
+- **根因**:拆解時誤把「SSO 登入入口」歸為 backend 端點,未對照 08-df-sso 契約(authorize 在中央,前端整頁跳轉);連帶漏列 env 登記檔(與 §1/§4 同型白名單缺口)
+- **修正**:登入頁 SSO 按鈕組 `${NEXT_PUBLIC_SSO_URL}/api/auth/sso/authorize?client_id=...&redirect_uri=<backend>/sso/callback` 整頁跳轉;`frontend/.env.local.example` 補兩個可公開 env(白名單外最小異動);env 未設定時按鈕 disabled 並顯示提示,不影響本地帳密軌
+- **規範參照**:`docs/Design-Base/02-frontend/03-env-and-auth.md § 環境變數前綴(所有 env 須登記於 .env.example)`、`docs/Design-Base/90-third-party-service/08-df-sso.md § env`
+- **後續**:task-012 / 收口時評估是否把 `NEXT_PUBLIC_SSO_URL` / `NEXT_PUBLIC_SSO_APP_ID` 同步進根 `.env.example`(前端部署 build args);正式環境部署時由 user 填實際值
+
+## §13 — dashboard 401 的 silent re-auth 未落地:`/auth/me` 不暴露 provider,前端無從分流
+
+- **時間**:2026-07-03T21:30+08:00
+- **commit / PR**:task-009 commit
+- **影響檔案**:`frontend/src/app/(main)/layout.tsx`、`frontend/src/lib/auth/useAuth.ts`、`backend/app/schemas/auth.py`(未動,僅受限)
+- **問題**:08-df-sso 規定 dashboard 工作中 401 禁直接踢登入頁,模式 B 應先 `/me` 取 `provider` 分流(sso → silent re-auth / local → 本地登入頁);但通用 `/api/v1/auth/me` 的 `UserResponse` 只有 uid/username/role,無 `provider` 欄位,前端拿不到分流依據(token 為 httpOnly,前端依規不可解析)
+- **根因**:task-002 定義 `UserResponse` 時尚無雙軌概念、task-003 只補了 SSO 側 `/sso/me`(有 provider)但通用 me 未回補;task-009 又不得動 backend schema(白名單),silent re-auth 的攔截器缺前置資訊 — 與 §8(守衛不辨 provider)同根源的前端面
+- **修正**:本 task 以「(main) layout 於 /me 401 時 `router.replace('/login')`」落地(登入頁顯示雙軌按鈕,不自動跳 authorize,無導向迴圈);SSO 使用者中央 session 仍在時,回登入頁按一次 SSO 按鈕即無感重登,體感接近 silent re-auth
+- **規範參照**:`docs/Design-Base/90-third-party-service/08-df-sso.md § Silent Re-Auth / 不要做(dashboard 401 直接踢登入頁)`(部分未落地)
+- **後續**:收口或後續版本:`UserResponse` 增 `provider` 欄(或後端設非機密 `last_login_provider` hint cookie)後,前端補 401 攔截器(去重 / 重試上限 / 保留現場);見 §8
+
+## §14 — Next 16 `middleware.ts` 檔名慣例已被標記 deprecated(改名 `proxy.ts`),task 白名單鎖定舊檔名
+
+- **時間**:2026-07-03T21:30+08:00
+- **commit / PR**:task-009 commit
+- **影響檔案**:`frontend/src/middleware.ts`
+- **問題**:task-009 affected_files 指定 `frontend/src/middleware.ts`,build 可過但 Next 16.2.7 輸出警告「The "middleware" file convention is deprecated. Please use "proxy" instead」;Next 17 起舊檔名將失效
+- **根因**:拆解時沿用 Next 15 以前的檔名慣例,未對照鎖定版本(Next 16)的 breaking-change 清單;白名單鎖死檔名使 worker 不得自行改名
+- **修正**:依 task 白名單維持 `middleware.ts`(功能正常,僅 deprecation 警告);auth guard 邏輯本身與檔名無關,改名成本為零風險搬移
+- **規範參照**:—(非違規;框架版本演進 vs 拆解檔名)
+- **後續**:收口或下版本把 `src/middleware.ts` 改名 `src/proxy.ts`(export 同步改 `proxy`);升 Next 17 前必須完成

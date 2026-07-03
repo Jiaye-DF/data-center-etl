@@ -1,7 +1,7 @@
 ---
 id: task-009
 title: 前端登入頁(雙軌)+ 後台佈局殼 + auth guard
-status: pending
+status: done
 parallel: true
 depends_on: [task-002, task-003]
 affected_files:
