@@ -188,3 +188,25 @@
 - **修正**:task-010 在 `etlConfigApi.ts` 內重複定義 `ApiEnvelope` / `unwrap`,並將錯誤萃取以 `extractApiErrorDetail(error, fallback)` 具名 export(單一定義供 tables 清單 / 明細 / MappingEditor 三處共用);task-011 需要時 import `etlConfigApi.extractApiErrorDetail`,勿再自寫
 - **規範參照**:`docs/Design-Base/02-frontend/05-components.md § Reuse 規則(Type / utility 跨檔 ≥ 2 必抽)`
 - **後續**:收口時把 `ApiEnvelope` / `unwrap` 抽至 `frontend/src/types/api.ts`(或 `lib/api/envelope.ts`)、`extractApiErrorDetail` 抽至 `utils/`,並改 `authApi.ts` / `login/page.tsx` / `etlConfigApi.ts` 三處 import;reflect 候選 — 拆 task 時共用型別 / util 檔應指派唯一 owner task(與 §5 後端同型)
+
+## §17 — task-011 跨頁共用 UI 單元(Pagination / StatusBadge / formatNullableDateTime)無 components/common 白名單,暫集中於 RunLogTable.tsx
+
+- **時間**:2026-07-03T18:10+08:00
+- **commit / PR**:task-011 commit(前端排程管理 + 執行紀錄頁)
+- **影響檔案**:`frontend/src/components/runs/RunLogTable.tsx`、`frontend/src/components/common/`(未建,僅受限)、`frontend/src/utils/datetime.ts`(未改,僅受限)
+- **問題**:`05-components.md` 規定 ≥ 2 處使用的 component / utility 必抽共用檔(`components/common/` / `utils/`),task-011 的三頁(schedules / runs / runs/[uid])共用分頁列、狀態 badge、觸發方式字樣與可 null 時間格式化;但 affected_files 白名單僅含 `components/runs/RunLogTable.tsx`,無 `components/common/` 或 `utils/` 路徑可落檔
+- **根因**:與 §16 同型 — 拆 task 時未預留共用元件目錄的 owner;白名單以「頁面 + 單一元件檔」視角列檔,跨頁共用單元無處可放
+- **修正**:`Pagination` / `StatusBadge` / `TRIGGER_TYPE_LABELS` / `formatNullableDateTime` 具名 export 於 `components/runs/RunLogTable.tsx`(檔頭註解標記),三頁 import 同一處、無 inline 重複;`ApiEnvelope` / `unwrap` 依 §16 指示於 `scheduleApi.ts` 定義一次並供 `runApi.ts` import,錯誤萃取沿用 `etlConfigApi.extractApiErrorDetail` 未再自寫
+- **規範參照**:`docs/Design-Base/02-frontend/05-components.md § Reuse 規則 / 命名與位置`
+- **後續**:收口時把上述單元搬至 `components/common/Pagination.tsx` / `components/common/StatusBadge.tsx` 與 `utils/datetime.ts`(formatNullableDateTime),並改三頁 import;與 §16 合併處理;reflect 候選同 §16
+
+## §18 — etl_runs.created_at 以 UTC wall-clock 寫入,與 started_at(+8)混用,前端顯示相差 8 小時
+
+- **時間**:2026-07-03T18:10+08:00
+- **commit / PR**:—(task-011 手測時發現;非本 task 引入)
+- **影響檔案**:`backend/app/models/*`(base 欄位 server_default,未改,僅受限)、`backend/app/core/db.py`(未改,僅受限)、`docker-compose.yml`(未改,僅受限)
+- **問題**:手測手動觸發後,同一瞬間建立的 run 其 `created_at=2026-07-03T09:59:34`(UTC wall-clock、無 tz)而 `started_at=2026-07-03T17:59:34`(+8 wall-clock、無 tz),秒內毫秒值幾乎相同證實為同一時刻的兩種時區寫法;前端 `formatDateTime` 統一以 Asia/Taipei 呈現,`created_at` 類欄位(DB server_default 產生)顯示會早 8 小時,`started_at` / `finished_at` / `updated_at`(Python `now_tw()` 寫入)則正確
+- **根因**:`05-timezone.md` 要求 DB session timezone 對齊 Asia/Taipei(`SET TIME ZONE` 或 connection string options),但 compose 只設了 container `TZ=Asia/Taipei`,postgres 服務的 session timezone 仍為預設 UTC → `server_default=func.now()` 類欄位寫 UTC;Python 側寫入的欄位走 `now_tw()`(+8),兩種來源混用且序列化皆為 naive 字串,違反「全棧一致」與「禁裸時戳無 tz」
+- **修正**:本 task(前端白名單)無法修;前端不做自行時區轉換(依 `04-datetime.md` 禁雙偏移),顯示以後端字串為準,偏差留待後端修正
+- **規範參照**:`docs/Design-Base/00-overview/05-timezone.md § 資料庫 / Log 時戳格式`
+- **後續**:收口時擇一:(1) DB 連線加 `?options=-c%20TimeZone%3DAsia/Taipei` 或 postgres 設 `timezone=Asia/Taipei`;(2) models 的 created_at server_default 改由 Python `now_tw()` 統一寫入;並評估 API 序列化補 `+08:00` offset(對齊 log 時戳規範)

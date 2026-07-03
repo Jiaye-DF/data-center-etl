@@ -1,6 +1,6 @@
 # Tasks v1.1.0
 
-> 狀態:未開始(已完成 0/12)
+> 狀態:全部完成(已完成 12/12);系統面交付完成,待收口(fixed.md §1–§18 收口項 + 全域測試驗證)後由 user 人工部署
 > 變更:2026-07-03 移除 task-013(Coolify 部署收口)— 部署與 AWS/EC2 建立由 user 人工執行(見 propose 變更紀錄);系統面交付止於 task-012。
 > 來源:`propose-v1.1.0.md`(scope 地板,禁動)
 > 範圍:ETL 管理後台(既有 `backend/` `frontend/` 骨架上開發)+ taskiq/redis 排程 + 容器內 ETL 執行 + Coolify 部署。taskiq / redis 不在鎖定技術棧,經 user 明示採用(propose 已註記)。v1.0.0 `etl/`(Glue 版)**凍結**:僅唯讀參考,任何 task 不得修改。
@@ -20,7 +20,7 @@
 | 008 | v1.0.0 mapping 設定匯入自有 DB(seed) | done(worker: claude-C) | ✓ | 001 | `backend/scripts/seed_etl_config.py` / `tests/test_seed_etl_config.py` |
 | 009 | 前端登入頁(雙軌)+ 後台佈局殼 + auth guard | done(worker: claude-D) | ✓ | 002,003 | `frontend/src/app/login/page.tsx` / `middleware.ts` / `app/(main)/layout.tsx` / `app/(main)/page.tsx` / `lib/api/authApi.ts` / `lib/auth/useAuth.ts` / `app/error.tsx` / `app/global-error.tsx` |
 | 010 | 前端 Data Table 管理頁(清單/啟停/mapping/Comment) | done(worker: claude-D) | ✓ | 004,009 | `frontend/src/app/(main)/tables/*` / `lib/api/etlConfigApi.ts` / `components/tables/*` |
-| 011 | 前端排程管理 + 執行紀錄/逐表詳細 log 頁 | pending | ✓ | 005,009 | `frontend/src/app/(main)/schedules/*` / `app/(main)/runs/*` / `lib/api/scheduleApi.ts` / `lib/api/runApi.ts` / `components/runs/RunLogTable.tsx` |
+| 011 | 前端排程管理 + 執行紀錄/逐表詳細 log 頁 | done(worker: claude-E) | ✓ | 005,009 | `frontend/src/app/(main)/schedules/*` / `app/(main)/runs/*` / `lib/api/scheduleApi.ts` / `lib/api/runApi.ts` / `components/runs/RunLogTable.tsx` |
 | 012 | Docker 化(etl_ prefix image + redis/worker/scheduler) | done(worker: claude-B) | ✓ | 007 | `docker-compose.yml` / `backend/Dockerfile` / `.env.example` |
 
 ## 拆解摘要
