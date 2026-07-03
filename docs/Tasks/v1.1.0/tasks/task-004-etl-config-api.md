@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: ETL 設定管理 API(表清單 / 啟停 / mapping / Comment)
-status: pending
+status: done
 parallel: false
 depends_on: [task-001, task-003]
 affected_files:
@@ -27,9 +27,9 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_etl_config_api.py -q` 全綠,涵蓋:CRUD、停用後清單狀態正確、mapping 缺 comment 回 400、viewer 寫入 403
-- [ ] response 殼為 ApiResponse(測試斷言)
-- [ ] `cd backend && uv run ruff check . && uv run mypy .` 全綠
+- [x] `cd backend && uv run pytest tests/test_etl_config_api.py -q` 全綠,涵蓋:CRUD、停用後清單狀態正確、mapping 缺 comment 回 400、viewer 寫入 403
+- [x] response 殼為 ApiResponse(測試斷言)
+- [x] `cd backend && uv run ruff check . && uv run mypy .` 全綠
 
 ## 必讀檔(Just-in-time)
 
