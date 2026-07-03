@@ -455,7 +455,7 @@ flowchart LR
 | 3 | 建 **STS** Interface Endpoint(Private DNS on、Subnet-A/C、SG-VPCE-AWS-Services) | 可 AssumeRole |
 | 4 | 再測 | ❌ `Unable to connect to Secrets Manager` — Glue 憑證存在 Secrets Manager |
 | 5 | 建 **Secrets Manager** Interface Endpoint(設定同 STS) | 可讀連線憑證 |
-| 6 | 建 **CloudWatch Logs** Interface Endpoint(Glue Job 寫執行日誌) | 可寫 Job log |
+| 6 | 建 **CloudWatch Logs** Interface Endpoint(Glue Crawler 寫執行日誌) | 可寫執行 log |
 | 7 | 建 **S3** _Gateway_ Endpoint(不是 Interface!改 Route Table `RT-ERP-Hub-Test-DB`,AWS 自動加 Prefix List `pl-xxxx`) | 可存取 S3 |
 | 8 | 建共用 `SG-VPCE-AWS-Services`(Inbound 443 ← Glue SG;Outbound All) | Endpoint 流量放行 |
 | 9 | 核對 VPC Endpoint 總表(見下) | 4 個到位 |
@@ -502,7 +502,7 @@ Required 四項為 Glue 運行所需(Private DNS Enabled、佈於 Subnet-A / Sub
 
 ### Glue Workflow（規劃）
 
-`Glue Connection → Database → Crawler → Data Catalog → Visual ETL → S3 → Athena → Redshift → AI Platform → Data Hub`
+`Glue Connection → Database → Crawler → Data Catalog →（ETL 執行改自架 Taskiq + Redis）→ ETL-Hub → S3 → Athena → Redshift → AI Platform → Data Hub`
 
 ### 設計原則
 
@@ -589,7 +589,7 @@ flowchart LR
 
 ### 結果
 
-補上 Database 層後重跑 Crawler → `Tables > 0`,Metadata 建立成功 → 進入下一步 **Visual ETL**。
+補上 Database 層後重跑 Crawler → `Tables > 0`,Metadata 建立成功 → 進入下一步 **ETL 轉換**(改自架 Taskiq + Redis,見〈X〉;不再走 Glue Visual ETL Job)。
 
 ### 已排除(非主因)
 
@@ -626,15 +626,17 @@ flowchart LR
     RUN["9. 執行 Crawler → 驗證<br/>Tables > 0"]
     DBG --> TBG --> RUN
   end
-  subgraph ET["④ ETL 轉換層（後續）"]
+  subgraph ET["④ ETL 執行層（自架 Taskiq + Redis）"]
     direction TB
-    ETLJ["10. Visual ETL Job<br/>Raw → 轉換 → ETL-Hub"]
-    SCH["11. 排程編排<br/>EventBridge → Lambda"]
-    ETLJ --> SCH
+    SCH["10. Taskiq Scheduler + Redis<br/>依 DB 排程定義派工"]
+    ETLJ["11. Taskiq Worker<br/>直連 RDS：Raw → 轉換 → ETL-Hub"]
+    DEP["12. Docker Compose + Coolify<br/>部署於 EC2"]
+    SCH --> ETLJ
+    DEP -. 承載 .-> ETLJ
   end
   GEP ==> CONN
   CR ==> DBG
-  RUN ==> ETLJ
+  RUN ==> SCH
 ```
 
 ### 逐步明細
@@ -650,10 +652,11 @@ flowchart LR
 | 7 | Grant Database 權限 | Lake Formation | Principal `Glue-ServiceRole-ERP-Hub`;Database **Describe + Create Table + Alter** | 讓 Crawler 進得了 Database 層(關鍵缺口) |
 | 8 | Grant Table / Column | Lake Formation | `ALL_TABLES`(Describe/Select/Insert/Alter/Delete)、`ALL_COLUMNS`(Select) | 讓 Crawler 建 / 改表 Metadata |
 | 9 | 執行 Crawler + 驗證 | Glue Crawler | On-Demand Run → 查 Data Catalog | 確認 `Tables > 0`、Metadata 建立成功 |
-| 10 | 建 Visual ETL Job | Glue ETL(後續) | Source = Catalog → 轉換 → Target RDS `ETL-Hub` | Raw → ETL-Hub 清洗轉換 |
-| 11 | 排程編排 | EventBridge + Lambda(後續) | 定時觸發 ETL / 流程編排 | 自動化 ETL 執行 |
+| 10 | 建自架排程 | Taskiq Scheduler + Redis(後續) | 依自有 DB 排程定義到點派工;Redis 作 broker | 取代 EventBridge / Lambda 編排 |
+| 11 | 建 ETL Worker | Taskiq Worker(後續) | 純 Python 直連 RDS:讀 Raw → 轉換 → 寫 `ETL-Hub`;不依賴 Glue Job / Spark | Raw → ETL-Hub 清洗轉換 |
+| 12 | 容器化部署 | Docker Compose + Coolify(後續) | image `etl_` prefix;Coolify 部署於 EC2,連 RDS 讀寫 | 自架 ETL 上線 |
 
-> **目前進度**:Step 1–9 已完成並驗證 — Crawler 與 Data Catalog 已產出,`Tables > 0`、Metadata 建立成功;Step 10–11(Visual ETL / 排程)為下一步規劃。
+> **目前進度**:Step 1–9 已完成並驗證 — Crawler 與 Data Catalog 已產出,`Tables > 0`、Metadata 建立成功;Step 10–12(自架 Taskiq + Redis ETL,Docker Compose / Coolify 部署於 EC2)為下一步,ETL 執行不再走 Glue Job。詳見 `docs/Tasks/v1.1.0/propose-v1.1.0.md`。
 
 ---
 
@@ -711,15 +714,17 @@ flowchart LR
 
 | 名詞 | 全稱 / 類型 | 說明 |
 | --- | --- | --- |
-| AWS Glue | 無伺服器 ETL | Raw → ETL-Hub 轉換（Jobs/Crawler/Catalog） |
+| AWS Glue | 無伺服器 ETL | Crawler / Data Catalog 建立來源 Metadata（本案 ETL 轉換改自架,不用 Glue Job） |
 | ETL | Extract-Transform-Load | 擷取 → 轉換 → 載入 |
 | Data Catalog | 資料目錄 | Glue 維護的表結構 / 中繼資料 |
 | Lake Formation | 資料湖權限治理 | 在 IAM 之上對 Glue Catalog 的 Database / Table / Column 做細粒度授權 |
 | IAMAllowedPrincipals | LF 相容群組 | 資源持有它時退回 IAM-only;被移除即翻轉成 LF 強制授權 |
 | Data Lake Administrator | 資料湖管理員 | Lake Formation 最高權限者,可授權 / 撤銷各資源 |
-| EventBridge | 事件匯流排 | 排程 / 事件觸發 ETL |
-| Lambda | 無伺服器函式 | 流程編排 / 輕量處理 |
-| EC2 | Elastic Compute Cloud | 虛擬主機（Data Hub / Center） |
+| Taskiq | Python 分散式任務佇列 | 自架 ETL 的排程(scheduler)與執行(worker);取代 Glue Job + EventBridge / Lambda |
+| Redis | 記憶體資料存儲 | Taskiq 的 broker(訊息佇列);排程派工經此傳遞 |
+| Docker Compose | 容器編排 | 一鍵起跑自架 ETL 各服務(worker / scheduler / redis 等) |
+| Coolify | 自架 PaaS / CD | 把容器化 ETL 部署於 EC2,管理發布 |
+| EC2 | Elastic Compute Cloud | 虛擬主機（Data Hub / Center + 承載自架 ETL 容器） |
 
 ### 分析 / AI
 
@@ -747,5 +752,5 @@ flowchart LR
 | 名詞 | 說明 |
 | --- | --- |
 | Raw-Data-Replication | DMS 落地的「原始複製」RDS，保留來源樣貌、不轉換 |
-| ETL-Hub | 經 Glue ETL 轉換後的 RDS，供業務 / 分析使用 |
+| ETL-Hub | 經 ETL（自架 Taskiq）轉換後的 RDS，供業務 / 分析使用 |
 | Data Hub / Center | 讀取 ETL-Hub 對外供應資料的應用層（EC2） |

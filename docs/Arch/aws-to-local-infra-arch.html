@@ -235,10 +235,10 @@
         <a href="#vpc"><i>III</i><span>VPC 網路拓撲</span></a>
         <a href="#sg"><i>IV</i><span>Security Group 資料流</span></a>
         <a href="#sop"><i>V</i><span>Phase 1 流程圖</span></a>
-        <div class="sb-group">Phase 2 · ETL / Glue</div>
+        <div class="sb-group">Phase 2 · ETL（Catalog + 自架 Taskiq）</div>
         <a href="#vpce"><i>VI</i><span>Glue 前置 VPC Endpoints</span></a>
         <a href="#crawler"><i>VII</i><span>Glue Crawler + Lake Formation</span></a>
-        <a href="#sop2"><i>VIII</i><span>Phase 2 流程圖</span></a>
+        <a href="#sop2"><i>VIII</i><span>Phase 2 流程圖（Catalog → 自架 Taskiq）</span></a>
         <div class="sb-group">跨階段 · 參考</div>
         <a href="#infra"><i>IX</i><span>整體 AWS 設施</span></a>
         <a href="#relmap"><i>X</i><span>設施關聯圖</span></a>
@@ -252,9 +252,9 @@
   <div class="wrap">
     <span class="eyebrow">架構規劃 · 端到端資料中樞</span>
     <h1>Enterprise Data Hub — 地端 → AWS 資料中樞架構</h1>
-    <p class="sub">以原始系統方向為骨幹：地端 ERP/BPM/HRM → <b>Migration</b> → Raw-Data-Replication → <b>Glue ETL</b> → ETL-Hub → <b>Data Hub</b> → 業務系統。整合 Phase 1 實測成果，補齊整體 AWS 設施，並納入 Phase 2–4 未來規劃。</p>
+    <p class="sub">以原始系統方向為骨幹：地端 ERP/BPM/HRM → <b>Migration</b> → Raw-Data-Replication → <b>Glue Catalog + 自架 Taskiq ETL</b> → ETL-Hub → <b>Data Hub</b> → 業務系統。整合 Phase 1 實測成果，補齊整體 AWS 設施，並納入 Phase 2–4 未來規劃。</p>
     <div class="meta-row">
-      <span><b>範圍</b>　Phase 1 基礎建設（Full Load）· Phase 2 ETL / Glue（VPC Endpoints · Crawler + Data Catalog / Lake Formation）</span>
+      <span><b>範圍</b>　Phase 1 基礎建設（Full Load）· Phase 2 ETL（VPC Endpoints · Crawler + Data Catalog / Lake Formation · ETL 執行改自架 Taskiq + Redis）</span>
       <span><b>區域</b>　AWS 東京 ap-northeast-1（AZ 1a / 1c）</span>
     </div>
   </div>
@@ -272,7 +272,7 @@
       <h3 style="margin-top:0">系統架構流程</h3>
       <ol style="margin:0;padding-left:20px;font-size:14px;line-height:1.9">
         <li>地端資料透過 <b>Migration（DMS）</b> 移轉至 RDS（<b>Raw-Data-Replication</b>）</li>
-        <li>透過 <b>AWS Glue</b> ETL 轉換寫回 RDS（<b>ETL-Hub</b>）</li>
+        <li><b>AWS Glue Crawler / Data Catalog</b> 建 Metadata；ETL 轉換改<b>自架 Taskiq + Redis</b>（Coolify on EC2）寫回 RDS（<b>ETL-Hub</b>）</li>
         <li><b>Data Hub</b> 讀取 ETL-Hub 供各業務系統應用</li>
         <li><b>AWS EC2</b> 設置（Data Hub / Center 運算）</li>
       </ol>
@@ -296,8 +296,9 @@
       <dt>DMS</dt><dd>AWS 資料庫遷移服務（Oracle / SQL Server → RDS）。</dd>
       <dt>RDS</dt><dd>AWS 託管關聯式資料庫（本架構皆 PostgreSQL）。</dd>
       <dt>Raw-Data-Replication</dt><dd>DMS 落地的原始複製 RDS，保留來源樣貌、不轉換。</dd>
-      <dt>AWS Glue</dt><dd>無伺服器 ETL，把 Raw 清洗轉換成 ETL-Hub。</dd>
-      <dt>ETL-Hub</dt><dd>Glue 轉換後的 RDS，供業務 / 分析使用。</dd>
+      <dt>AWS Glue</dt><dd>Crawler / Data Catalog 建立來源 Metadata（本案 ETL 轉換改自架，不用 Glue Job）。</dd>
+      <dt>自架 Taskiq + Redis</dt><dd>容器化 ETL：Worker 直連 RDS 完成 Raw → ETL-Hub 轉換，Coolify 部署於 EC2。</dd>
+      <dt>ETL-Hub</dt><dd>經 ETL（自架 Taskiq）轉換後的 RDS，供業務 / 分析使用。</dd>
       <dt>Data Hub / Center</dt><dd>讀取 ETL-Hub 對外供應資料的應用層（EC2）。</dd>
       <dt>EC2</dt><dd>虛擬主機，執行 Data Hub / Center 運算。</dd>
     </dl>
@@ -316,7 +317,8 @@
     <span class="n">VPN</span><span class="a">→</span>
     <span class="n acc">DMS</span><span class="a">→</span>
     <span class="n">Raw-Data-Replication</span><span class="a">→</span>
-    <span class="n acc">Glue ETL</span><span class="a">→</span>
+    <span class="n acc">Glue Catalog</span><span class="a">→</span>
+    <span class="n acc">自架 Taskiq ETL</span><span class="a">→</span>
     <span class="n">ETL-Hub</span><span class="a">→</span>
     <span class="n">Data Hub</span><span class="a">→</span>
     <span class="n">業務 / 分析 / AI</span>
@@ -339,9 +341,10 @@ flowchart TB
       RAW[("RDS Raw-Data-Replication<br/>PostgreSQL")]
     end
 
-    subgraph Z2["Phase 2 ｜ ETL 轉換 / 編排"]
+    subgraph Z2["Phase 2 ｜ ETL（Catalog + 自架 Taskiq）"]
       direction LR
-      EVB["EventBridge<br/>排程"] --> LMB["Lambda<br/>編排"] --> GLUE["AWS Glue<br/>ETL + Catalog"]
+      GLUE["Glue Crawler + Data Catalog<br/>（建立 Metadata）"]
+      SCHED["Taskiq Scheduler"] --> REDIS["Redis<br/>（broker）"] --> WORKER["Taskiq Worker<br/>（Docker / Coolify on EC2）"]
       HUB[("RDS ETL-Hub<br/>PostgreSQL")]
     end
 
@@ -363,8 +366,9 @@ flowchart TB
   ERP == "Site-to-Site VPN｜1521" ==> VGW
   VGW --> DMS
   DMS == "5432" ==> RAW
-  RAW == "讀取" ==> GLUE
-  GLUE == "寫入" ==> HUB
+  RAW == "掃描 Metadata" ==> GLUE
+  RAW == "讀取" ==> WORKER
+  WORKER == "寫入" ==> HUB
   HUB == "讀取 ETL-Hub" ==> EC2
   EC2 == "供應" ==> BIZ
   HUB --> S3
@@ -374,7 +378,7 @@ flowchart TB
   classDef aws fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
   classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
   classDef gw fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
-  class ERP,BIZ src; class DMS,EVB,LMB,GLUE,EC2,S3,ATH,RS,AIDH,KB,RAG,MCP,AGENT aws;
+  class ERP,BIZ src; class DMS,GLUE,SCHED,REDIS,WORKER,EC2,S3,ATH,RS,AIDH,KB,RAG,MCP,AGENT aws;
   class RAW,HUB db; class VGW gw;
     </div>
     <div class="cap">圖 1 — 端到端 Infra 流程圖（VPC 內各服務與資料流，跨 Phase 1–4）</div>
@@ -386,8 +390,9 @@ flowchart TB
       <dt>VGW / Site-to-Site VPN</dt><dd>VPC 端 VPN 落地閘道 + 地端 ↔ AWS IPsec 加密通道。</dd>
       <dt>Full Load</dt><dd>一次性整批複製既有資料（Phase 1）。</dd>
       <dt>CDC</dt><dd>持續同步來源增刪改（Phase 2）。</dd>
-      <dt>EventBridge</dt><dd>排程 / 事件觸發 ETL。</dd>
-      <dt>Lambda</dt><dd>無伺服器函式，流程編排 / 輕量處理。</dd>
+      <dt>Taskiq Scheduler</dt><dd>自架排程器，依 DB 排程定義到點派工（取代 EventBridge / Lambda）。</dd>
+      <dt>Redis</dt><dd>Taskiq 的 broker（訊息佇列），排程派工經此傳遞。</dd>
+      <dt>Taskiq Worker</dt><dd>自架 ETL 執行器，直連 RDS 完成 Raw → ETL-Hub 轉換。</dd>
       <dt>S3 Data Lake</dt><dd>集中低成本物件儲存（Phase 3）。</dd>
       <dt>Athena</dt><dd>直接對 S3 用 SQL 即席查詢。</dd>
       <dt>Redshift</dt><dd>大規模分析 / BI 欄式資料倉儲。</dd>
@@ -613,7 +618,7 @@ flowchart LR
 <section id="vpce">
   <span class="ptag t2">Phase 2 · ETL / Glue</span>
   <h2><span class="num">VI</span>Glue 前置作業：VPC Endpoints</h2>
-  <p class="lead">Phase 2 要用 AWS Glue 把 Raw 轉成 ETL-Hub。Glue Worker 跑在 Private Subnet，呼叫 AWS API 會因無對外路由而失敗 → 用 <b>VPC Endpoint 走 AWS Backbone</b> 解決，而非開 NAT Gateway。</p>
+  <p class="lead">Phase 2 用 AWS Glue Crawler 建立來源 Metadata（寫入 Data Catalog）。Crawler 跑在 Private Subnet，呼叫 AWS API 會因無對外路由而失敗 → 用 <b>VPC Endpoint 走 AWS Backbone</b> 解決，而非開 NAT Gateway。（實際 ETL 轉換執行改自架 Taskiq + Redis，見〈VIII〉；自架 Worker 若需讀 Secrets Manager 等，可共用同一組 Endpoint。）</p>
   <div class="namekey">
     <b>名稱分類</b>
     <span class="nk"><span class="sw svc"></span>AWS 服務 / 內建項目</span>
@@ -731,7 +736,8 @@ flowchart LR
     <span class="n">Database</span><span class="a">→</span>
     <span class="n">Crawler</span><span class="a">→</span>
     <span class="n">Data Catalog</span><span class="a">→</span>
-    <span class="n acc">Visual ETL</span><span class="a">→</span>
+    <span class="n acc">自架 Taskiq ETL</span><span class="a">→</span>
+    <span class="n">ETL-Hub</span><span class="a">→</span>
     <span class="n">S3</span><span class="a">→</span>
     <span class="n">Athena</span><span class="a">→</span>
     <span class="n">Redshift</span><span class="a">→</span>
@@ -780,7 +786,7 @@ flowchart LR
     <span class="n">Crawler</span><span class="a">→</span>
     <span class="n">掃描 RDS</span><span class="a">→</span>
     <span class="n">Data Catalog</span><span class="a">→</span>
-    <span class="n acc">Visual ETL</span>
+    <span class="n acc">自架 Taskiq ETL</span>
   </div>
 
   <div class="diagram hero">
@@ -851,7 +857,7 @@ flowchart LR
   </table>
   <div class="callout warn"><span class="h">⚠ 不走刪 DB 重建那條路</span>刪除屬破壞性（且此 DB 已被 LF 管控要 <code>Drop</code> 權限）。<b>補 Database Grant 才是最小、最安全的修法</b>，補齊後根本不需要重建。</div>
 
-  <div class="callout ok"><span class="h">✅ 結果</span>補上 Database 層後重跑 Crawler → <code>Tables &gt; 0</code>，Metadata 建立成功 → 進入下一步 <b>Visual ETL</b>。</div>
+  <div class="callout ok"><span class="h">✅ 結果</span>補上 Database 層後重跑 Crawler → <code>Tables &gt; 0</code>，Metadata 建立成功 → 進入下一步 <b>ETL 轉換</b>（改自架 Taskiq + Redis，見〈VIII〉；不再走 Glue Visual ETL Job）。</div>
 
   <h3>已排除（非主因）</h3>
   <p>Connection Test / <code class="n-svc">GetSecretValue</code> / <code class="n-svc">GetConnection</code> 全 Success，只證明「連得到 DB、拿得到憑證」，與「能否寫進 Glue Catalog」是兩條獨立授權鏈。以下皆已驗證正常，問題單純在 <b>Data Catalog 的 Lake Formation 授權鏈</b>：</p>
@@ -875,7 +881,7 @@ flowchart LR
 <section id="sop2">
   <span class="ptag t2">Phase 2 · ETL / Glue</span>
   <h2><span class="num">VIII</span>Phase 2 流程圖</h2>
-  <p class="lead">依「① 網路前置（VPC Endpoints）→ ② Glue 連線 / 掃描 → ③ Lake Formation 權限 → ④ ETL 轉換」四層，一次一步、完成驗證再下一步。關鍵設定對齊 Phase 2 實測。</p>
+  <p class="lead">依「① 網路前置（VPC Endpoints）→ ② Glue 連線 / 掃描 → ③ Lake Formation 權限 → ④ ETL 執行（自架 Taskiq + Redis）」四層，一次一步、完成驗證再下一步。關鍵設定對齊 Phase 2 實測。</p>
   <div class="namekey">
     <b>名稱分類</b>
     <span class="nk"><span class="sw svc"></span>AWS 服務 / 內建項目</span>
@@ -907,23 +913,25 @@ flowchart LR
     RUN["9. 執行 Crawler → 驗證<br/>Tables &gt; 0"]
     DBG --> TBG --> RUN
   end
-  subgraph ET["④ ETL 轉換層（後續）"]
+  subgraph ET["④ ETL 執行層（自架 Taskiq + Redis）"]
     direction TB
-    ETLJ["10. Visual ETL Job<br/>Raw → 轉換 → ETL-Hub"]
-    SCH["11. 排程編排<br/>EventBridge → Lambda"]
-    ETLJ --> SCH
+    SCH["10. Taskiq Scheduler + Redis<br/>依 DB 排程定義派工"]
+    ETLJ["11. Taskiq Worker<br/>直連 RDS：Raw → 轉換 → ETL-Hub"]
+    DEP["12. Docker Compose + Coolify<br/>部署於 EC2"]
+    SCH --> ETLJ
+    DEP -. 承載 .-> ETLJ
   end
   GEP ==> CONN
   CR ==> DBG
-  RUN ==> ETLJ
+  RUN ==> SCH
 
   classDef net fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
   classDef glue fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
   classDef lf fill:#f0ecf8,stroke:#5b4a8a,color:#3f3361;
   classDef etl fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
-  class SGV,IEP,GEP net; class CONN,GDB,CR glue; class DBG,TBG,RUN lf; class ETLJ,SCH etl;
+  class SGV,IEP,GEP net; class CONN,GDB,CR glue; class DBG,TBG,RUN lf; class SCH,ETLJ,DEP etl;
     </div>
-    <div class="cap">圖 8 — Phase 2 流程圖（① 網路前置 → ② Glue 連線/掃描 → ③ Lake Formation 權限 → ④ ETL 轉換）</div>
+    <div class="cap">圖 8 — Phase 2 流程圖（① 網路前置 → ② Glue 連線/掃描 → ③ Lake Formation 權限 → ④ ETL 執行：自架 Taskiq + Redis）</div>
   </div>
 
   <h3>逐步明細</h3>
@@ -939,11 +947,12 @@ flowchart LR
       <tr><td>7</td><td>Grant Database 權限</td><td>Lake Formation</td><td>Principal <code class="n-cust">Glue-ServiceRole-ERP-Hub</code>；Database <b>Describe + Create Table + Alter</b></td><td>讓 Crawler 進得了 Database 層（關鍵缺口）</td></tr>
       <tr><td>8</td><td>Grant Table / Column</td><td>Lake Formation</td><td><code class="n-svc">ALL_TABLES</code>（Describe/Select/Insert/Alter/Delete）、<code class="n-svc">ALL_COLUMNS</code>（Select）</td><td>讓 Crawler 建 / 改表 Metadata</td></tr>
       <tr><td>9</td><td>執行 Crawler + 驗證</td><td>Glue Crawler</td><td>On-Demand Run → 查 Data Catalog</td><td>確認 <code>Tables &gt; 0</code>、Metadata 建立成功</td></tr>
-      <tr><td>10</td><td>建 Visual ETL Job</td><td>Glue ETL（後續）</td><td>Source = Catalog → 轉換 → Target RDS <code class="n-cust">ETL-Hub</code></td><td>Raw → ETL-Hub 清洗轉換</td></tr>
-      <tr><td>11</td><td>排程編排</td><td>EventBridge + Lambda（後續）</td><td>定時觸發 ETL / 流程編排</td><td>自動化 ETL 執行</td></tr>
+      <tr><td>10</td><td>建自架排程</td><td>Taskiq Scheduler + Redis（後續）</td><td>依自有 DB 排程定義到點派工；Redis 作 broker</td><td>取代 EventBridge / Lambda 編排</td></tr>
+      <tr><td>11</td><td>建 ETL Worker</td><td>Taskiq Worker（後續）</td><td>純 Python 直連 RDS：讀 Raw → 轉換 → 寫 <code class="n-cust">ETL-Hub</code>；不依賴 Glue Job / Spark</td><td>Raw → ETL-Hub 清洗轉換</td></tr>
+      <tr><td>12</td><td>容器化部署</td><td>Docker Compose + Coolify（後續）</td><td>image <code class="n-cust">etl_</code> prefix；Coolify 部署於 EC2，連 RDS 讀寫</td><td>自架 ETL 上線</td></tr>
     </tbody>
   </table>
-  <div class="callout ok"><span class="h">✅ 目前進度</span>Step 1–9 已完成並驗證（Crawler 成功建立 Metadata，<code>Tables &gt; 0</code>）；Step 10–11（Visual ETL / 排程）為下一步規劃。</div>
+  <div class="callout ok"><span class="h">✅ 目前進度</span>Step 1–9 已完成並驗證（Crawler 成功建立 Metadata，<code>Tables &gt; 0</code>）；Step 10–12（自架 Taskiq + Redis ETL，Docker Compose / Coolify 部署於 EC2）為下一步，ETL 執行不再走 Glue Job。詳見 <code>docs/Tasks/v1.1.0/propose-v1.1.0.md</code>。</div>
 
   <div class="terms">
     <div class="terms-h">📖 本頁名詞</div>
@@ -952,8 +961,8 @@ flowchart LR
       <dt>Glue Connection</dt><dd>Glue 連 RDS 的連線設定，含 VPC / Subnet / SG。</dd>
       <dt>Glue Crawler</dt><dd>掃描資料源結構，把 Metadata 寫入 Data Catalog。</dd>
       <dt>Lake Formation</dt><dd>在 IAM 之上對 Catalog 的 Database / Table / Column 細粒度授權。</dd>
-      <dt>Visual ETL</dt><dd>Glue 視覺化 ETL Job，把 Raw 轉換寫入 ETL-Hub。</dd>
-      <dt>EventBridge / Lambda</dt><dd>排程觸發 + 流程編排，驅動 ETL 自動執行。</dd>
+      <dt>Taskiq + Redis</dt><dd>自架 ETL：Scheduler 依 DB 排程派工、Redis 作 broker、Worker 直連 RDS 完成轉換（取代 Glue Job + EventBridge / Lambda）。</dd>
+      <dt>Coolify</dt><dd>自架 PaaS / CD，把容器化 ETL 部署於 EC2。</dd>
     </dl>
     <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
   </div>
@@ -994,10 +1003,10 @@ flowchart LR
       <h3>轉換 / 編排 / 運算</h3>
       <table>
         <tbody>
-          <tr><td>AWS Glue（Jobs / Crawler / Catalog）</td><td><span class="ph">2</span></td></tr>
-          <tr><td>EventBridge（排程觸發）</td><td><span class="ph">2</span></td></tr>
-          <tr><td>Lambda（編排）</td><td><span class="ph">2</span></td></tr>
-          <tr><td>EC2（Data Hub / Center · Taskiq）</td><td><span class="ph">1–2</span></td></tr>
+          <tr><td>AWS Glue（Crawler / Data Catalog）</td><td><span class="ph">2</span></td></tr>
+          <tr><td>自架 Taskiq + Redis（Docker Compose）</td><td><span class="ph">2</span></td></tr>
+          <tr><td>Coolify（on EC2）</td><td><span class="ph">2</span></td></tr>
+          <tr><td>EC2（Data Hub / Center · 承載自架 ETL）</td><td><span class="ph">1–2</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -1015,7 +1024,7 @@ flowchart LR
       <h3>安全 / 維運（跨階段）</h3>
       <table>
         <tbody>
-          <tr><td>IAM Role（DMS/Glue/Lambda/EC2）</td><td>最小權限</td></tr>
+          <tr><td>IAM Role（DMS/Glue/EC2）</td><td>最小權限</td></tr>
           <tr><td>Secrets Manager</td><td>DB 帳密管理</td></tr>
           <tr><td>KMS</td><td>靜態加密</td></tr>
           <tr><td>CloudWatch（Logs/Metrics/Alarms）</td><td>監控告警</td></tr>
@@ -1065,14 +1074,17 @@ flowchart TB
       RAW[("RDS Raw-Data-Replication")]
       HUB[("RDS ETL-Hub")]
     end
+    subgraph ETLSELF["自架 ETL（Coolify on EC2）"]
+      SCHED["Taskiq Scheduler"]
+      REDIS["Redis (broker)"]
+      WORKER["Taskiq Worker"]
+    end
     EC2["EC2 ｜ Data Hub / Center"]
     VPCE["VPC Endpoint (S3)"]
   end
 
   subgraph REGION["區域級服務"]
-    EVB["EventBridge"]
-    LMB["Lambda"]
-    GLUE["AWS Glue + Catalog"]
+    GLUE["AWS Glue Crawler + Catalog"]
     S3["S3 Data Lake"]
     ATH["Athena"]
     RS["Redshift"]
@@ -1089,11 +1101,12 @@ flowchart TB
   ONP ==>|Site-to-Site VPN| VGW
   VGW --> DMS
   DMS ==>|寫入| RAW
-  GLUE -->|讀取| RAW
-  GLUE -->|寫入| HUB
-  EVB -->|觸發| LMB
-  LMB -->|呼叫| GLUE
-  GLUE -->|匯出| S3
+  GLUE -->|掃描 Metadata| RAW
+  SCHED -->|派工| REDIS
+  REDIS -->|觸發| WORKER
+  WORKER -->|讀取| RAW
+  WORKER -->|寫入| HUB
+  WORKER -->|匯出| S3
   ATH -->|查詢| S3
   RS -->|載入| S3
   EC2 -->|讀取 ETL-Hub| HUB
@@ -1106,9 +1119,10 @@ flowchart TB
   SGR -.->|套用| HUB
   IAM -.->|授權| DMS
   IAM -.->|授權| GLUE
-  IAM -.->|授權| LMB
+  IAM -.->|授權| WORKER
   IAM -.->|授權| EC2
   SM -.->|提供帳密| DMS
+  SM -.->|提供帳密| WORKER
   SM -.->|提供帳密| EC2
   KMS -.->|加密| RAW
   KMS -.->|加密| HUB
@@ -1119,9 +1133,9 @@ flowchart TB
   CT -.->|稽核| IAM
 
   %% 線條分類上色:藍=資料流 / 灰=基礎連線 / 紫=安全治理
-  linkStyle 0,1,2,3,4,5,6,7,8,9,10,11 stroke:#1f6feb,stroke-width:2.5px
-  linkStyle 12,13,14 stroke:#94a3b8,stroke-width:1.5px
-  linkStyle 15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30 stroke:#8b5cf6,stroke-width:1.5px
+  linkStyle 0,1,2,3,4,5,6,7,8,9,10,11,12 stroke:#1f6feb,stroke-width:2.5px
+  linkStyle 13,14,15 stroke:#94a3b8,stroke-width:1.5px
+  linkStyle 16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32 stroke:#8b5cf6,stroke-width:1.5px
 
   classDef src fill:#fde8d8,stroke:#EC7211,color:#7a3b10;
   classDef net fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
@@ -1129,7 +1143,7 @@ flowchart TB
   classDef sec fill:#f0ecf8,stroke:#5b4a8a,color:#3f3361;
   classDef sg fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
   class ONP src;
-  class IGW,VGW,NAT,DMS,EC2,VPCE,EVB,LMB,GLUE,S3,ATH,RS net;
+  class IGW,VGW,NAT,DMS,EC2,VPCE,SCHED,REDIS,WORKER,GLUE,S3,ATH,RS net;
   class RAW,HUB db;
   class IAM,SM,KMS,CW,CT sec;
   class SGD,SGR sg;
@@ -1141,8 +1155,8 @@ flowchart TB
   <div class="grid c4">
     <div class="phase p1"><span class="tag">Phase 1</span><h4>基礎建設 + Full Load</h4>
       <ul><li>VPC</li><li>VPN</li><li>Route Table</li><li>Security Group</li><li>Oracle</li><li>PostgreSQL / RDS</li><li>DMS</li></ul></div>
-    <div class="phase p2"><span class="tag">Phase 2</span><h4>CDC + ETL / Glue</h4>
-      <ul><li>VPC Endpoints</li><li>CDC</li><li>EventBridge</li><li>Lambda</li><li>ETL / ETL-Hub</li><li>Glue</li></ul></div>
+    <div class="phase p2"><span class="tag">Phase 2</span><h4>CDC + ETL（Catalog + 自架 Taskiq）</h4>
+      <ul><li>VPC Endpoints</li><li>CDC</li><li>Glue Crawler / Catalog</li><li>Taskiq + Redis</li><li>Coolify on EC2</li><li>ETL / ETL-Hub</li></ul></div>
     <div class="phase p3"><span class="tag">Phase 3</span><h4>資料湖 + 分析</h4>
       <ul><li>S3 Data Lake</li><li>Athena</li><li>Redshift</li><li>AI Data Hub</li></ul></div>
     <div class="phase p4"><span class="tag">Phase 4</span><h4>AI 平台</h4>
@@ -1152,7 +1166,7 @@ flowchart TB
   <div class="terms">
     <div class="terms-h">📖 本頁名詞</div>
     <dl>
-      <dt>IAM Role</dt><dd>授予服務（DMS / Glue / Lambda / EC2）最小必要權限。</dd>
+      <dt>IAM Role</dt><dd>授予服務（DMS / Glue / EC2）最小必要權限。</dd>
       <dt>Secrets Manager</dt><dd>集中保管 DB 帳密 / 金鑰。</dd>
       <dt>KMS</dt><dd>靜態加密金鑰管理（RDS / S3 加密）。</dd>
       <dt>CloudWatch</dt><dd>Logs / Metrics / Alarms 監控告警。</dd>
@@ -1230,12 +1244,14 @@ flowchart TB
   <table>
     <thead><tr><th>名詞</th><th>全稱 / 類型</th><th>說明</th></tr></thead>
     <tbody>
-      <tr><td><b>AWS Glue</b></td><td>無伺服器 ETL</td><td>把 Raw 資料清洗轉換寫入 ETL-Hub;含 Jobs / Crawler / Data Catalog。</td></tr>
+      <tr><td><b>AWS Glue</b></td><td>無伺服器 ETL</td><td>Crawler / Data Catalog 建立來源 Metadata(本案 ETL 轉換改自架,不用 Glue Job)。</td></tr>
       <tr><td><b>ETL</b></td><td>Extract-Transform-Load</td><td>擷取 → 轉換 → 載入,資料整理的標準流程。</td></tr>
       <tr><td><b>Data Catalog</b></td><td>資料目錄</td><td>Glue 維護的表結構/中繼資料庫,供 Athena/Glue 查詢用。</td></tr>
-      <tr><td><b>EventBridge</b></td><td>事件匯流排</td><td>以排程或事件觸發 ETL 流程(Phase 2)。</td></tr>
-      <tr><td><b>Lambda</b></td><td>無伺服器函式</td><td>輕量程式碼執行,做流程編排或小型處理(Phase 2)。</td></tr>
-      <tr><td><b>EC2</b></td><td>Elastic Compute Cloud</td><td>虛擬主機;本架構執行 Data Hub / Center 與 Taskiq / Scheduler。</td></tr>
+      <tr><td><b>Taskiq</b></td><td>Python 分散式任務佇列</td><td>自架 ETL 的排程(scheduler)與執行(worker);取代 Glue Job + EventBridge / Lambda。</td></tr>
+      <tr><td><b>Redis</b></td><td>記憶體資料存儲</td><td>Taskiq 的 broker(訊息佇列),排程派工經此傳遞。</td></tr>
+      <tr><td><b>Docker Compose</b></td><td>容器編排</td><td>一鍵起跑自架 ETL 各服務(worker / scheduler / redis 等)。</td></tr>
+      <tr><td><b>Coolify</b></td><td>自架 PaaS / CD</td><td>把容器化 ETL 部署於 EC2,管理發布。</td></tr>
+      <tr><td><b>EC2</b></td><td>Elastic Compute Cloud</td><td>虛擬主機;本架構執行 Data Hub / Center 並承載自架 ETL 容器(Taskiq / Scheduler / Redis)。</td></tr>
     </tbody>
   </table>
 
@@ -1256,7 +1272,7 @@ flowchart TB
   <table>
     <thead><tr><th>名詞</th><th>全稱 / 類型</th><th>說明</th></tr></thead>
     <tbody>
-      <tr><td><b>IAM Role</b></td><td>身分與存取角色</td><td>授予服務(DMS/Glue/Lambda/EC2)最小必要權限的角色。</td></tr>
+      <tr><td><b>IAM Role</b></td><td>身分與存取角色</td><td>授予服務(DMS/Glue/EC2)最小必要權限的角色。</td></tr>
       <tr><td><b>Secrets Manager</b></td><td>機密管理</td><td>集中保管 DB 帳密 / 金鑰,避免寫死在程式或設定。</td></tr>
       <tr><td><b>KMS</b></td><td>Key Management Service</td><td>管理靜態加密金鑰(RDS / S3 加密)。</td></tr>
       <tr><td><b>CloudWatch</b></td><td>監控服務</td><td>收集 Logs / Metrics 並設定 Alarms 告警。</td></tr>
@@ -1269,7 +1285,7 @@ flowchart TB
     <thead><tr><th>名詞</th><th>說明</th></tr></thead>
     <tbody>
       <tr><td><b>Raw-Data-Replication</b></td><td>地端資料經 DMS 落地的「原始複製」RDS,保留來源樣貌、不做轉換。</td></tr>
-      <tr><td><b>ETL-Hub</b></td><td>經 Glue ETL 清洗轉換後的 RDS,供業務系統與分析使用。</td></tr>
+      <tr><td><b>ETL-Hub</b></td><td>經 ETL(自架 Taskiq)清洗轉換後的 RDS,供業務系統與分析使用。</td></tr>
       <tr><td><b>Data Hub / Center</b></td><td>讀取 ETL-Hub 對外供應資料的應用層(EC2),企業資料中樞。</td></tr>
     </tbody>
   </table>
