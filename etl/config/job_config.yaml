@@ -1,0 +1,9 @@
+# Job list config (sample)
+# Each name maps to module jobs.<name>_job (main.py dynamic dispatch).
+# Adding a job only needs a new entry here plus its module; no need to edit main.py.
+# NOTE: keep this file ASCII to stay decodable under Windows default codec.
+jobs:
+  - name: ds_migrate      # -> jobs.ds_migrate_job (see task-004)
+    description: DS schema migration job (placeholder)
+  - name: m2201          # -> jobs.m2201_job (see task-005)
+    description: M2201 table ETL job (placeholder)

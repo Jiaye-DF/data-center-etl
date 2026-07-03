@@ -1,0 +1,4 @@
+# ETL framework 依賴(版本鎖定)
+# pyspark 版本對齊 AWS Glue 4.0 runtime(Spark 3.5)。
+pyspark==3.5.1
+PyYAML==6.0.2

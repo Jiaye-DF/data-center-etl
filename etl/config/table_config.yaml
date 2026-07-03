@@ -1,0 +1,17 @@
+# Table config (sample)
+# Source / target database names and schemas.
+# Secrets (DB credentials / S3 keys) MUST NOT live here; use env
+# (see docs/Design-Base/00-overview/02-secrets.md).
+# NOTE: keep this file ASCII to stay decodable under Windows default codec.
+source:
+  database: erp_migration_test   # source (migration test DB)
+target:
+  database: erp_etl_hub_test     # target (ETL hub test DB)
+
+schemas:
+  DS:
+    description: DS schema (used by ds_migrate job, placeholder)
+    tables: []
+  M2201:
+    description: M2201 schema (used by m2201 job, placeholder)
+    tables: []

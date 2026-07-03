@@ -1,0 +1,42 @@
+# DS schema 表格 → 欄位對照 + 每欄位 Comment(供 writer 產生 COMMENT ON COLUMN)。
+# 本版無真實 DS DDL,以下為「合理代表性佔位欄位」的初版對照,待與實際 DS 欄位對齊後補正。
+# 契約:tables.<表名>.columns.<欄名>.comment 每欄皆須有非空描述(缺則 writer.build_column_comments 會 raise)。
+# 型別轉換規則見 transforms/ds.py(以欄名對應 to_int / to_float / to_str)。
+
+tables:
+  GAT_FILE:
+    columns:
+      GAT_NO:
+        comment: "單據編號(主鍵,字串)"
+      GAT_DATE:
+        comment: "單據日期(YYYYMMDD 字串)"
+      GAT_QTY:
+        comment: "數量(整數)"
+      GAT_AMT:
+        comment: "金額(浮點)"
+      GAT_MEMO:
+        comment: "備註(字串)"
+
+  GAQ_FILE:
+    columns:
+      GAQ_NO:
+        comment: "報價單號(主鍵,字串)"
+      GAQ_CUST:
+        comment: "客戶代號(字串)"
+      GAQ_ITEM:
+        comment: "品項代號(字串)"
+      GAQ_PRICE:
+        comment: "單價(浮點)"
+      GAQ_QTY:
+        comment: "報價數量(整數)"
+
+  GAM_FILE:
+    columns:
+      GAM_ID:
+        comment: "主檔識別碼(主鍵,整數)"
+      GAM_NAME:
+        comment: "名稱(字串)"
+      GAM_TYPE:
+        comment: "類別代碼(字串)"
+      GAM_ACTIVE:
+        comment: "啟用旗標(整數 0/1)"

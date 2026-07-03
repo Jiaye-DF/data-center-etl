@@ -1,0 +1,54 @@
+# DS.GAT_FILE / DS.GAQ_FILE → M2201 欄位對照 + 每個目標欄位 Comment(Comment 來源為 GAQ_FILE 描述)。
+# 本版無真實 GAT/GAQ/M2201 DDL,以下為「合理代表性佔位對照」的初版,待與實際欄位對齊後補正。
+# 契約:轉換後 df 欄位集合 = columns 目標欄集合 = writer comments key 集合;
+#   每個目標欄位皆須有非空 comment,否則 writer.build_column_comments 會 raise。
+# 對照關係一律由本 yaml 驅動,transforms/m2201.py 不硬編來源→目標對照。
+
+target_table: M2201
+target_schema: M2201
+columns:
+  - target: DOC_NO
+    source: GAT_NO
+    source_table: GAT_FILE
+    type: str
+    comment: "單據編號(主鍵,字串)"
+  - target: DOC_DATE
+    source: GAT_DATE
+    source_table: GAT_FILE
+    type: str
+    comment: "單據日期(YYYYMMDD 字串)"
+  - target: DOC_QTY
+    source: GAT_QTY
+    source_table: GAT_FILE
+    type: int
+    comment: "單據數量(整數)"
+  - target: DOC_AMT
+    source: GAT_AMT
+    source_table: GAT_FILE
+    type: float
+    comment: "單據金額(浮點)"
+  - target: DOC_MEMO
+    source: GAT_MEMO
+    source_table: GAT_FILE
+    type: str
+    comment: "單據備註(字串)"
+  - target: CUST_CODE
+    source: GAQ_CUST
+    source_table: GAQ_FILE
+    type: str
+    comment: "客戶代號(字串)"
+  - target: ITEM_CODE
+    source: GAQ_ITEM
+    source_table: GAQ_FILE
+    type: str
+    comment: "品項代號(字串)"
+  - target: UNIT_PRICE
+    source: GAQ_PRICE
+    source_table: GAQ_FILE
+    type: float
+    comment: "單價(浮點)"
+  - target: QUOTE_QTY
+    source: GAQ_QTY
+    source_table: GAQ_FILE
+    type: int
+    comment: "報價數量(整數)"
