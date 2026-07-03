@@ -23,3 +23,25 @@
 - **修正**:seed 以字串約定補救 — `etl_tables.source_table` 存逗號合併值(`"GAT_FILE,GAQ_FILE"`,依 yaml 出現順序去重);`etl_mappings.source_column` 對多來源表存 `"<來源表>.<欄名>"`(如 `"GAT_FILE.GAT_NO"`),單來源 DS 表維持裸欄名。task-006 engine / task-004 API 讀取時需依此約定解析
 - **規範參照**:—(非違規;schema 表達力缺口)
 - **後續**:reflect 候選 — 若後台需正式支援多來源表,考慮下版本為 `etl_mappings` 增設 `source_table` 欄位(migration 屬新增欄位,非 DROP),屆時本約定可退場
+
+## §3 — passlib 1.7.4 與鎖定的 bcrypt 5.0.0 不相容,密碼雜湊改 bcrypt 直呼
+
+- **時間**:2026-07-03T17:40+08:00
+- **commit / PR**:task-002 commit(本地帳密登入)
+- **影響檔案**:`backend/app/core/security.py`、`backend/pyproject.toml` / `backend/uv.lock`(未改,僅受限)
+- **問題**:`tests/test_auth.py` 首次跑登入即紅 — passlib 1.7.4 的 bcrypt backend 載入自檢(wrap-bug 偵測)對 bcrypt>=4.1 拋 `ValueError: password cannot be longer than 72 bytes`,任何 `CryptContext(schemes=["bcrypt"]).hash()` 都會炸
+- **根因**:passlib 1.7.4(2020 年後未維護)假設 bcrypt 舊版「超長密碼靜默截斷」行為;task-001 鎖版時 `passlib[bcrypt]` extra 未鎖 bcrypt 版本,uv 解析到 bcrypt 5.0.0(已改為超長直接 raise),兩者組合在任何 hash 呼叫時必炸;而 pyproject / uv.lock 僅 task-001 可動,task-002 無法改鎖版
+- **修正**:`core/security.py` 改直接呼叫 `bcrypt` 套件(`hashpw` / `checkpw` / `gensalt`,統一先截斷 72 bytes 對齊舊版行為),`asyncio.to_thread` 包裝維持不變;演算法仍為 bcrypt,僅移除 passlib 包裝層(task-002 commit)
+- **規範參照**:`docs/Design-Base/04-databases/03-passwords-and-pii.md § 密碼必 passlib[bcrypt] 或 argon2`(該規則於本情境被推翻:鎖定版本組合下 passlib 不可用)、`docs/Design-Base/03-backend/00-overview.md § 鎖定技術棧(passlib[bcrypt])`
+- **後續**:reflect 候選 — 規範改「bcrypt(直呼)或 argon2」或改鎖 `bcrypt<4.1`;收口時若調整依賴(如移除 passlib 或鎖 bcrypt 版本)由 user / 收口 agent 決定
+
+## §4 — INIT_ADMIN_* 必填 env 的連動義務(.env*.example 同步、既有測試 env 注入)未被白名單覆蓋
+
+- **時間**:2026-07-03T17:40+08:00
+- **commit / PR**:task-002 commit(本地帳密登入)
+- **影響檔案**:`backend/app/core/config.py`、`.env.development.example` / `.env.staging.example` / `.env.production.example`(未改,僅受限)、`backend/tests/test_models_v110.py`(未改,僅受限)
+- **問題**:task-002 依規把 `INIT_ADMIN_USERNAME` / `INIT_ADMIN_PASSWORD` 設為 Settings 必填欄(缺 env 即 fail-fast、禁預設帳密)後:(1) `.env*.example` 依 `02-secrets.md` 須同步補欄位,但三個 example 檔不在 task-002 `affected_files`;(2) 任何 import `app.core.db` 的入口都需要該 env → `tests/test_models_v110.py` **單獨執行**會在 collection 期 ValidationError(整套 suite 執行正常,因 `test_auth.py` 先注入 env)
+- **根因**:同 §1 的白名單互斥模式 — 拆 task 時「新增必填 secret env」的規範連動檔(`.env*.example` 全層、既有測試的 env 前置注入)未列入 affected_files;且 `app/core/db.py` 於 import 期即實例化 Settings,使 env 需求擴散到所有測試入口
+- **修正**:本機以 gitignored `backend/.env` / 根 `.env` 補 `INIT_ADMIN_*` dev 值,單獨執行 `test_models_v110.py` 已恢復綠;`.env*.example` 補欄位留待收口或 task-012(其 affected_files 含 `.env.example`)處理
+- **規範參照**:`docs/Design-Base/00-overview/02-secrets.md § .env*.example 規則(新增 secret 欄位 → 同步全層 example)`
+- **後續**:收口時把 `INIT_ADMIN_USERNAME` / `INIT_ADMIN_PASSWORD`(placeholder 值)補進三個 `.env.*.example`;CI 若單檔跑 `test_models_v110.py` 需先注入 env;reflect 候選 — 新增必填 env 的 task 應自動把 `.env*.example` 列入 affected_files

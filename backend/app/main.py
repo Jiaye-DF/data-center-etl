@@ -6,12 +6,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import router as api_router
 from app.core.config import get_settings
-from app.core.db import engine
+from app.core.db import AsyncSessionLocal, engine
 from app.core.exceptions import register_exception_handlers
+from app.services.auth_service import ensure_init_admin
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # 啟動時冪等建立初始管理員(帳密由 env 注入;缺 env 已於 Settings 驗證 fail-fast)
+    async with AsyncSessionLocal() as session:
+        await ensure_init_admin(session)
+        await session.commit()
     yield
     await engine.dispose()
 

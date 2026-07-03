@@ -15,7 +15,11 @@ class Settings(BaseSettings):
     APP_ENV: Literal["development", "staging", "production"] = "development"
     DATABASE_URL: str
     JWT_SECRET_KEY: str = Field(default=JWT_SECRET_KEY_DEVELOPMENT_DEFAULT)
+    JWT_EXPIRE_MINUTES: int = 480
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    # 初始管理員帳密:必填、無預設值(缺 env 即 Settings 驗證失敗 fail-fast,禁預設帳密)
+    INIT_ADMIN_USERNAME: str
+    INIT_ADMIN_PASSWORD: str
 
     @model_validator(mode="after")
     def _fail_fast_in_prod(self) -> Settings:

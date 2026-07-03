@@ -1,7 +1,7 @@
 ---
 id: task-002
 title: 本地帳密登入 + init_admin(env)+ 角色權限 Depends
-status: pending
+status: done
 parallel: true
 depends_on: [task-001]
 affected_files:
