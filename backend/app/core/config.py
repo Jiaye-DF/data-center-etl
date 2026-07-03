@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     # 初始管理員帳密:必填、無預設值(缺 env 即 Settings 驗證失敗 fail-fast,禁預設帳密)
     INIT_ADMIN_USERNAME: str
     INIT_ADMIN_PASSWORD: str
+    # DF-SSO 中央登入器(90-third-party-service/08-df-sso.md;IT 發放後由 env 注入,禁硬編)
+    SSO_URL: str = ""
+    SSO_APP_ID: str = ""
+    SSO_APP_SECRET: str = ""
+    # 前端對外 origin(SSO callback / logout 的 redirect 落點)
+    FRONTEND_URL: str = "http://localhost:3000"
 
     @model_validator(mode="after")
     def _fail_fast_in_prod(self) -> Settings:

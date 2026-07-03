@@ -67,3 +67,25 @@
 - **修正**:`engine.py` 以 try/except fallback:`ZoneInfo("Asia/Taipei")` 失敗時改 `timezone(timedelta(hours=8), "Asia/Taipei")`;台灣無 DST,行為等價,容器內(有 tzdata)仍走 ZoneInfo 正軌
 - **規範參照**:`docs/Design-Base/00-overview/05-timezone.md § 後端 datetime 實踐`
 - **後續**:收口時評估把 `tzdata==2025.*` 補進 pyproject(僅 task-001 / 收口可動),屆時 fallback 可保留為防禦;task-012 Dockerfile 須依規安裝系統 tzdata + `TZ=Asia/Taipei`
+
+## §7 — task-003 白名單與規範連動檔互斥:client 子目錄 / schema 位置 / lifespan 建立均無法照規範落檔
+
+- **時間**:2026-07-03T17:55+08:00
+- **commit / PR**:task-003 commit(DF-SSO 後端整合)
+- **影響檔案**:`backend/app/clients/df_sso.py`、`backend/app/api/v1/sso.py`、`backend/app/schemas/`(未動,僅受限)、`backend/app/main.py`(未動,僅受限)、`backend/app/repositories/user_repo.py`(未動,僅受限)
+- **問題**:task-003 落檔時三處無法對齊 Design-Base:(1) `90-third-party-service/00-overview.md` 規定第三方 client 走 `app/clients/<service>/` 子目錄(client/schemas/errors/README 分檔),但 task 檔範圍要點與 affected_files 均明示單檔 `app/clients/df_sso.py`;(2) SSO 回應 schema 依慣例應落 `app/schemas/`,但該目錄無任何檔案在白名單 → `SsoMeResponse` 等暫定義於 `api/v1/sso.py`;(3) `01-client-design.md` 規定 httpx client 於 FastAPI lifespan 建立 + dispose,但 `main.py` 不在白名單 → 改為 `get_df_sso_client()` 惰性單例(連線池仍共用,無每 request 開新 client)。另 `user_repo.py` 不在白名單,`get_by_sso_subject` 查詢暫落 `sso_service.py`
+- **根因**:與 §1 / §4 / §5 同型 — 拆 task 時 affected_files 只列「功能主檔」,未把規範要求的結構連動檔(client 子目錄四檔、schemas 檔、main.py lifespan、repo 擴充)納入白名單;且規範優先序(Design-Base > Tasks)與 multi-agent 白名單硬約束在此互斥,worker 依約束取白名單
+- **修正**:單檔 client 內部仍按規範分區(錯誤類 / schema / client / 單例),行為契約(timeout ≤8s / no-store / 錯誤轉 AppError / 連線池單例)全數對齊;偏離處均在程式碼註解標記並指向本條
+- **規範參照**:`docs/Design-Base/90-third-party-service/00-overview.md § 集中位置`、`01-client-design.md § httpx.AsyncClient(lifespan 建立)`
+- **後續**:收口時可將 `df_sso.py` 升格為 `clients/df_sso/` 子目錄、schema 移 `app/schemas/sso.py`、client 建立/釋放掛進 lifespan(`aclose` 已備);reflect 候選 — 拆 task 時第三方串接應自動把 client 子目錄與 main.py lifespan 列入 affected_files
+
+## §8 — DF-SSO 契約 #1 未全面落地:通用守衛(deps.get_current_user)不辨 provider,back-channel 撤銷為 process-local
+
+- **時間**:2026-07-03T17:55+08:00
+- **commit / PR**:task-003 commit(DF-SSO 後端整合)
+- **影響檔案**:`backend/app/api/deps.py`(未動,僅受限)、`backend/app/api/v1/auth.py`(未動,僅受限)、`backend/app/services/sso_service.py`
+- **問題**:模式 B 契約要求守衛依 JWT `provider` 分流(`sso` → 每次回源中央,`local` → 本地驗證)。本 task 的 `/api/v1/sso/me` 已完整落地(即時回源、中央 401 刪 cookie、不可達 502 不刪);但 task-002 建立的通用守衛 `deps.get_current_user`(供 require_admin / 後續 004/005 API 使用)只驗本地 JWT + 查 users 表,SSO 來源 token 走這些端點時不會回源中央 — 中央 session 被撤銷後,SSO 使用者對一般 API 的存取要到 JWT 過期(≤86400s)或前端下次打 `/sso/me` 才失效。另 back-channel logout 的撤銷註記(`sso_service._sso_revoked_at`)為 process-local dict:多 worker / 重啟即遺失,且 `deps.py` 不在白名單無法讓通用守衛讀取
+- **根因**:拆解時把「雙軌守衛分流」隱含歸給 task-003,但守衛檔 `api/deps.py` 只列在 task-002 的 affected_files(002 實作時尚無 provider 概念);且本版無共享 session store(redis 屬 task-007/012),契約「清 session 即失效」缺少跨 process 載體
+- **修正**:本 task 範圍內以「SSO 端點即時回源 + JWT 效期對齊 cookie 86400s + process-local 撤銷註記」落地;偏離處於 `sso_service.py` 註解標記
+- **規範參照**:`docs/Design-Base/90-third-party-service/08-df-sso.md § 4 條硬性契約 #1 / 兩種整合模式(模式 B)`
+- **後續**:task-004/005 掛權限或收口時,`deps.get_current_user` 應補 provider 分流(`provider=="sso"` → 回源中央或查共享撤銷表);task-007/012 redis 就緒後,撤銷註記可遷至 redis 使多 worker 一致;reflect 候選 — 雙軌登入專案應指定「守衛分流」的唯一 owner task

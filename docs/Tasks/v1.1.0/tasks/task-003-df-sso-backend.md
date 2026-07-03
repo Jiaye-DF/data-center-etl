@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: DF-SSO 後端整合(雙軌登入之 SSO 側)
-status: pending
+status: done
 parallel: false
 depends_on: [task-002]
 affected_files:
