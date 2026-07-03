@@ -3,50 +3,126 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    # 自建 image 一律 etl_ prefix(propose v1.1.0 驗收標準)
+    image: etl_frontend
+    container_name: etl_frontend
     ports:
       - "3000:3000"
     environment:
       - PORT=3000
       - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - TZ=Asia/Taipei
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: etl_backend
+    container_name: etl_backend
     ports:
       - "8000:8000"
     env_file:
       - .env
     environment:
       - BACKEND_PORT=8000
-      # container 內須以 service name 連 DB(覆蓋 .env 的 localhost,僅供本機 dev)
+      # container 內須以 service name 連 DB / redis(覆蓋 .env 的 localhost,僅供本機 dev)
       # 帳密由 .env 注入,禁寫死(見 docs/Design-Base/00-overview/02-secrets.md)
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-
+      - REDIS_URL=redis://redis:6379/0
+      - TZ=Asia/Taipei
+    # 本地一鍵起跑:先套 migration 再起 API(lifespan 建 init admin 需資料表已存在);
+    # 正式部署的 migration 時機見 docs/Design-Base/06-Coolify-CD/05-deploy-flow.md
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     depends_on:
       postgres:
         condition: service_healthy
-
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health').status == 200 else 1)"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/health"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     restart: unless-stopped
 
+  # taskiq worker:消費 redis 佇列執行 run_etl(共用 etl_backend image,不重複 build)
+  worker:
+    image: etl_backend
+    container_name: etl_worker
+    command: ["taskiq", "worker", "app.worker.tasks:broker"]
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - TZ=Asia/Taipei
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # 等 backend healthy = migration 已完成(worker 寫 runs / run_logs 表)
+      backend:
+        condition: service_healthy
+    # 覆蓋 image 內建 HEALTHCHECK(worker 無 HTTP 端點,改驗 redis 連線可達)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('redis', 6379), 3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # taskiq scheduler:自 DB schedules 表讀排程,到點派工到 redis 佇列
+  scheduler:
+    image: etl_backend
+    container_name: etl_scheduler
+    command: ["taskiq", "scheduler", "app.worker.scheduler:scheduler"]
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - TZ=Asia/Taipei
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # 等 backend healthy = migration 已完成(scheduler 讀 schedules 表)
+      backend:
+        condition: service_healthy
+    # 覆蓋 image 內建 HEALTHCHECK(scheduler 無 HTTP 端點,改驗 redis 連線可達)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('redis', 6379), 3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
 
   postgres:
     image: postgres:18-alpine
+    # 官方 image 以 container_name 標示 etl_ prefix
+    container_name: etl_postgres
     ports:
       - "5435:5432"
     environment:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - TZ=Asia/Taipei
     volumes:
       # postgres 18+ 建議掛載 /var/lib/postgresql(資料置於版本子目錄),非舊版 /data
       - postgres_data:/var/lib/postgresql
@@ -57,8 +133,22 @@ services:
       retries: 10
     restart: unless-stopped
 
-
+  redis:
+    # 鎖版:明確版號 tag,禁 latest(docs/Design-Base/06-Coolify-CD/01-compose.md)
+    image: redis:7.4.2-alpine
+    # 官方 image 以 container_name 標示 etl_ prefix
+    container_name: etl_redis
+    environment:
+      - TZ=Asia/Taipei
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
 volumes:
   postgres_data:
-
+  redis_data:

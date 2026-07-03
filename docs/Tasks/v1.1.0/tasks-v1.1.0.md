@@ -19,9 +19,9 @@
 | 007 | taskiq + redis 排程服務(broker/worker/scheduler) | done(worker: claude-B) | ✓ | 006 | `backend/app/worker/`(broker/tasks/scheduler)/ `tests/test_worker.py` |
 | 008 | v1.0.0 mapping 設定匯入自有 DB(seed) | done(worker: claude-C) | ✓ | 001 | `backend/scripts/seed_etl_config.py` / `tests/test_seed_etl_config.py` |
 | 009 | 前端登入頁(雙軌)+ 後台佈局殼 + auth guard | done(worker: claude-D) | ✓ | 002,003 | `frontend/src/app/login/page.tsx` / `middleware.ts` / `app/(main)/layout.tsx` / `app/(main)/page.tsx` / `lib/api/authApi.ts` / `lib/auth/useAuth.ts` / `app/error.tsx` / `app/global-error.tsx` |
-| 010 | 前端 Data Table 管理頁(清單/啟停/mapping/Comment) | pending | ✓ | 004,009 | `frontend/src/app/(main)/tables/*` / `lib/api/etlConfigApi.ts` / `components/tables/*` |
+| 010 | 前端 Data Table 管理頁(清單/啟停/mapping/Comment) | in_progress(worker: claude-D) | ✓ | 004,009 | `frontend/src/app/(main)/tables/*` / `lib/api/etlConfigApi.ts` / `components/tables/*` |
 | 011 | 前端排程管理 + 執行紀錄/逐表詳細 log 頁 | pending | ✓ | 005,009 | `frontend/src/app/(main)/schedules/*` / `app/(main)/runs/*` / `lib/api/scheduleApi.ts` / `lib/api/runApi.ts` / `components/runs/RunLogTable.tsx` |
-| 012 | Docker 化(etl_ prefix image + redis/worker/scheduler) | in_progress(worker: claude-B) | ✓ | 007 | `docker-compose.yml` / `backend/Dockerfile` / `.env.example` |
+| 012 | Docker 化(etl_ prefix image + redis/worker/scheduler) | done(worker: claude-B) | ✓ | 007 | `docker-compose.yml` / `backend/Dockerfile` / `.env.example` |
 
 ## 拆解摘要
 

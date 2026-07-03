@@ -155,3 +155,14 @@
 - **修正**:依 task 白名單維持 `middleware.ts`(功能正常,僅 deprecation 警告);auth guard 邏輯本身與檔名無關,改名成本為零風險搬移
 - **規範參照**:—(非違規;框架版本演進 vs 拆解檔名)
 - **後續**:收口或下版本把 `src/middleware.ts` 改名 `src/proxy.ts`(export 同步改 `proxy`);升 Next 17 前必須完成
+
+## §10 — ListQueueBroker 閒置時每 5 秒 TimeoutError,worker 子行程反覆 reload(redis-py 8 預設 socket_timeout 所致)
+
+- **時間**:2026-07-03T18:55+08:00
+- **commit / PR**:task-012 commit(Docker 化;現象於 compose 實跑驗收時發現)
+- **影響檔案**:`backend/app/worker/broker.py`(未改,僅受限)、`backend/uv.lock`(未改,僅受限)
+- **問題**:`docker compose up` 後 worker 容器 healthy 且可正常消費任務(實測 kiq run_etl → etl_runs 寫入 success),但閒置時 log 每 ~5 秒出現 `redis.exceptions.TimeoutError: Timeout reading from redis:6379`,taskiq process-manager 隨即 reload 子行程(worker-N is dead → restarted),形成無止盡的子行程重啟迴圈;重啟間隙(~1 秒)入列的任務會多等數秒才被消費
+- **根因**:task-001 鎖定的 redis-py 8.0.1 將 `DEFAULT_SOCKET_TIMEOUT` 從 None 改為 5 秒(read timeout);taskiq-redis 1.2.3 `ListQueueBroker.listen()` 以無限期 `BRPOP` 阻塞等待、且只 catch `ConnectionError` 不 catch `TimeoutError` → 佇列閒置超過 5 秒必炸並殺死 receiver。task-007 開發時以 InMemoryBroker 跑測試,redis 實連路徑未被驗證;修法在 `broker.py`(如 `ListQueueBroker(url=..., socket_timeout=None)` 傳入 connection_kwargs,或改用 RedisStreamBroker),但該檔屬 task-007 白名單,task-012 依 multi-agent 硬約束不得修改;REDIS_URL query 參數無法表達 `socket_timeout=None`(from_url 只收 float),env 層無解
+- **修正**:task-012 範圍內未修(僅白名單三檔);compose 服務層以 restart 策略 + healthcheck 保底,功能可用。待 task-007 owner / 收口在 `broker.py` 補 `socket_timeout=None`(一行)後迴圈即消失
+- **規範參照**:—(非違規;鎖版組合相容性 bug,與 §3 passlib/bcrypt 同型)
+- **後續**:收口(或 task-005 動 worker 相關檔時)在 `create_broker()` 對 `ListQueueBroker` 傳 `socket_timeout=None` 並實連 redis 驗證;reflect 候選 — 依賴鎖版後應對「間接依賴 major 升版」跑一次實連煙霧測試,InMemory 測試替身蓋不到此類問題
