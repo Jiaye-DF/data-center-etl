@@ -10,7 +10,7 @@
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
-| 001 | 自有 DB schema(models + migration)+ 後端依賴鎖版 | pending | ✓ | — | `backend/app/models/*`(6 新檔)/ `backend/alembic/versions/xxxx_add_v110_core_tables.py` / `backend/pyproject.toml` / `backend/uv.lock` / `backend/tests/test_models_v110.py`(全 11 檔見 task 檔) |
+| 001 | 自有 DB schema(models + migration)+ 後端依賴鎖版 | done(worker: claude-A) | ✓ | — | `backend/app/models/*`(6 新檔)/ `backend/alembic/versions/xxxx_add_v110_core_tables.py` / `backend/pyproject.toml` / `backend/uv.lock` / `backend/tests/test_models_v110.py`(全 11 檔見 task 檔) |
 | 002 | 本地帳密登入 + init_admin(env)+ 角色權限 | pending | ✓ | 001 | `backend/app/api/v1/auth.py` / `api/v1/__init__.py` / `schemas/auth.py` / `services/auth_service.py` / `repositories/user_repo.py` / `core/config.py` / `core/security.py` / `api/deps.py` / `main.py` / `tests/test_auth.py` |
 | 003 | DF-SSO 後端整合(雙軌之 SSO 側) | pending | ✗ | 002 | `backend/app/api/v1/sso.py` / `api/v1/__init__.py` / `clients/df_sso.py` / `services/sso_service.py` / `core/config.py` / `tests/test_sso.py` |
 | 004 | ETL 設定管理 API(表清單/啟停/mapping/Comment) | pending | ✗ | 001,003 | `backend/app/api/v1/etl_tables.py` / `api/v1/__init__.py` / `schemas/etl_config.py` / `services/etl_config_service.py` / `repositories/etl_config_repo.py` / `tests/test_etl_config_api.py` |

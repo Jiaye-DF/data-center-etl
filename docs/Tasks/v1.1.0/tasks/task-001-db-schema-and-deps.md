@@ -1,7 +1,7 @@
 ---
 id: task-001
 title: 自有 DB schema(models + migration)+ v1.1.0 後端依賴鎖版
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:
@@ -33,11 +33,11 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd backend && uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head` round-trip OK
-- [ ] `cd backend && uv run pytest tests/test_models_v110.py -q` 全綠(模型欄位/約束斷言)
-- [ ] `cd backend && uv run ruff check . && uv run mypy .` 全綠
-- [ ] `grep -qE "taskiq" backend/pyproject.toml && grep -qE "bcrypt|passlib" backend/pyproject.toml` 成立(依賴已鎖入)
-- [ ] `! grep -iE "drop (table|column|schema|database)" backend/alembic/versions/*add_v110*` 成立(upgrade 段無 DROP;downgrade 撤銷除外)
+- [x] `cd backend && uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head` round-trip OK
+- [x] `cd backend && uv run pytest tests/test_models_v110.py -q` 全綠(模型欄位/約束斷言)
+- [x] `cd backend && uv run ruff check . && uv run mypy .` 全綠
+- [x] `grep -qE "taskiq" backend/pyproject.toml && grep -qE "bcrypt|passlib" backend/pyproject.toml` 成立(依賴已鎖入)
+- [x] `! grep -iE "drop (table|column|schema|database)" backend/alembic/versions/*add_v110*` 成立(upgrade 段無 DROP;downgrade 撤銷除外)
 
 ## 必讀檔(Just-in-time)
 

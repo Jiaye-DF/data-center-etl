@@ -14,6 +14,10 @@ dependencies = [
     "sqlalchemy[asyncio]==2.0.49",
     "asyncpg==0.31.0",
     "alembic==1.14.0",
+    # v1.1.0 新依賴一次性鎖版(task-001;後續 task 不再動本檔)
+    "taskiq==0.12.4",
+    "taskiq-redis==1.2.3",
+    "pyyaml==6.0.3",
 ]
 
 [dependency-groups]
@@ -22,10 +26,18 @@ dev = [
     "mypy==1.20.2",
     "pytest==8.4.2",
     "pip-audit==2.8.0",
+    # v1.1.0 新依賴一次性鎖版(task-001)
+    "pytest-asyncio==1.4.0",
+    "respx==0.23.1",
+    "types-pyyaml==6.0.12.20260518",
 ]
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+# 供後續 task 的 async 測試(pytest-asyncio)免逐一標記
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100
