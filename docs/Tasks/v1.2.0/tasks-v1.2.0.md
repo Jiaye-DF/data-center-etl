@@ -1,6 +1,7 @@
 # Tasks v1.2.0
 
 > 狀態:待認領(已完成 0/6)
+> 變更:2026-07-06 propose 加「業務資料名稱(GAT JOIN 快照落地)」→ 影響 task-001(model 加 `business_name`)/ task-002(refresh 做 GAT JOIN 寫入 + list 回傳)/ task-005(前端加業務資料名稱欄);無新增檔案、依賴鏈不變。
 > 來源:`propose-v1.2.0.md`(scope 地板,禁動)
 > 範圍:自動偵測同步平台 —— DB metadata 快照(+Redis)、自動鏡像 + DS 字典中文 COMMENT 引擎、雙瀏覽頁補強、排程友善 UI。既有 `app/etl/{engine,reader,writer,comments}.py`(config-driven 路徑)**保留不動**,自動鏡像為新路徑。
 > 起點:dev-v1.2/auto-sync(雙瀏覽頁 + 內省 API 已於 cf9d324 / 1918932 落地);本版於其上補強改讀快照。
@@ -33,7 +34,7 @@
   2. **`api/v1/__init__.py` 只屬 task-004**(掛 sync router);datasets router 已於起點註冊,002 不再動 `__init__.py`。
   3. **`etl/introspect.py` 只屬 task-002**;mirror 引擎(003)自帶型別內省,不碰 introspect.py。
   4. **既有 config-driven 引擎凍結**:`etl/{engine,reader,writer,comments}.py` 任何 task 不改(reader 的 `rds_database_url` 由 mirror/introspect **唯讀 import 重用**,不修改)。
-- **In Scope 映射**:①→005 ②→005(etl-data)③→001,002 ④→002 ⑤→003 ⑥→003,004 ⑦→003(引擎放寬;design-base 規範更新走收口 `/reflect-rules`)⑧→006。
+- **In Scope 映射**:①→005 ②→005(etl-data)③→001,002 ④→002 ⑤→003 ⑥→003,004 ⑦→003(引擎放寬;design-base 規範更新走收口 `/reflect-rules`)⑧→006 ⑨業務資料名稱(GAT JOIN 快照落地)→001,002,005。
 - **收口(全 task done 後由 orchestrator)**:小規模對 RDS 試跑(DS 幾張表 → hub 驗中文 COMMENT)→ `/scan-project` → comment 放寬走 `/reflect-rules` 記錄 → 全量同步由 user 確認後執行。
 
 ## 執行前置(orchestrator 提醒)

@@ -16,16 +16,16 @@ estimated_hours: 3
 
 ## 目標
 
-補強 `DatasetBrowser`:①移除逐表「查看欄位」功能 ②schema 選項附**說明文字**(非裸 tag)③預設**過濾 0 筆表**(可切換顯示)④清單加 **RDS 同步時間 / ETL 轉換時間** 欄 ⑤加**同步按鈕**(逐表 + 全量),呼叫 sync API。資料一律讀後端快照。
+補強 `DatasetBrowser`:①移除逐表「查看欄位」功能 ②schema 選項附**說明文字**(非裸 tag)③預設**過濾 0 筆表**(可切換顯示)④清單加 **業務資料名稱(中文)/ RDS 同步時間 / ETL 轉換時間** 欄 ⑤加**同步按鈕**(逐表 + 全量),呼叫 sync API。資料一律讀後端快照(業務資料名稱亦來自快照落地值,非即時 JOIN)。
 
 ## 設計要點
 
 - `constants/schemaDescriptions.ts`:schema → 說明文字對照(DS = ERP 資料字典、M2201 = 業務資料…;未知 schema 給預設說明)。
-- `datasetApi.ts`:`TableSummary` 加 `last_synced_at` / `last_transformed_at`;`listDatasetTables` 加 `hideEmpty` 參數(預設 true);**移除** `useListDatasetColumnsQuery`;加「重整快照」mutation。
+- `datasetApi.ts`:`TableSummary` 加 `business_name` / `last_synced_at` / `last_transformed_at`;`listDatasetTables` 加 `hideEmpty` 參數(預設 true);**移除** `useListDatasetColumnsQuery`;加「重整快照」mutation。
 - `syncApi.ts`:`syncTable({schema,table})`、`syncAll()` mutations(POST `/sync/table`、`/sync/all`)。
 - `DatasetBrowser.tsx`:
   - schema 分頁籤下方或 tab 附說明文字(tooltip 或副標)。
-  - 表格移除「欄位結構」欄與展開列;新增「RDS 同步時間」「ETL 轉換時間」欄(用 `utils/datetime.ts` 顯示,空值顯示 —)與逐表「同步」鈕(df-btn-primary-soft)。
+  - 表格移除「欄位結構」欄與展開列;新增「業務資料名稱」(中文,空值顯示 —)、「RDS 同步時間」「ETL 轉換時間」欄(用 `utils/datetime.ts` 顯示,空值顯示 —)與逐表「同步」鈕(df-btn-primary-soft)。
   - 頁首加「全量同步」鈕(admin)+「重整快照」鈕 +「顯示 0 筆表」切換(預設隱藏)。
   - 時間顯示走 `02-frontend/04-datetime.md`;RWD / 觸控目標對齊 `06-rwd.md`。
 - viewer 角色隱藏同步 / 重整鈕(對齊既有 useAuth isAdmin)。
@@ -34,7 +34,7 @@ estimated_hours: 3
 
 - [ ] `cd frontend && npm run typecheck && npm run lint` green(strict,禁 any)
 - [ ] `npm run build` 成功;`/raw-data`、`/etl-data` 路由產出
-- [ ] 頁面實測(docker compose 起):原始資料管理無「查看欄位」按鈕;schema 有說明文字;預設不顯示 0 筆表,切換後可見;清單有兩個時間欄與同步鈕
+- [ ] 頁面實測(docker compose 起):原始資料管理無「查看欄位」按鈕;schema 有說明文字;預設不顯示 0 筆表,切換後可見;清單有業務資料名稱(中文)+ 兩個時間欄與同步鈕
 - [ ] 點單表「同步」→ 呼叫 `/api/v1/sync/table`(Network 可證);viewer 登入時同步鈕不顯示
 - [ ] 時間欄以 `utils/datetime.ts` 格式化(非直接 toString)
 

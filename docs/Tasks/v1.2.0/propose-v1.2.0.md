@@ -8,7 +8,8 @@
 
 ## In Scope
 
-- **原始資料管理頁(原始 Raw / `erp_migration_test`)**:依 schema 分組瀏覽來源資料表清單。**schema 選項需附說明文字**(如 DS = ERP 資料字典、M2201 = 業務資料),不可只有裸 tag。清單欄位:資料表、欄位數、資料筆數、**RDS 同步時間**、**ETL 轉換時間**、**同步按鈕**。**預設過濾資料筆數 = 0 的表**(可切換顯示)。**移除**逐表「查看欄位結構」功能。
+- **原始資料管理頁(原始 Raw / `erp_migration_test`)**:依 schema 分組瀏覽來源資料表清單。**schema 選項需附說明文字**(如 DS = ERP 資料字典、M2201 = 業務資料),不可只有裸 tag。清單欄位:資料表(代碼)、**業務資料名稱**(中文名)、欄位數、資料筆數、**RDS 同步時間**、**ETL 轉換時間**、**同步按鈕**。**預設過濾資料筆數 = 0 的表**(可切換顯示)。**移除**逐表「查看欄位結構」功能。
+- **業務資料名稱(中文名)於快照時 JOIN 落地**:表的中文名來自 DS 字典 `GAT_FILE`(`lower(GAT01)=表名` AND `GAT02='0'` 繁優先、缺退 `'2'` → `GAT03`);此 JOIN 於**擷取快照當下對 RDS 執行一次**,結果**寫入本應用自有 DB 的 metadata 表**(不每次查詢都 JOIN RDS)。瀏覽頁一律讀自有 DB 的中文名。
 - **ETL 資料管理頁(轉換後 Hub / `erp_etl_hub_test`)**:依 schema 分組瀏覽 ETL 轉換後資料表(命名同來源代碼、欄位帶中文 COMMENT)。
 - **DB metadata 快照**:把來源 / 目標的**結構 metadata**(schema、table、欄位數、bounded 資料筆數、同步狀態時間)擷取後存入**自有 DB**;兩瀏覽頁一律讀快照,**不即時打 RDS**。提供「重整快照」動作(內省 RDS → upsert metadata)。資料筆數以 `SELECT 1 … LIMIT 1001` 探測,> 1000 顯示 `1000+`,禁 `COUNT(*)`。
 - **Redis 快取**:對高頻 / 大量的 metadata 讀取(schema 清單、表清單分頁)加 Redis cache,降低自有 DB 與 RDS 壓力;快照重整或同步後失效對應 key。
@@ -44,13 +45,17 @@
 
 ## 驗收標準
 
-- 原始資料管理頁:讀自有 DB 快照列出來源 schema(附說明文字)與資料表;預設不顯示 0 筆表,切換後可見;無「查看欄位」按鈕;清單含 RDS 同步時間 / ETL 轉換時間欄與同步按鈕。
+- 原始資料管理頁:讀自有 DB 快照列出來源 schema(附說明文字)與資料表;清單含**業務資料名稱(中文)**欄(來自快照時 JOIN 落地的自有 DB 值,非即時查 RDS);預設不顯示 0 筆表,切換後可見;無「查看欄位」按鈕;清單含 RDS 同步時間 / ETL 轉換時間欄與同步按鈕。
 - 「重整快照」後,自有 DB 的 metadata 表筆數 = 來源實際表數(DS 2456 / M2201 2291);瀏覽頁不再逐次打 RDS(可由 RDS 連線數 / log 佐證)。
 - 按「同步」某張非空表 → 執行紀錄出現一筆 run 且狀態成功;`erp_etl_hub_test` 對應 schema.table 有資料,且欄位 COMMENT 取自 GAT/GAQ 繁中字典(如 `AAA_FILE` 表註解「帳別參數檔」、`AAA01` 註解「帳別編號」);`sync_states` 該表 last_synced_at 更新。
 - DS schema 於全量同步時排在其他 schema 之前處理(log 順序可證)。
 - 排程頁可不輸入 cron 字串、僅用下拉 / 時間選擇建立一筆排程,且到點正常觸發(內部 cron 由 UI 轉換產生)。
 - Redis 快取生效:重複開啟同一 schema 表清單第二次不再查自有 DB(或 RDS);快照重整 / 同步後對應 cache 失效。
 - localhost `docker compose up` 全服務健康;全流程(瀏覽 → 同步 → 查看轉換結果)本機可完成。
+
+## 變更紀錄
+
+- 2026-07-06:In Scope 新增「業務資料名稱(中文名)於快照時 JOIN `GAT_FILE` 落地自有 DB」+ 原始資料管理清單加業務資料名稱欄。理由:user 指示原始資料管理需顯示表的中文業務名,且 JOIN 只做一次、寫入自有 DB(不重複打 RDS)。受影響 task:task-001(model 加 `business_name` 欄)、task-002(快照 refresh 執行 GAT JOIN 寫入 + list 回傳)、task-005(前端加業務資料名稱欄)。propose 尚未 lock(worker 未開跑),依 `01-propose-format.md` 重跑拆解調整上述 task。
 
 ---
 

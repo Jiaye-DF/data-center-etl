@@ -23,6 +23,7 @@ estimated_hours: 2
 - 表 `rds_table_meta` 欄位(除 BaseModel 必備 pid/uid/is_deleted/created_at/updated_at/created_by/updated_by 外):
   - `dataset`:StrEnum(`source` / `target`)
   - `schema_name` / `table_name`:varchar
+  - `business_name`:varchar(可空,業務資料中文名;快照時 JOIN `GAT_FILE` 落地,task-002 寫入)
   - `column_count`:int
   - `row_count`:int(bounded,> 1000 存 1001)
   - `snapshot_at`:timestamp(此筆 metadata 擷取時間,可空)
@@ -36,7 +37,7 @@ estimated_hours: 2
 
 - [ ] `cd backend && uv run alembic upgrade head` 成功;`uv run alembic downgrade -1` round-trip 無誤(表建/刪對稱,禁 DROP 以外的破壞)
 - [ ] `uv run python -c "from app.models import RdsTableMeta"` 匯入成功且於 `models/__init__.py` 匯出
-- [ ] `uv run pytest tests/test_models_v120.py` 全綠(至少驗:欄位存在、dataset StrEnum 值、唯一鍵約束)
+- [ ] `uv run pytest tests/test_models_v120.py` 全綠(至少驗:欄位存在含 `business_name`、dataset StrEnum 值、唯一鍵約束)
 - [ ] `uv run ruff check . && uv run mypy app` green
 - [ ] `redis` 出現在 `pyproject.toml` 且 `uv.lock` 已更新(`grep -q '"redis"' uv.lock` 或對應鎖定條目存在)
 
