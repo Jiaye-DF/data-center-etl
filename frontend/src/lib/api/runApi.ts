@@ -1,5 +1,5 @@
 import { baseApi } from '@/lib/api/baseApi'
-import { unwrapEnvelope, type ApiEnvelope } from '@/lib/api/scheduleApi'
+import { unwrap, type ApiEnvelope } from '@/types/api'
 
 /** run 狀態(對齊 backend etl_runs.status check constraint) */
 export type RunStatus = 'pending' | 'running' | 'success' | 'partial' | 'failed'
@@ -87,13 +87,13 @@ export const runApi = baseApi
         }),
         providesTags: [{ type: 'Run', id: 'LIST' }],
         transformResponse: (response: ApiEnvelope<RunListData>): RunListData =>
-          unwrapEnvelope(response),
+          unwrap(response),
       }),
       getRun: build.query<RunSummary, string>({
         query: (uid) => `/runs/${uid}`,
         providesTags: (_result, _error, uid) => [{ type: 'Run', id: uid }],
         transformResponse: (response: ApiEnvelope<RunSummary>): RunSummary =>
-          unwrapEnvelope(response),
+          unwrap(response),
       }),
       listRunLogs: build.query<RunLogListData, RunLogListParams>({
         query: ({ runUid, page, pageSize, status }) => ({
@@ -105,7 +105,7 @@ export const runApi = baseApi
         ],
         transformResponse: (
           response: ApiEnvelope<RunLogListData>,
-        ): RunLogListData => unwrapEnvelope(response),
+        ): RunLogListData => unwrap(response),
       }),
       // 手動觸發:成功後 invalidate run 清單,讓新 run 即時反映
       triggerRun: build.mutation<RunTriggerResult, RunTriggerPayload>({
@@ -117,7 +117,7 @@ export const runApi = baseApi
         invalidatesTags: [{ type: 'Run', id: 'LIST' }],
         transformResponse: (
           response: ApiEnvelope<RunTriggerResult>,
-        ): RunTriggerResult => unwrapEnvelope(response),
+        ): RunTriggerResult => unwrap(response),
       }),
     }),
   })

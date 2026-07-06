@@ -1,12 +1,5 @@
 import { baseApi } from '@/lib/api/baseApi'
-
-/** 後端統一回應信封(FastAPI `ApiResponse[T]`) */
-interface ApiEnvelope<T> {
-  success: boolean
-  data: T | null
-  detail: string | null
-  response_code: number
-}
+import { unwrap, type ApiEnvelope } from '@/types/api'
 
 /** 逐表執行狀態(對齊 backend `etl_run_logs.status` check constraint) */
 export type RunStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
@@ -66,27 +59,6 @@ export interface SetEnabledPayload {
 export interface ReplaceMappingsPayload {
   uid: string
   mappings: EtlMappingUpsert[]
-}
-
-function unwrap<T>(envelope: ApiEnvelope<T>): T {
-  if (envelope.data === null) {
-    throw new Error(envelope.detail ?? 'empty_response')
-  }
-  return envelope.data
-}
-
-/** 從 RTK Query 錯誤物件取後端 detail(400 業務訊息等;禁 any,逐層型別守衛) */
-export function extractApiErrorDetail(error: unknown, fallback: string): string {
-  if (typeof error === 'object' && error !== null && 'data' in error) {
-    const data = (error as { data?: unknown }).data
-    if (typeof data === 'object' && data !== null && 'detail' in data) {
-      const detail = (data as { detail?: unknown }).detail
-      if (typeof detail === 'string' && detail !== '') {
-        return detail
-      }
-    }
-  }
-  return fallback
 }
 
 export const etlConfigApi = baseApi

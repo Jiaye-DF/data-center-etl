@@ -15,10 +15,9 @@ import os
 import traceback
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,27 +26,14 @@ from app.etl.comments import build_column_comments
 from app.etl.transforms import ColumnMapping, map_row
 from app.models import EtlMapping, EtlRun, EtlRunLog, EtlTable
 
-logger = logging.getLogger(__name__)
+# 時間工具統一自 app/utils/datetime.py import(05-timezone.md;fixed.md §5 收口搬移)
+from app.utils.datetime import db_now as _db_now
+from app.utils.datetime import now_tw
 
-# 全棧鎖 Asia/Taipei(00-overview/05-timezone.md);
-# 本機 Windows 無 tzdata 時 fallback 固定 +8(台灣無 DST,行為等價)
-try:
-    TZ_TAIPEI: tzinfo = ZoneInfo("Asia/Taipei")
-except ZoneInfoNotFoundError:  # pragma: no cover
-    TZ_TAIPEI = timezone(timedelta(hours=8), "Asia/Taipei")
+logger = logging.getLogger(__name__)
 
 # 錯誤訊息 / stack trace 落 DB 前須遮罩的機密 env(02-secrets.md § Log / error 過濾)
 _SECRET_ENV_KEYS = ("SOURCE_DB_PASSWORD", "TARGET_DB_PASSWORD")
-
-
-def now_tw() -> datetime:
-    """取現在時間(aware,Asia/Taipei)。"""
-    return datetime.now(TZ_TAIPEI)
-
-
-def _db_now() -> datetime:
-    """DB 時間欄位為 naive TIMESTAMP(+08 語意),寫入前去 tzinfo。"""
-    return now_tw().replace(tzinfo=None)
 
 
 def mask_secrets(message: str) -> str:

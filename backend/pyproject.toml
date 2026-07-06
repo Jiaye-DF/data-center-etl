@@ -18,6 +18,8 @@ dependencies = [
     "taskiq==0.12.4",
     "taskiq-redis==1.2.3",
     "pyyaml==6.0.3",
+    # 收口補依賴:本機 Windows 無系統 IANA tz 資料庫,ZoneInfo 需 tzdata(fixed.md §6)
+    "tzdata==2026.2",
 ]
 
 [dependency-groups]

@@ -13,6 +13,8 @@
 - **規範參照**:`docs/Design-Base/00-overview/01-versions.md § 鎖定原則 / Sources of Truth`
 - **後續**:收口時把 taskiq==0.12.4 / taskiq-redis==1.2.3 / pyyaml==6.0.3 / pytest-asyncio==1.4.0 / respx==0.23.1 / types-pyyaml==6.0.12.20260518 補進 `01-versions.md` 套件表,並以 lock 為準校正既存 lock 範例;reflect 候選 — 拆 task 時規範連動檔(版本表)應自動列入 affected_files
 
+> 收口(2026-07-06):已完成 — `01-versions.md` 套件表補齊六依賴 + tzdata==2026.2 / python-multipart / pip-audit,既存範例以 pyproject / uv.lock 為準校正,並補「Sources of Truth 為 pyproject / uv.lock」註記。
+
 ## §2 — etl_tables / etl_mappings 無多來源欄位,m2201 匯入以字串約定表示(設計取捨,非 bug)
 
 - **時間**:2026-07-03T17:01+08:00
@@ -46,6 +48,8 @@
 - **規範參照**:`docs/Design-Base/00-overview/02-secrets.md § .env*.example 規則(新增 secret 欄位 → 同步全層 example)`
 - **後續**:收口時把 `INIT_ADMIN_USERNAME` / `INIT_ADMIN_PASSWORD`(placeholder 值)補進三個 `.env.*.example`;CI 若單檔跑 `test_models_v110.py` 需先注入 env;reflect 候選 — 新增必填 env 的 task 應自動把 `.env*.example` 列入 affected_files
 
+> 收口(2026-07-06):已完成 — 三個 `.env.*.example` 補 `INIT_ADMIN_USERNAME` / `INIT_ADMIN_PASSWORD`(development 給 dev 預設值;staging / production 留空並註記必填、禁預設帳密)。
+
 ## §5 — now_tw() 未能落在規範指定的 `app/utils/datetime.py`,暫置 `app/etl/engine.py`
 
 - **時間**:2026-07-03T17:40+08:00
@@ -56,6 +60,8 @@
 - **修正**:`now_tw()` 暫實作於 `backend/app/etl/engine.py` 並由 `app.etl` re-export,行為完全對齊規範(aware,Asia/Taipei);後續 task(005 / 007)需要時間函式時 import `app.etl.now_tw`,勿另寫
 - **規範參照**:`docs/Design-Base/00-overview/05-timezone.md § 後端 datetime 實踐`
 - **後續**:收口時把 now_tw 搬至 `app/utils/datetime.py` 並改各處 import(或由首個 affected_files 含該路徑的 task 順手搬);reflect 候選 — 拆 task 時共用 util 檔應指派唯一 owner task
+
+> 收口(2026-07-06):已完成 — 新建 `app/utils/datetime.py`(`now_tw` / `to_tw` / `db_now`),engine.py / etl_config_repo.py / schedule_repo.py 三處重複實作收斂改 import 同一處;`app.etl` 保留 re-export 相容舊 import。
 
 ## §6 — 本機 Windows 無 tzdata,`ZoneInfo("Asia/Taipei")` 直接 raise,fallback 固定 +8
 
@@ -68,6 +74,8 @@
 - **規範參照**:`docs/Design-Base/00-overview/05-timezone.md § 後端 datetime 實踐`
 - **後續**:收口時評估把 `tzdata==2025.*` 補進 pyproject(僅 task-001 / 收口可動),屆時 fallback 可保留為防禦;task-012 Dockerfile 須依規安裝系統 tzdata + `TZ=Asia/Taipei`
 
+> 收口(2026-07-06):已完成 — pyproject 鎖 `tzdata==2026.2`(uv.lock 同步;IANA 版本序已至 2026.x,原估 2025.* 過時),ZoneInfo fallback 保留為防禦。
+
 ## §7 — task-003 白名單與規範連動檔互斥:client 子目錄 / schema 位置 / lifespan 建立均無法照規範落檔
 
 - **時間**:2026-07-03T17:55+08:00
@@ -78,6 +86,8 @@
 - **修正**:單檔 client 內部仍按規範分區(錯誤類 / schema / client / 單例),行為契約(timeout ≤8s / no-store / 錯誤轉 AppError / 連線池單例)全數對齊;偏離處均在程式碼註解標記並指向本條
 - **規範參照**:`docs/Design-Base/90-third-party-service/00-overview.md § 集中位置`、`01-client-design.md § httpx.AsyncClient(lifespan 建立)`
 - **後續**:收口時可將 `df_sso.py` 升格為 `clients/df_sso/` 子目錄、schema 移 `app/schemas/sso.py`、client 建立/釋放掛進 lifespan(`aclose` 已備);reflect 候選 — 拆 task 時第三方串接應自動把 client 子目錄與 main.py lifespan 列入 affected_files
+
+> 收口(2026-07-06):未搬移(非必修)— 單檔 client 行為契約已對齊規範,升格 `clients/df_sso/` 子目錄 / schema 移檔 / lifespan 掛載列下版本候選。
 
 ## §8 — DF-SSO 契約 #1 未全面落地:通用守衛(deps.get_current_user)不辨 provider,back-channel 撤銷為 process-local
 
@@ -90,6 +100,8 @@
 - **規範參照**:`docs/Design-Base/90-third-party-service/08-df-sso.md § 4 條硬性契約 #1 / 兩種整合模式(模式 B)`
 - **後續**:task-004/005 掛權限或收口時,`deps.get_current_user` 應補 provider 分流(`provider=="sso"` → 回源中央或查共享撤銷表);task-007/012 redis 就緒後,撤銷註記可遷至 redis 使多 worker 一致;reflect 候選 — 雙軌登入專案應指定「守衛分流」的唯一 owner task
 
+> 收口(2026-07-06):已完成 — `deps.get_current_user` 補 provider 分流(`sso` → 撤銷註記檢查 + 每次回源中央;中央 401 → 401、不可達 → 502 不視為登出),`tests/test_sso.py` 增 5 個分流測試。撤銷註記仍為 process-local(單 API 容器下 back-channel 已生效);遷共享 store(redis)列下版本候選。
+
 ## §9 — Dockerfile 版本鎖定線被推翻:python 3.14.1-slim / uv 0.11.20(規範表為 3.14.0 / 0.5.18)
 
 - **時間**:2026-07-03T18:40+08:00
@@ -100,6 +112,8 @@
 - **修正**:`backend/Dockerfile` 鎖 `python:3.14.1-slim`(對齊 requires-python)與 `ghcr.io/astral-sh/uv:0.11.20`(對齊本機產 lock 的 uv 版本,鎖到 patch、禁 latest);其餘(multi-stage / 非 root / tzdata+curl / TZ / HEALTHCHECK / 精準 COPY)完全按模板
 - **規範參照**:`docs/Design-Base/06-Coolify-CD/02-dockerfile-backend.md § 規則(Python image tag / uv image tag)`、`docs/Design-Base/00-overview/01-versions.md § 鎖定線`
 - **後續**:收口時把 `01-versions.md`(Python 3.14.1 / uv 0.11.x)與 `02-dockerfile-backend.md` 模板版本改為以 pyproject / uv.lock 為準;reflect 候選 — 規範版本表改引用 Sources of Truth 而非硬編版號
+
+> 收口(2026-07-06):已完成 — 兩檔版本同步實際值(python 3.14.1-slim / uv 0.11.20)並補「image tag 對齊 Sources of Truth」規則。
 
 ## §10 — `(main)/page.tsx` 與既有根 `app/page.tsx` 同路由衝突,根 page 須刪除但不在白名單
 
@@ -134,6 +148,8 @@
 - **規範參照**:`docs/Design-Base/02-frontend/03-env-and-auth.md § 環境變數前綴(所有 env 須登記於 .env.example)`、`docs/Design-Base/90-third-party-service/08-df-sso.md § env`
 - **後續**:task-012 / 收口時評估是否把 `NEXT_PUBLIC_SSO_URL` / `NEXT_PUBLIC_SSO_APP_ID` 同步進根 `.env.example`(前端部署 build args);正式環境部署時由 user 填實際值
 
+> 收口(2026-07-06):已完成 — 根 `.env.example` 補 `NEXT_PUBLIC_SSO_URL` / `NEXT_PUBLIC_SSO_APP_ID` 登記(placeholder);正式值與前端 image build args 由 user 部署時處理。
+
 ## §13 — dashboard 401 的 silent re-auth 未落地:`/auth/me` 不暴露 provider,前端無從分流
 
 - **時間**:2026-07-03T21:30+08:00
@@ -144,6 +160,8 @@
 - **修正**:本 task 以「(main) layout 於 /me 401 時 `router.replace('/login')`」落地(登入頁顯示雙軌按鈕,不自動跳 authorize,無導向迴圈);SSO 使用者中央 session 仍在時,回登入頁按一次 SSO 按鈕即無感重登,體感接近 silent re-auth
 - **規範參照**:`docs/Design-Base/90-third-party-service/08-df-sso.md § Silent Re-Auth / 不要做(dashboard 401 直接踢登入頁)`(部分未落地)
 - **後續**:收口或後續版本:`UserResponse` 增 `provider` 欄(或後端設非機密 `last_login_provider` hint cookie)後,前端補 401 攔截器(去重 / 重試上限 / 保留現場);見 §8
+
+> 收口(2026-07-06):已完成 — `UserResponse` 增 `provider` 欄(守衛判定後掛 request.state);前端 401 攔截器落地(`lib/auth/sso.ts`:去重 flag / sessionStorage 重試上限 2 / 保留現場並由 dashboard 進入點復原 / hint 為 sso 且 env 有值 → 整頁跳中央 authorize,否則回登入頁),provider hint 存 localStorage。
 
 ## §14 — Next 16 `middleware.ts` 檔名慣例已被標記 deprecated(改名 `proxy.ts`),task 白名單鎖定舊檔名
 
@@ -156,16 +174,7 @@
 - **規範參照**:—(非違規;框架版本演進 vs 拆解檔名)
 - **後續**:收口或下版本把 `src/middleware.ts` 改名 `src/proxy.ts`(export 同步改 `proxy`);升 Next 17 前必須完成
 
-## §10 — ListQueueBroker 閒置時每 5 秒 TimeoutError,worker 子行程反覆 reload(redis-py 8 預設 socket_timeout 所致)
-
-- **時間**:2026-07-03T18:55+08:00
-- **commit / PR**:task-012 commit(Docker 化;現象於 compose 實跑驗收時發現)
-- **影響檔案**:`backend/app/worker/broker.py`(未改,僅受限)、`backend/uv.lock`(未改,僅受限)
-- **問題**:`docker compose up` 後 worker 容器 healthy 且可正常消費任務(實測 kiq run_etl → etl_runs 寫入 success),但閒置時 log 每 ~5 秒出現 `redis.exceptions.TimeoutError: Timeout reading from redis:6379`,taskiq process-manager 隨即 reload 子行程(worker-N is dead → restarted),形成無止盡的子行程重啟迴圈;重啟間隙(~1 秒)入列的任務會多等數秒才被消費
-- **根因**:task-001 鎖定的 redis-py 8.0.1 將 `DEFAULT_SOCKET_TIMEOUT` 從 None 改為 5 秒(read timeout);taskiq-redis 1.2.3 `ListQueueBroker.listen()` 以無限期 `BRPOP` 阻塞等待、且只 catch `ConnectionError` 不 catch `TimeoutError` → 佇列閒置超過 5 秒必炸並殺死 receiver。task-007 開發時以 InMemoryBroker 跑測試,redis 實連路徑未被驗證;修法在 `broker.py`(如 `ListQueueBroker(url=..., socket_timeout=None)` 傳入 connection_kwargs,或改用 RedisStreamBroker),但該檔屬 task-007 白名單,task-012 依 multi-agent 硬約束不得修改;REDIS_URL query 參數無法表達 `socket_timeout=None`(from_url 只收 float),env 層無解
-- **修正**:task-012 範圍內未修(僅白名單三檔);compose 服務層以 restart 策略 + healthcheck 保底,功能可用。待 task-007 owner / 收口在 `broker.py` 補 `socket_timeout=None`(一行)後迴圈即消失
-- **規範參照**:—(非違規;鎖版組合相容性 bug,與 §3 passlib/bcrypt 同型)
-- **後續**:收口(或 task-005 動 worker 相關檔時)在 `create_broker()` 對 `ListQueueBroker` 傳 `socket_timeout=None` 並實連 redis 驗證;reflect 候選 — 依賴鎖版後應對「間接依賴 major 升版」跑一次實連煙霧測試,InMemory 測試替身蓋不到此類問題。另註:task-005 的 affected_files 不含 `app/worker/*`,本條仍待收口處理
+> 收口(2026-07-06):已完成 — 改名 `src/proxy.ts`、export 改 `proxy`(matcher 與守衛邏輯不變);build 顯示 `ƒ Proxy (Middleware)`,deprecation 警告消失。
 
 ## §15 — 手動觸發「回傳 run uid」在佇列模式(redis broker)下無法保證,回應改為 nullable
 
@@ -189,6 +198,8 @@
 - **規範參照**:`docs/Design-Base/02-frontend/05-components.md § Reuse 規則(Type / utility 跨檔 ≥ 2 必抽)`
 - **後續**:收口時把 `ApiEnvelope` / `unwrap` 抽至 `frontend/src/types/api.ts`(或 `lib/api/envelope.ts`)、`extractApiErrorDetail` 抽至 `utils/`,並改 `authApi.ts` / `login/page.tsx` / `etlConfigApi.ts` 三處 import;reflect 候選 — 拆 task 時共用型別 / util 檔應指派唯一 owner task(與 §5 後端同型)
 
+> 收口(2026-07-06):已完成 — `ApiEnvelope` / `unwrap` 抽 `types/api.ts`、`extractApiErrorDetail` 抽 `utils/apiError.ts`;authApi / etlConfigApi / scheduleApi / runApi 與七處使用端全改 import 單一定義,login 頁 inline `extractDetail` 移除。
+
 ## §17 — task-011 跨頁共用 UI 單元(Pagination / StatusBadge / formatNullableDateTime)無 components/common 白名單,暫集中於 RunLogTable.tsx
 
 - **時間**:2026-07-03T18:10+08:00
@@ -200,6 +211,8 @@
 - **規範參照**:`docs/Design-Base/02-frontend/05-components.md § Reuse 規則 / 命名與位置`
 - **後續**:收口時把上述單元搬至 `components/common/Pagination.tsx` / `components/common/StatusBadge.tsx` 與 `utils/datetime.ts`(formatNullableDateTime),並改三頁 import;與 §16 合併處理;reflect 候選同 §16
 
+> 收口(2026-07-06):已完成 — `Pagination` / `StatusBadge` 抽 `components/common/`、`TRIGGER_TYPE_LABELS` 抽 `constants/labels.ts`、`formatNullableDateTime` 併 `utils/datetime.ts`;RunLogTable 具名 export 與暫置註解移除,三頁 import 改指新位置。
+
 ## §18 — etl_runs.created_at 以 UTC wall-clock 寫入,與 started_at(+8)混用,前端顯示相差 8 小時
 
 - **時間**:2026-07-03T18:10+08:00
@@ -210,3 +223,18 @@
 - **修正**:本 task(前端白名單)無法修;前端不做自行時區轉換(依 `04-datetime.md` 禁雙偏移),顯示以後端字串為準,偏差留待後端修正
 - **規範參照**:`docs/Design-Base/00-overview/05-timezone.md § 資料庫 / Log 時戳格式`
 - **後續**:收口時擇一:(1) DB 連線加 `?options=-c%20TimeZone%3DAsia/Taipei` 或 postgres 設 `timezone=Asia/Taipei`;(2) models 的 created_at server_default 改由 Python `now_tw()` 統一寫入;並評估 API 序列化補 `+08:00` offset(對齊 log 時戳規範)
+
+> 收口(2026-07-06):已完成 — 採方案 (1):`core/db.py` engine 加 `connect_args={"server_settings": {"timezone": "Asia/Taipei"}}`,server_default 欄位改寫 +8 wall-clock;compose 實測手動觸發 run 之 `created_at` 與 `started_at` 同刻(09:24:03.227 / 09:24:03.236)。API 序列化補 offset 未做(前端顯示一致無雙偏移),列下版本候選。
+
+## §19 — ListQueueBroker 閒置時每 5 秒 TimeoutError,worker 子行程反覆 reload(redis-py 8 預設 socket_timeout 所致)
+
+- **時間**:2026-07-03T18:55+08:00
+- **commit / PR**:task-012 commit(Docker 化;現象於 compose 實跑驗收時發現)
+- **影響檔案**:`backend/app/worker/broker.py`(未改,僅受限)、`backend/uv.lock`(未改,僅受限)
+- **問題**:`docker compose up` 後 worker 容器 healthy 且可正常消費任務(實測 kiq run_etl → etl_runs 寫入 success),但閒置時 log 每 ~5 秒出現 `redis.exceptions.TimeoutError: Timeout reading from redis:6379`,taskiq process-manager 隨即 reload 子行程(worker-N is dead → restarted),形成無止盡的子行程重啟迴圈;重啟間隙(~1 秒)入列的任務會多等數秒才被消費
+- **根因**:task-001 鎖定的 redis-py 8.0.1 將 `DEFAULT_SOCKET_TIMEOUT` 從 None 改為 5 秒(read timeout);taskiq-redis 1.2.3 `ListQueueBroker.listen()` 以無限期 `BRPOP` 阻塞等待、且只 catch `ConnectionError` 不 catch `TimeoutError` → 佇列閒置超過 5 秒必炸並殺死 receiver。task-007 開發時以 InMemoryBroker 跑測試,redis 實連路徑未被驗證;修法在 `broker.py`(如 `ListQueueBroker(url=..., socket_timeout=None)` 傳入 connection_kwargs,或改用 RedisStreamBroker),但該檔屬 task-007 白名單,task-012 依 multi-agent 硬約束不得修改;REDIS_URL query 參數無法表達 `socket_timeout=None`(from_url 只收 float),env 層無解
+- **修正**:task-012 範圍內未修(僅白名單三檔);compose 服務層以 restart 策略 + healthcheck 保底,功能可用。待 task-007 owner / 收口在 `broker.py` 補 `socket_timeout=None`(一行)後迴圈即消失
+- **規範參照**:—(非違規;鎖版組合相容性 bug,與 §3 passlib/bcrypt 同型)
+- **後續**:收口(或 task-005 動 worker 相關檔時)在 `create_broker()` 對 `ListQueueBroker` 傳 `socket_timeout=None` 並實連 redis 驗證;reflect 候選 — 依賴鎖版後應對「間接依賴 major 升版」跑一次實連煙霧測試,InMemory 測試替身蓋不到此類問題。另註:task-005 的 affected_files 不含 `app/worker/*`,本條仍待收口處理
+
+> 收口(2026-07-06):已完成 — `create_broker()` 對 `ListQueueBroker` 傳 `socket_timeout=None`;compose 實連 redis 驗證:worker 閒置 7+ 分鐘 log 無任何 TimeoutError / reload(修正前每 ~5 秒一次),手動觸發任務消費正常。

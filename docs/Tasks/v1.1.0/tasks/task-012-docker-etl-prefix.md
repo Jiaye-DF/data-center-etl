@@ -36,7 +36,7 @@ estimated_hours: 2
   `etl_backend` / `etl_frontend` / `etl_worker` / `etl_scheduler`(共用 image `etl_backend`)/ `etl_postgres`(postgres:18-alpine)/ `etl_redis`(redis:7.4.2-alpine)
 - `curl http://localhost:8000/api/v1/health` → 200(db ok);`curl http://localhost:3000/` → 200
 - 端到端煙霧測試:backend 容器內 `run_etl.kiq(...)` 入列 → worker 消費 → `etl_runs` 寫入 `status=success`,redis 佇列歸零
-- 已知未決:worker 閒置時 taskiq 子行程每 ~5 秒 reload(redis-py 8 預設 socket_timeout 與 taskiq-redis ListQueueBroker 不相容;修法在 task-007 的 `broker.py`,不在本 task 白名單)→ 見 `fixed.md §10`
+- 已知未決:worker 閒置時 taskiq 子行程每 ~5 秒 reload(redis-py 8 預設 socket_timeout 與 taskiq-redis ListQueueBroker 不相容;修法在 task-007 的 `broker.py`,不在本 task 白名單)→ 見 `fixed.md §19`
 - Dockerfile 版本鎖定線偏離規範表(python 3.14.1-slim / uv 0.11.20,依 pyproject / uv.lock 為準)→ 見 `fixed.md §9`
 
 ## 必讀檔(Just-in-time)

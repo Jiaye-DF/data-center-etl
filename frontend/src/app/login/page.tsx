@@ -2,12 +2,14 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { API_BASE_URL, useLoginMutation } from '@/lib/api/authApi'
+import { useLoginMutation } from '@/lib/api/authApi'
 import { useAuth } from '@/lib/auth/useAuth'
-
-/** DF-SSO 中央登入器(可公開 env;機密 SSO_APP_SECRET 僅存在後端,禁入前端 bundle) */
-const SSO_URL = process.env.NEXT_PUBLIC_SSO_URL ?? ''
-const SSO_APP_ID = process.env.NEXT_PUBLIC_SSO_APP_ID ?? ''
+import {
+  buildSsoAuthorizeUrl,
+  isSsoConfigured,
+  setLastLoginProvider,
+} from '@/lib/auth/sso'
+import { extractApiErrorDetail } from '@/utils/apiError'
 
 /** backend SSO callback(task-003)契約錯誤碼 → 顯示訊息 */
 const ERROR_MESSAGES: Record<string, string> = {
@@ -16,20 +18,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   exchange_failed: 'SSO 登入失敗,請重新登入',
   session_expired: '登入已逾期,請重新登入',
   reauth_failed: '自動重新登入失敗,請重新登入',
-}
-
-/** 從 RTK Query 錯誤物件取後端 detail(禁 any,逐層型別守衛) */
-function extractDetail(error: unknown): string {
-  if (typeof error === 'object' && error !== null && 'data' in error) {
-    const data = (error as { data?: unknown }).data
-    if (typeof data === 'object' && data !== null && 'detail' in data) {
-      const detail = (data as { detail?: unknown }).detail
-      if (typeof detail === 'string' && detail !== '') {
-        return detail
-      }
-    }
-  }
-  return '登入失敗,請稍後再試'
 }
 
 /** 僅允許站內相對路徑,避免 open redirect */
@@ -82,6 +70,7 @@ function LoginContent(): React.ReactNode {
       event.preventDefault()
       const result = await login({ username, password })
       if ('data' in result && result.data !== undefined) {
+        setLastLoginProvider(result.data.provider)
         router.replace(nextPath)
       }
     },
@@ -89,17 +78,14 @@ function LoginContent(): React.ReactNode {
   )
 
   // 契約 #3(嚴格模式):登入頁 401 只顯示按鈕,禁自動 redirect 到 /authorize
-  const ssoConfigured = SSO_URL !== '' && SSO_APP_ID !== ''
+  const ssoConfigured = isSsoConfigured()
   const handleSsoLogin = useCallback((): void => {
-    const callbackUrl = `${API_BASE_URL}/sso/callback`
-    window.location.assign(
-      `${SSO_URL}/api/auth/sso/authorize?client_id=${encodeURIComponent(SSO_APP_ID)}&redirect_uri=${encodeURIComponent(callbackUrl)}`,
-    )
+    window.location.assign(buildSsoAuthorizeUrl())
   }, [])
 
   const errorMessage = useMemo((): string | null => {
     if (loginError !== undefined) {
-      return extractDetail(loginError)
+      return extractApiErrorDetail(loginError, '登入失敗,請稍後再試')
     }
     if (queryError !== null) {
       return ERROR_MESSAGES[queryError] ?? 'SSO 登入發生錯誤,請重新登入'

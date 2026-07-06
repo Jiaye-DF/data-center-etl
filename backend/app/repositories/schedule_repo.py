@@ -1,17 +1,11 @@
 from collections.abc import Sequence
-from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.etl import now_tw
 from app.models import EtlTable, Schedule
-
-
-def _db_now() -> datetime:
-    """DB 時間欄位為 naive TIMESTAMP(+08 語意),寫入前去 tzinfo。"""
-    return now_tw().replace(tzinfo=None)
+from app.utils.datetime import db_now as _db_now
 
 
 class ScheduleRepository:

@@ -9,14 +9,12 @@ import {
   type RunSummary,
   type TriggerType,
 } from '@/lib/api/runApi'
-import { extractApiErrorDetail } from '@/lib/api/etlConfigApi'
 import { useAuth } from '@/lib/auth/useAuth'
-import {
-  formatNullableDateTime,
-  Pagination,
-  StatusBadge,
-  TRIGGER_TYPE_LABELS,
-} from '@/components/runs/RunLogTable'
+import { Pagination } from '@/components/common/Pagination'
+import { StatusBadge } from '@/components/common/StatusBadge'
+import { TRIGGER_TYPE_LABELS } from '@/constants/labels'
+import { extractApiErrorDetail } from '@/utils/apiError'
+import { formatNullableDateTime } from '@/utils/datetime'
 
 const PAGE_SIZE = 20
 // 佇列模式下 run 由 worker 非同步建立,輪詢讓觸發後的新 run / 進行中狀態自動更新

@@ -135,7 +135,7 @@ services:
 
   redis:
     # 鎖版:明確版號 tag,禁 latest(docs/Design-Base/06-Coolify-CD/01-compose.md)
-    image: redis:7.4.2-alpine
+    image: redis:8.8.0-alpine
     # 官方 image 以 container_name 標示 etl_ prefix
     container_name: etl_redis
     environment:

@@ -4,10 +4,10 @@ import { useCallback, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
-  extractApiErrorDetail,
   useGetEtlTableQuery,
   useSetEtlTableEnabledMutation,
 } from '@/lib/api/etlConfigApi'
+import { extractApiErrorDetail } from '@/utils/apiError'
 import { useAuth } from '@/lib/auth/useAuth'
 import { MappingEditor } from '@/components/tables/MappingEditor'
 

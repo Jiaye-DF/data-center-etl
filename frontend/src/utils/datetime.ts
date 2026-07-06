@@ -24,6 +24,11 @@ export function formatDateTime(input: string | Date): string {
   }).format(d)
 }
 
+/** 可為 null 的時間顯示(started_at / finished_at 等) */
+export function formatNullableDateTime(iso: string | null): string {
+  return iso === null ? '—' : formatDateTime(iso)
+}
+
 export function formatTime(input: string | Date): string {
   const d = typeof input === 'string' ? new Date(input) : input
   return new Intl.DateTimeFormat('zh-TW', {

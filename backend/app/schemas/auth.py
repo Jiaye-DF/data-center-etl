@@ -14,6 +14,8 @@ class UserResponse(BaseModel):
     uid: UUID
     username: str
     role: str
+    # 登入來源(模式 B 分流依據;08-df-sso.md):"local" | "sso"
+    provider: str = "local"
 
 
 class LogoutResponse(BaseModel):

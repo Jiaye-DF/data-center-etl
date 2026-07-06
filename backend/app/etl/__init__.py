@@ -13,7 +13,6 @@ from app.etl.engine import (
     SourceReader,
     TargetWriter,
     load_table_configs,
-    now_tw,
     run_etl,
 )
 from app.etl.reader import PostgresSourceReader
@@ -24,6 +23,9 @@ from app.etl.transforms import (
     map_row,
 )
 from app.etl.writer import PostgresTargetWriter
+
+# now_tw 正典位置已搬 app/utils/datetime.py(fixed.md §5);此處保留 re-export 相容舊 import
+from app.utils.datetime import now_tw
 
 __all__ = [
     "ColumnMapping",

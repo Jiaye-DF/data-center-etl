@@ -12,15 +12,15 @@ multi-stage / `uv` 安裝 / 非 root / 含 `tzdata`(對齊 `00-overview/05-timez
 # syntax=docker/dockerfile:1.7
 
 # ============ Stage 1: builder ============
-FROM python:3.14.0-slim AS builder
+FROM python:3.14.1-slim AS builder
 
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
     PYTHONDONTWRITEBYTECODE=1
 
-# 安裝 uv(對齊 00-overview/01-versions.md uv 0.5.x)
-COPY --from=ghcr.io/astral-sh/uv:0.5.18 /uv /usr/local/bin/uv
+# 安裝 uv(對齊 00-overview/01-versions.md uv 0.11.x)
+COPY --from=ghcr.io/astral-sh/uv:0.11.20 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
@@ -35,7 +35,7 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 
 # ============ Stage 2: runtime ============
-FROM python:3.14.0-slim
+FROM python:3.14.1-slim
 
 ENV TZ=Asia/Taipei \
     PYTHONUNBUFFERED=1 \
@@ -69,8 +69,9 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 - **multi-stage**:builder 用完整工具裝依賴,runtime image 不帶 build tool
 - **`uv sync --frozen`**:lock file 必逐字使用(對齊 `00-overview/01-versions.md`),`--no-dev` 跳過開發依賴
-- **Python image tag**:`python:3.14.0-slim`(對齊 `00-overview/01-versions.md` Python 鎖定線)
-- **uv image tag**:鎖到 patch(`ghcr.io/astral-sh/uv:0.5.18`),**禁** `latest`
+- **Python image tag**:`python:3.14.1-slim`(對齊 `00-overview/01-versions.md` Python 鎖定線)
+- **uv image tag**:鎖到 patch(`ghcr.io/astral-sh/uv:0.11.20`),**禁** `latest`
+- **image tag 版本對齊 Sources of Truth**:Python tag 須滿足 `backend/pyproject.toml` 的 `requires-python`,uv tag 須為能解析 `backend/uv.lock`(產出該 lock)的版本;兩者變動時同步本模板與 `00-overview/01-versions.md`
 - **`TZ=Asia/Taipei` + `tzdata`**:對齊 `00-overview/05-timezone.md`
 - **非 root**:`useradd -r -u 1000`,**禁**以 root 跑 app
 - **HEALTHCHECK**:image 內建,Coolify / compose 都認(`/api/v1/health` 對齊 `00-overview.md`)

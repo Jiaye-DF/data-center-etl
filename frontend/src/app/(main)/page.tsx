@@ -1,8 +1,10 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth/useAuth'
+import { consumeReauthReturnTo } from '@/lib/auth/sso'
 
 interface SectionItem {
   href: string
@@ -51,7 +53,16 @@ const SectionCard = memo(function SectionCard({
 })
 
 export default function DashboardPage(): React.ReactNode {
+  const router = useRouter()
   const { user } = useAuth()
+
+  // silent re-auth 保留現場復原:登入成功回到 dashboard 時導回原頁(復原一次即清除)
+  useEffect(() => {
+    const returnTo = consumeReauthReturnTo()
+    if (returnTo !== null && returnTo !== '/') {
+      router.replace(returnTo)
+    }
+  }, [router])
 
   return (
     <section className="mx-auto flex max-w-7xl flex-col gap-6">

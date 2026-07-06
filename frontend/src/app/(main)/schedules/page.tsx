@@ -12,12 +12,10 @@ import {
   type ScheduleCreatePayload,
 } from '@/lib/api/scheduleApi'
 import { useTriggerRunMutation } from '@/lib/api/runApi'
-import {
-  extractApiErrorDetail,
-  useListEtlTablesQuery,
-} from '@/lib/api/etlConfigApi'
+import { useListEtlTablesQuery } from '@/lib/api/etlConfigApi'
 import { useAuth } from '@/lib/auth/useAuth'
-import { Pagination } from '@/components/runs/RunLogTable'
+import { Pagination } from '@/components/common/Pagination'
+import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatDateTime } from '@/utils/datetime'
 
 const PAGE_SIZE = 20

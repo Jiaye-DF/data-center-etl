@@ -1,0 +1,214 @@
+# production — Coolify 部署用 compose(規範:AI-Spec/Coolify-Deploy/Docker-Compose-Spec-v1.4.md + docs/Design-Base/06-Coolify-CD/01-compose.md)
+# ⚠️ 非預設檔名:Coolify 應用需將 Docker Compose Location 設為 /docker-compose-production.yml
+# - 不定義 networks / 不對外 ports(走 Coolify 反向代理)/ 不設 container_name(Coolify 自管命名)
+# - 機密一律由 Coolify 後台 Environment Variables 注入(清單見 .env.production.example),禁 env_file / 禁寫死
+# - 本地開發用 docker-compose.yml;staging(測試站)用 docker-compose-staging.yml(同形態,環境變數不同)
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # NEXT_PUBLIC_* 於 build 時烘入 bundle(.env.example:部署時作為前端 image build args)
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_SSO_URL: ${NEXT_PUBLIC_SSO_URL}
+        NEXT_PUBLIC_SSO_APP_ID: ${NEXT_PUBLIC_SSO_APP_ID}
+    restart: unless-stopped
+    environment:
+      SERVICE_URL_FRONTEND_3000:
+      TZ: Asia/Taipei
+    expose:
+      - "3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # 先套 migration 再起 API(lifespan 建 init admin 需資料表已存在)
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    environment:
+      SERVICE_URL_BACKEND_8000:
+      APP_ENV: ${APP_ENV}
+      BACKEND_PORT: "8000"
+      # 容器內以 service name 互連(TCP 服務不用 SERVICE_URL_*)
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      REDIS_URL: "redis://redis:6379/0"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      INIT_ADMIN_USERNAME: ${INIT_ADMIN_USERNAME}
+      INIT_ADMIN_PASSWORD: ${INIT_ADMIN_PASSWORD}
+      SOURCE_DB_HOST: ${SOURCE_DB_HOST}
+      SOURCE_DB_PORT: ${SOURCE_DB_PORT}
+      SOURCE_DB_NAME: ${SOURCE_DB_NAME}
+      SOURCE_DB_USER: ${SOURCE_DB_USER}
+      SOURCE_DB_PASSWORD: ${SOURCE_DB_PASSWORD}
+      TARGET_DB_HOST: ${TARGET_DB_HOST}
+      TARGET_DB_PORT: ${TARGET_DB_PORT}
+      TARGET_DB_NAME: ${TARGET_DB_NAME}
+      TARGET_DB_USER: ${TARGET_DB_USER}
+      TARGET_DB_PASSWORD: ${TARGET_DB_PASSWORD}
+      SSO_URL: ${SSO_URL}
+      SSO_APP_ID: ${SSO_APP_ID}
+      SSO_APP_SECRET: ${SSO_APP_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL}
+      TZ: Asia/Taipei
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # taskiq worker:消費 redis 佇列執行 run_etl(與 backend 同 image 內容,layer cache 共用;
+  # Coolify 自管 image 命名,故不用 image: 引用而各自宣告 build)
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["taskiq", "worker", "app.worker.tasks:broker"]
+    environment:
+      APP_ENV: ${APP_ENV}
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      REDIS_URL: "redis://redis:6379/0"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      INIT_ADMIN_USERNAME: ${INIT_ADMIN_USERNAME}
+      INIT_ADMIN_PASSWORD: ${INIT_ADMIN_PASSWORD}
+      SOURCE_DB_HOST: ${SOURCE_DB_HOST}
+      SOURCE_DB_PORT: ${SOURCE_DB_PORT}
+      SOURCE_DB_NAME: ${SOURCE_DB_NAME}
+      SOURCE_DB_USER: ${SOURCE_DB_USER}
+      SOURCE_DB_PASSWORD: ${SOURCE_DB_PASSWORD}
+      TARGET_DB_HOST: ${TARGET_DB_HOST}
+      TARGET_DB_PORT: ${TARGET_DB_PORT}
+      TARGET_DB_NAME: ${TARGET_DB_NAME}
+      TARGET_DB_USER: ${TARGET_DB_USER}
+      TARGET_DB_PASSWORD: ${TARGET_DB_PASSWORD}
+      SSO_URL: ${SSO_URL}
+      SSO_APP_ID: ${SSO_APP_ID}
+      SSO_APP_SECRET: ${SSO_APP_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL}
+      TZ: Asia/Taipei
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # 等 backend healthy = migration 已完成(worker 寫 runs / run_logs 表)
+      backend:
+        condition: service_healthy
+    # 覆蓋 image 內建 HEALTHCHECK(worker 無 HTTP 端點,改驗 redis 連線可達)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('redis', 6379), 3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # taskiq scheduler:自 DB schedules 表讀排程,到點派工到 redis 佇列
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["taskiq", "scheduler", "app.worker.scheduler:scheduler"]
+    environment:
+      APP_ENV: ${APP_ENV}
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      REDIS_URL: "redis://redis:6379/0"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      INIT_ADMIN_USERNAME: ${INIT_ADMIN_USERNAME}
+      INIT_ADMIN_PASSWORD: ${INIT_ADMIN_PASSWORD}
+      SOURCE_DB_HOST: ${SOURCE_DB_HOST}
+      SOURCE_DB_PORT: ${SOURCE_DB_PORT}
+      SOURCE_DB_NAME: ${SOURCE_DB_NAME}
+      SOURCE_DB_USER: ${SOURCE_DB_USER}
+      SOURCE_DB_PASSWORD: ${SOURCE_DB_PASSWORD}
+      TARGET_DB_HOST: ${TARGET_DB_HOST}
+      TARGET_DB_PORT: ${TARGET_DB_PORT}
+      TARGET_DB_NAME: ${TARGET_DB_NAME}
+      TARGET_DB_USER: ${TARGET_DB_USER}
+      TARGET_DB_PASSWORD: ${TARGET_DB_PASSWORD}
+      SSO_URL: ${SSO_URL}
+      SSO_APP_ID: ${SSO_APP_ID}
+      SSO_APP_SECRET: ${SSO_APP_SECRET}
+      FRONTEND_URL: ${FRONTEND_URL}
+      TZ: Asia/Taipei
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # 等 backend healthy = migration 已完成(scheduler 讀 schedules 表)
+      backend:
+        condition: service_healthy
+    # 覆蓋 image 內建 HEALTHCHECK(scheduler 無 HTTP 端點,改驗 redis 連線可達)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('redis', 6379), 3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  postgres:
+    # 應用系統自有 DB(非 ETL / DMS 的 RDS);鎖版明確版號 tag,禁 latest(版本鎖定線見 docs/Tasks/v1.1.0/fixed.md §9)
+    image: postgres:18-alpine
+    restart: unless-stopped
+    # ⚠️ TCP 服務,不加 SERVICE_URL_*
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Taipei
+    expose:
+      - "5432"
+    volumes:
+      # postgres 18+ 建議掛載 /var/lib/postgresql(資料置於版本子目錄),非舊版 /data
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    # 鎖版:明確版號 tag,禁 latest(docs/Design-Base/06-Coolify-CD/01-compose.md)
+    image: redis:8.8.0-alpine
+    restart: unless-stopped
+    # ⚠️ TCP 服務,不加 SERVICE_URL_*
+    environment:
+      TZ: Asia/Taipei
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+    name: ${COMPOSE_PROJECT_NAME}-postgres-data
+  redis_data:
+    name: ${COMPOSE_PROJECT_NAME}-redis-data

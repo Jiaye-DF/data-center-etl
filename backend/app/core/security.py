@@ -15,7 +15,7 @@ def _password_bytes(plain: str) -> bytes:
 
 
 def hash_password(plain: str) -> str:
-    # passlib 1.7.4 與鎖定的 bcrypt 5.0.0 不相容,改用 bcrypt 直呼(見 fixed.md §2)
+    # passlib 1.7.4 與鎖定的 bcrypt 5.0.0 不相容,改用 bcrypt 直呼(見 fixed.md §3)
     return bcrypt.hashpw(_password_bytes(plain), bcrypt.gensalt()).decode("ascii")
 
 

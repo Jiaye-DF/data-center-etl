@@ -1,23 +1,11 @@
 from collections.abc import Sequence
-from datetime import datetime, timedelta, timezone, tzinfo
 from uuid import UUID, uuid4
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import EtlMapping, EtlRunLog, EtlTable
-
-# 全棧鎖 Asia/Taipei;本機無 tzdata 時 fallback 固定 +8(台灣無 DST,行為等價)
-try:
-    _TZ_TAIPEI: tzinfo = ZoneInfo("Asia/Taipei")
-except ZoneInfoNotFoundError:  # pragma: no cover
-    _TZ_TAIPEI = timezone(timedelta(hours=8), "Asia/Taipei")
-
-
-def _db_now() -> datetime:
-    """DB 時間欄位為 naive TIMESTAMP(+08 語意),寫入前去 tzinfo。"""
-    return datetime.now(_TZ_TAIPEI).replace(tzinfo=None)
+from app.utils.datetime import db_now as _db_now
 
 
 class EtlConfigRepository:

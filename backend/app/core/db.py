@@ -14,5 +14,9 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     pool_recycle=300,
+    # DB session timezone 對齊 Asia/Taipei(05-timezone.md):
+    # server_default=func.now() 類欄位改寫 +8 wall-clock,
+    # 與 Python now_tw() 寫入的欄位一致(fixed.md §18)
+    connect_args={"server_settings": {"timezone": "Asia/Taipei"}},
 )
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)

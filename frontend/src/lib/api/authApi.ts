@@ -1,19 +1,16 @@
 import { baseApi } from '@/lib/api/baseApi'
-
-/** 後端統一回應信封(FastAPI `ApiResponse[T]`) */
-interface ApiEnvelope<T> {
-  success: boolean
-  data: T | null
-  detail: string | null
-  response_code: number
-}
+import { unwrap, type ApiEnvelope } from '@/types/api'
 
 export type UserRole = 'admin' | 'viewer'
+
+/** 登入來源(模式 B 雙軌;silent re-auth 分流依據) */
+export type AuthProvider = 'local' | 'sso'
 
 export interface AuthUser {
   uid: string
   username: string
   role: UserRole
+  provider: AuthProvider
 }
 
 export interface LoginPayload {
@@ -24,13 +21,6 @@ export interface LoginPayload {
 /** 後端 API base URL(與 baseApi 同源;供 SSO 登入 / 登出等整頁跳轉組 URL 用) */
 export const API_BASE_URL: string =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1'
-
-function unwrap<T>(envelope: ApiEnvelope<T>): T {
-  if (envelope.data === null) {
-    throw new Error(envelope.detail ?? 'empty_response')
-  }
-  return envelope.data
-}
 
 export const authApi = baseApi
   .enhanceEndpoints({ addTagTypes: ['Auth'] })

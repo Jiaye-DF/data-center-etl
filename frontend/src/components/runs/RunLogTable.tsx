@@ -1,41 +1,10 @@
 'use client'
 
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useState } from 'react'
 import { useListRunLogsQuery, type RunLog, type RunLogStatus } from '@/lib/api/runApi'
-import { formatDateTime } from '@/utils/datetime'
-
-// 本檔除 RunLogTable 外,一併匯出 schedules / runs 頁共用的顯示單元
-// (StatusBadge / Pagination / TRIGGER_TYPE_LABELS / formatNullableDateTime);
-// 抽至 components/common 為後續正式化候選(affected_files 未含該路徑,見 fixed.md)。
-
-/** run / 逐表 log 狀態顯示字樣(聯集兩層狀態值) */
-const STATUS_LABELS: Record<string, string> = {
-  pending: '等待中',
-  running: '執行中',
-  success: '成功',
-  partial: '部分失敗',
-  failed: '失敗',
-  skipped: '略過',
-}
-
-const STATUS_CLASSES: Record<string, string> = {
-  pending: 'bg-gray-100 text-gray-700',
-  running: 'bg-blue-50 text-blue-700',
-  success: 'bg-green-50 text-green-700',
-  partial: 'bg-orange-50 text-orange-700',
-  failed: 'bg-red-50 text-red-700',
-  skipped: 'bg-yellow-50 text-yellow-700',
-}
-
-export const TRIGGER_TYPE_LABELS: Record<string, string> = {
-  schedule: '排程',
-  manual: '手動',
-}
-
-/** 可為 null 的時間顯示(started_at / finished_at 等) */
-export function formatNullableDateTime(iso: string | null): string {
-  return iso === null ? '—' : formatDateTime(iso)
-}
+import { formatNullableDateTime } from '@/utils/datetime'
+import { Pagination } from '@/components/common/Pagination'
+import { StatusBadge } from '@/components/common/StatusBadge'
 
 function formatDurationMs(ms: number | null): string {
   if (ms === null) {
@@ -43,77 +12,6 @@ function formatDurationMs(ms: number | null): string {
   }
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`
 }
-
-interface StatusBadgeProps {
-  status: string
-}
-
-export const StatusBadge = memo(function StatusBadge({
-  status,
-}: StatusBadgeProps): React.ReactNode {
-  const label = STATUS_LABELS[status] ?? status
-  const badgeClass = STATUS_CLASSES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span
-      className={`w-fit rounded px-2 py-0.5 text-sm font-medium md:text-base ${badgeClass}`}
-    >
-      {label}
-    </span>
-  )
-})
-
-export interface PaginationProps {
-  page: number
-  pageSize: number
-  total: number
-  onPageChange: (page: number) => void
-}
-
-export const Pagination = memo(function Pagination({
-  page,
-  pageSize,
-  total,
-  onPageChange,
-}: PaginationProps): React.ReactNode {
-  const totalPages = useMemo(
-    (): number => Math.max(1, Math.ceil(total / pageSize)),
-    [total, pageSize],
-  )
-
-  const handlePrev = useCallback((): void => {
-    onPageChange(page - 1)
-  }, [onPageChange, page])
-
-  const handleNext = useCallback((): void => {
-    onPageChange(page + 1)
-  }, [onPageChange, page])
-
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <p className="text-sm text-gray-600 md:text-base">
-        共 {total} 筆,第 {page} / {totalPages} 頁
-      </p>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={handlePrev}
-          disabled={page <= 1}
-          className="min-h-[44px] rounded border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 md:text-base"
-        >
-          上一頁
-        </button>
-        <button
-          type="button"
-          onClick={handleNext}
-          disabled={page >= totalPages}
-          className="min-h-[44px] rounded border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 md:text-base"
-        >
-          下一頁
-        </button>
-      </div>
-    </div>
-  )
-})
 
 const LOG_PAGE_SIZE = 20
 

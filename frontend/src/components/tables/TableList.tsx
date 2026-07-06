@@ -3,11 +3,11 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
-  extractApiErrorDetail,
   useSetEtlTableEnabledMutation,
   type EtlTableListData,
   type EtlTableSummary,
 } from '@/lib/api/etlConfigApi'
+import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatDateTime } from '@/utils/datetime'
 
 /** 逐表執行狀態顯示字樣(對齊 backend etl_run_logs.status) */

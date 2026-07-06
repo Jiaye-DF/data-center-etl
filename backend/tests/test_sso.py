@@ -441,3 +441,90 @@ async def test_logout_without_cookie_redirects_fallback(client: AsyncClient) -> 
     resp = await client.get("/api/v1/sso/logout")
     assert resp.status_code == 302
     assert resp.headers["location"] == f"{FRONTEND_URL}/login?logged_out=1"
+
+
+# ── 通用守衛 provider 分流(模式 B 契約 #1;fixed.md §8 收口)──────────────
+@respx.mock
+async def test_general_api_with_sso_token_revalidates_central(client: AsyncClient) -> None:
+    """SSO token 走一般 API(/auth/me)也回源中央;成功時 provider=sso。"""
+    _mock_central_ok()
+    await _sso_login(client)
+    resp = await client.get("/api/v1/auth/me")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["provider"] == "sso"
+    assert data["role"] == "viewer"
+
+
+@respx.mock
+async def test_general_api_sso_token_central_401_rejected(client: AsyncClient) -> None:
+    """中央 session 已清 → 一般 API 立即 401,不等 JWT 過期(契約:清 session 即失效)。"""
+    respx.post(f"{SSO_BASE}/api/auth/sso/exchange").mock(
+        return_value=httpx.Response(200, json={"token": "central-token-1"})
+    )
+    respx.get(f"{SSO_BASE}/api/auth/me").mock(
+        side_effect=[
+            httpx.Response(200, json={"user": CENTRAL_USER}),  # callback 期間
+            httpx.Response(401, json={"error": "session_expired"}),
+        ]
+    )
+    await _sso_login(client)
+    resp = await client.get("/api/v1/auth/me")
+    assert resp.status_code == 401
+
+
+@respx.mock
+async def test_general_api_sso_token_central_unreachable_502(client: AsyncClient) -> None:
+    """中央不可達 → 502(不視為登出)。"""
+    respx.post(f"{SSO_BASE}/api/auth/sso/exchange").mock(
+        return_value=httpx.Response(200, json={"token": "central-token-1"})
+    )
+    respx.get(f"{SSO_BASE}/api/auth/me").mock(
+        side_effect=[
+            httpx.Response(200, json={"user": CENTRAL_USER}),  # callback 期間
+            httpx.ConnectError("boom"),
+        ]
+    )
+    await _sso_login(client)
+    resp = await client.get("/api/v1/auth/me")
+    assert resp.status_code == 502
+
+
+@respx.mock
+async def test_general_api_sso_token_after_back_channel_revoke_401(
+    client: AsyncClient,
+) -> None:
+    """back-channel 撤銷後,一般 API 對既發 SSO token 一律 401。"""
+    _mock_central_ok()  # 中央 me 持續 200 → 失效必來自本地撤銷
+    await _sso_login(client)
+    assert (await client.get("/api/v1/auth/me")).status_code == 200
+    user_id = str(CENTRAL_USER["userId"])
+    ts = int(time.time() * 1000)
+    resp = await client.post(
+        "/api/v1/sso/back-channel-logout",
+        json={"user_id": user_id, "timestamp": ts, "signature": _sign(user_id, ts)},
+    )
+    assert resp.status_code == 200
+    assert (await client.get("/api/v1/auth/me")).status_code == 401
+
+
+@respx.mock
+async def test_general_api_with_local_token_skips_central(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """本地 token 走本地驗證,不打中央(respx 未 mock 任何路由,誤打即噴錯);provider=local。"""
+    async with session_factory() as session:
+        password_hash = await hash_password_async("local-password-123")
+        await UserRepository(session).create(
+            username="local-user", password_hash=password_hash, role="admin"
+        )
+        await session.commit()
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "local-user", "password": "local-password-123"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["provider"] == "local"
+    resp = await client.get("/api/v1/auth/me")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["provider"] == "local"

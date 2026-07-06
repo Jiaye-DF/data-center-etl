@@ -3,14 +3,11 @@
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useGetRunQuery } from '@/lib/api/runApi'
-import { extractApiErrorDetail } from '@/lib/api/etlConfigApi'
-import { formatDateTime } from '@/utils/datetime'
-import {
-  formatNullableDateTime,
-  RunLogTable,
-  StatusBadge,
-  TRIGGER_TYPE_LABELS,
-} from '@/components/runs/RunLogTable'
+import { RunLogTable } from '@/components/runs/RunLogTable'
+import { StatusBadge } from '@/components/common/StatusBadge'
+import { TRIGGER_TYPE_LABELS } from '@/constants/labels'
+import { extractApiErrorDetail } from '@/utils/apiError'
+import { formatDateTime, formatNullableDateTime } from '@/utils/datetime'
 
 interface SummaryItemProps {
   label: string

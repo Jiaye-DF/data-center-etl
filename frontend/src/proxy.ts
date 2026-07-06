@@ -13,7 +13,7 @@ function isPublicPath(pathname: string): boolean {
 }
 
 // auth guard:無 cookie 一律導向 /login(cookie 有效性由頁面層 /me 驗證,避免舊 cookie 造成導向迴圈)
-export function middleware(request: NextRequest): NextResponse {
+export function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl
   if (isPublicPath(pathname)) {
     return NextResponse.next()

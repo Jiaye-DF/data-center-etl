@@ -9,7 +9,7 @@
 | 項目 | 鎖定線 | lock 範例 |
 | --- | --- | --- |
 | React | **`19.2.x`** | `19.2.5` |
-| Python | **`3.14.x`** | `3.14.0` |
+| Python | **`3.14.x`** | `3.14.1` |
 | Node.js | 22.x LTS | `22.13.0` |
 | PostgreSQL | 17.x | `17.2` |
 
@@ -52,20 +52,28 @@
 
 | 套件 | 鎖定線 | lock 範例 |
 | --- | --- | --- |
-| Python | 3.14.x | `3.14.0`(`requires-python = "==3.14.*"`)|
-| `fastapi` | 0.115.x | `0.115.6` |
-| `uvicorn[standard]` | 0.34.x | `0.34.0` |
-| `pydantic` / `pydantic-settings` | 2.10.x / 2.7.x | `2.10.5` / `2.7.1` |
-| `sqlalchemy` | 2.0.x | `2.0.36` |
-| `asyncpg` | 0.30.x | `0.30.0` |
+| Python | 3.14.x | `3.14.1`(`requires-python = "==3.14.1.*"`)|
+| `fastapi` | 0.136.x | `0.136.1` |
+| `uvicorn[standard]` | 0.46.x | `0.46.0` |
+| `pydantic` / `pydantic-settings` | 2.13.x / 2.14.x | `2.13.3` / `2.14.0` |
+| `sqlalchemy[asyncio]` | 2.0.x | `2.0.49` |
+| `asyncpg` | 0.31.x | `0.31.0` |
 | `alembic` | 1.14.x | `1.14.0` |
 | `pyjwt[crypto]` | 2.x | `2.10.1` |
 | `passlib[bcrypt]` | 1.7.x | `1.7.4` |
 | `httpx` | 0.28.x | `0.28.1` |
-| `pytest` / `pytest-asyncio` / `respx` | 8.x / 0.25.x / 0.22.x | `8.3.4` / `0.25.2` / `0.22.0` |
-| `ruff` / `mypy` | 0.9.x / 1.14.x | `0.9.2` / `1.14.1` |
-| `uv`(唯一 package manager) | 0.5.x | `0.5.18` |
+| `taskiq` | 0.12.x | `0.12.4` |
+| `taskiq-redis` | 1.2.x | `1.2.3` |
+| `pyyaml` | 6.0.x | `6.0.3` |
+| `tzdata` | 2026.x | `2026.2` |
+| `python-multipart` | 0.0.x | `0.0.20` |
+| `pip-audit` | 2.8.x | `2.8.0` |
+| `pytest` / `pytest-asyncio` / `respx` | 8.x / 1.4.x / 0.23.x | `8.4.2` / `1.4.0` / `0.23.1` |
+| `types-pyyaml` | 6.0.x | `6.0.12.20260518` |
+| `ruff` / `mypy` | 0.15.x / 1.20.x | `0.15.20` / `1.20.2` |
+| `uv`(唯一 package manager) | 0.11.x | `0.11.20` |
 
+> 套件實際版本以 `backend/pyproject.toml` / `backend/uv.lock` 為 Sources of Truth,本表為登記快照;新增依賴時**須同步本表**。
 > Log 套件(`loguru` 或 stdlib `logging`)二擇一,加入時補進本表;細節見 `03-backend/05-exceptions-and-logging.md`。
 
 ---

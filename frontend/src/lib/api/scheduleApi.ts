@@ -1,23 +1,5 @@
 import { baseApi } from '@/lib/api/baseApi'
-
-/**
- * 後端統一回應信封(FastAPI `ApiResponse[T]`)。
- * etlConfigApi.ts(task-010 檔)內另有私有同構定義,該檔不可動;
- * 本檔匯出供 runApi.ts 共用,抽至 lib/api 共用檔為後續正式化候選(見 fixed.md)。
- */
-export interface ApiEnvelope<T> {
-  success: boolean
-  data: T | null
-  detail: string | null
-  response_code: number
-}
-
-export function unwrapEnvelope<T>(envelope: ApiEnvelope<T>): T {
-  if (envelope.data === null) {
-    throw new Error(envelope.detail ?? 'empty_response')
-  }
-  return envelope.data
-}
+import { unwrap, type ApiEnvelope } from '@/types/api'
 
 export interface Schedule {
   uid: string
@@ -80,7 +62,7 @@ export const scheduleApi = baseApi
         providesTags: [{ type: 'Schedule', id: 'LIST' }],
         transformResponse: (
           response: ApiEnvelope<ScheduleListData>,
-        ): ScheduleListData => unwrapEnvelope(response),
+        ): ScheduleListData => unwrap(response),
       }),
       createSchedule: build.mutation<Schedule, ScheduleCreatePayload>({
         query: (payload) => ({
@@ -90,7 +72,7 @@ export const scheduleApi = baseApi
         }),
         invalidatesTags: [{ type: 'Schedule', id: 'LIST' }],
         transformResponse: (response: ApiEnvelope<Schedule>): Schedule =>
-          unwrapEnvelope(response),
+          unwrap(response),
       }),
       updateSchedule: build.mutation<Schedule, ScheduleUpdatePayload>({
         query: ({ uid, ...body }) => ({
@@ -100,7 +82,7 @@ export const scheduleApi = baseApi
         }),
         invalidatesTags: [{ type: 'Schedule', id: 'LIST' }],
         transformResponse: (response: ApiEnvelope<Schedule>): Schedule =>
-          unwrapEnvelope(response),
+          unwrap(response),
       }),
       deleteSchedule: build.mutation<ScheduleDeleteData, string>({
         query: (uid) => ({
@@ -110,7 +92,7 @@ export const scheduleApi = baseApi
         invalidatesTags: [{ type: 'Schedule', id: 'LIST' }],
         transformResponse: (
           response: ApiEnvelope<ScheduleDeleteData>,
-        ): ScheduleDeleteData => unwrapEnvelope(response),
+        ): ScheduleDeleteData => unwrap(response),
       }),
       setScheduleEnabled: build.mutation<Schedule, ScheduleSetEnabledPayload>({
         query: ({ uid, enabled }) => ({
@@ -119,7 +101,7 @@ export const scheduleApi = baseApi
         }),
         invalidatesTags: [{ type: 'Schedule', id: 'LIST' }],
         transformResponse: (response: ApiEnvelope<Schedule>): Schedule =>
-          unwrapEnvelope(response),
+          unwrap(response),
       }),
     }),
   })

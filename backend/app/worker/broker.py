@@ -25,7 +25,9 @@ def create_broker() -> AsyncBroker:
     redis_url = os.environ.get("REDIS_URL")
     if not redis_url:
         raise RuntimeError("缺少必要環境變數:REDIS_URL")
-    return ListQueueBroker(url=redis_url)
+    # socket_timeout=None:redis-py 8 預設 read timeout 5s 會使閒置 BRPOP 反覆
+    # TimeoutError → taskiq 子行程無限 reload(fixed.md §19),明確關閉
+    return ListQueueBroker(url=redis_url, socket_timeout=None)
 
 
 broker: AsyncBroker = create_broker()

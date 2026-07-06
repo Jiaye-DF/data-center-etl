@@ -2,11 +2,11 @@
 
 import { memo, useCallback, useMemo, useState } from 'react'
 import {
-  extractApiErrorDetail,
   useReplaceEtlTableMappingsMutation,
   type EtlMapping,
   type EtlMappingUpsert,
 } from '@/lib/api/etlConfigApi'
+import { extractApiErrorDetail } from '@/utils/apiError'
 
 /** 編輯中的 mapping 草稿列(key 供 React 列表重排使用,與後端 uid 解耦) */
 interface DraftRow {

@@ -1,6 +1,6 @@
 # Tasks v1.1.0
 
-> 狀態:全部完成(已完成 12/12);系統面交付完成,待收口(fixed.md §1–§18 收口項 + 全域測試驗證)後由 user 人工部署
+> 狀態:全部完成(已完成 12/12)+ 收口完成(2026-07-06):fixed.md §1–§19 收口項處理完畢(必修 §8/§13/§18/§19 已修並實測、規範同步 §1/§4/§5/§6/§9/§12/§14/§16/§17 已同步、§7 升格列下版候選),compose 全域整合驗證通過(手動觸發 + Comment / 排程到點自動執行 / viewer 403 / 停用表 skipped / worker 閒置無 reload / etl/ 凍結無異動);待 user 人工部署
 > 變更:2026-07-03 移除 task-013(Coolify 部署收口)— 部署與 AWS/EC2 建立由 user 人工執行(見 propose 變更紀錄);系統面交付止於 task-012。
 > 來源:`propose-v1.1.0.md`(scope 地板,禁動)
 > 範圍:ETL 管理後台(既有 `backend/` `frontend/` 骨架上開發)+ taskiq/redis 排程 + 容器內 ETL 執行 + Coolify 部署。taskiq / redis 不在鎖定技術棧,經 user 明示採用(propose 已註記)。v1.0.0 `etl/`(Glue 版)**凍結**:僅唯讀參考,任何 task 不得修改。

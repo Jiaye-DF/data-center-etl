@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_login
@@ -53,5 +53,13 @@ async def logout(response: Response) -> ApiResponse[LogoutResponse]:
     response_model=ApiResponse[UserResponse],
     summary="目前登入者",
 )
-async def me(user: Annotated[User, Depends(require_login)]) -> ApiResponse[UserResponse]:
-    return success(data=UserResponse.model_validate(user))
+async def me(
+    request: Request, user: Annotated[User, Depends(require_login)]
+) -> ApiResponse[UserResponse]:
+    # provider 由守衛自 JWT payload 判定後掛 request.state(deps.get_current_user)
+    provider = str(getattr(request.state, "auth_provider", "local"))
+    return success(
+        data=UserResponse(
+            uid=user.uid, username=user.username, role=user.role, provider=provider
+        )
+    )
