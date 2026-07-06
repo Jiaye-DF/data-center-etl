@@ -11,7 +11,7 @@
 | React | **`19.2.x`** | `19.2.5` |
 | Python | **`3.14.x`** | `3.14.1` |
 | Node.js | 22.x LTS | `22.13.0` |
-| PostgreSQL | 17.x | `17.2` |
+| PostgreSQL | 18.x | `18`(`postgres:18-alpine`)|
 
 採用方專案**禁**自行降版;跨 minor 由本檔發動,採用方追隨。Python 3.14 下 `passlib 1.7.4` 走 bcrypt path,接受 `crypt` 模組告警風險。
 

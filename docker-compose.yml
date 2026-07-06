@@ -113,7 +113,8 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:18-alpine
+    # 版本由 .env 的 POSTGRES_VERSION 注入(對齊 .env.example 登記;18 = 01-versions.md 鎖定線)
+    image: postgres:${POSTGRES_VERSION}-alpine
     # 官方 image 以 container_name 標示 etl_ prefix
     container_name: etl_postgres
     ports:
