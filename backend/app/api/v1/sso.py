@@ -26,6 +26,8 @@ from app.core.config import get_settings
 from app.core.cookies import JWT_COOKIE_NAME, clear_jwt_cookie, set_jwt_cookie
 from app.core.response import failure, success
 from app.core.security import decode_access_token
+from app.schemas.response import ApiResponse
+from app.services.audit_service import AuditService
 from app.services.sso_service import (
     PROVIDER_SSO,
     SSO_SESSION_MAX_AGE_SECONDS,
@@ -61,6 +63,7 @@ class BackChannelLogoutResponse(BaseModel):
 
 @router.get(
     "/callback",
+    response_class=RedirectResponse,
     summary="DF-SSO callback(code 換 token → 對應/建立本地使用者 → 設 cookie)",
 )
 async def callback(
@@ -89,7 +92,12 @@ async def callback(
     return resp
 
 
-@router.get("/me", summary="SSO 側 me(每次即時回源中央,禁本地快取)")
+# response_model 僅供 OpenAPI 文件(R-BE-004);實作維持手動 JSONResponse(失敗分支多形)
+@router.get(
+    "/me",
+    response_model=ApiResponse[SsoMeResponse],
+    summary="SSO 側 me(每次即時回源中央,禁本地快取)",
+)
 async def sso_me(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -151,6 +159,7 @@ async def sso_me(
 
 @router.get(
     "/logout",
+    response_class=RedirectResponse,
     summary="SSO 登出(通知中央 → 跟隨 logout_url;不論成敗同一回應刪本地 cookie)",
 )
 async def sso_logout(request: Request) -> RedirectResponse:
@@ -179,7 +188,10 @@ async def sso_logout(request: Request) -> RedirectResponse:
     "/back-channel-logout",
     summary="中央廣播登出(驗 HMAC + timestamp → 撤銷該使用者 SSO session)",
 )
-async def back_channel_logout(payload: BackChannelLogoutRequest) -> Response:
+async def back_channel_logout(
+    payload: BackChannelLogoutRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
     settings = get_settings()
     if not settings.SSO_APP_SECRET:
         # 契約 #4:無驗證的裸端點比不註冊更糟 → secret 未設定時一律拒絕
@@ -194,5 +206,11 @@ async def back_channel_logout(payload: BackChannelLogoutRequest) -> Response:
         return failure(detail=reason or "invalid_signature", response_code=401, status_code=401)
     # 模式 B:只撤銷 SSO 來源 session(本地登入使用者不受影響)
     revoke_sso_sessions(payload.user_id)
+    # 稽核(R-PII-003):中央廣播撤銷,匿名事件;target 為中央 user_id(非 UUID → 記 detail)
+    await AuditService(db).log(
+        action="sso_revoke",
+        target_type="sso_subject",
+        detail=f"SSO 中央廣播登出:撤銷 user_id={payload.user_id} 的 SSO session",
+    )
     body = success(data=BackChannelLogoutResponse(revoked=True))
     return JSONResponse(status_code=200, content=body.model_dump(mode="json"))

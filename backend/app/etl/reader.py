@@ -11,8 +11,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import AsyncIterator, Sequence
 from urllib.parse import quote_plus
 
 from sqlalchemy import text
@@ -22,6 +21,9 @@ from app.etl.comments import quote_ident
 
 # ETL 來源 database 名稱的 env key(ERP 鏡像庫,如 erp_migration_test)
 RDS_SOURCE_DB_ENV = "AWS_RDS_SOURCE_DB"
+
+# 分批列數:讀寫皆以此為單批上限,大表不整表載入記憶體(scan AD-006)
+DEFAULT_BATCH_SIZE = 5000
 
 
 def require_env(key: str) -> str:
@@ -59,15 +61,25 @@ class PostgresSourceReader:
             self._engine = create_async_engine(rds_database_url(RDS_SOURCE_DB_ENV))
         return self._engine
 
-    async def fetch_rows(
-        self, schema: str, table: str, columns: Sequence[str]
-    ) -> list[dict[str, Any]]:
-        """SELECT 指定欄位整表讀出;識別字全走白名單引號化(無使用者輸入值,無 bind 需求)。"""
+    async def stream_rows(
+        self,
+        schema: str,
+        table: str,
+        columns: Sequence[str],
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+    ) -> AsyncIterator[list[dict[str, object]]]:
+        """SELECT 指定欄位以 server-side cursor 分批讀出(單批 batch_size 列)。
+
+        識別字全走白名單引號化(無使用者輸入值,無 bind 需求);
+        禁整表物化 — 大表整車載入會 OOM(scan AD-006)。
+        """
         select_list = ", ".join(quote_ident(col) for col in columns)
         sql = f"SELECT {select_list} FROM {quote_ident(schema)}.{quote_ident(table)}"
         async with self._get_engine().connect() as conn:
-            result = await conn.execute(text(sql))
-            return [dict(row) for row in result.mappings()]
+            result = await conn.stream(text(sql))
+            async for partition in result.mappings().partitions(batch_size):
+                yield [dict(row) for row in partition]
 
     async def dispose(self) -> None:
         """釋放連線池(worker 收尾用)。"""

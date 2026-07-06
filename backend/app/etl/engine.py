@@ -13,16 +13,17 @@ from __future__ import annotations
 import logging
 import os
 import traceback
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.etl.comments import build_column_comments
+from app.etl.reader import DEFAULT_BATCH_SIZE
 from app.etl.transforms import ColumnMapping, map_row
 from app.models import EtlMapping, EtlRun, EtlRunLog, EtlTable
 
@@ -72,15 +73,20 @@ class EtlRunResult:
 
 
 class SourceReader(Protocol):
-    """來源讀取介面(production:reader.PostgresSourceReader)。"""
+    """來源讀取介面(production:reader.PostgresSourceReader);分批串流,禁整表物化。"""
 
-    async def fetch_rows(
-        self, schema: str, table: str, columns: Sequence[str]
-    ) -> list[dict[str, Any]]: ...
+    def stream_rows(
+        self,
+        schema: str,
+        table: str,
+        columns: Sequence[str],
+        *,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+    ) -> AsyncIterator[list[dict[str, object]]]: ...
 
 
 class TargetWriter(Protocol):
-    """目標寫入介面(production:writer.PostgresTargetWriter)。"""
+    """目標寫入介面(production:writer.PostgresTargetWriter);收分批迭代器逐批寫入。"""
 
     async def write_table(
         self,
@@ -89,7 +95,7 @@ class TargetWriter(Protocol):
         table: str,
         columns: Sequence[str],
         column_types: Mapping[str, str | None],
-        rows: Sequence[Mapping[str, Any]],
+        row_batches: AsyncIterable[Sequence[Mapping[str, object]]],
         comment_statements: Sequence[str],
     ) -> int: ...
 
@@ -286,22 +292,35 @@ def _split_source_tables(source_table: str) -> list[str]:
     return [t.strip() for t in source_table.split(",") if t.strip()]
 
 
-async def _fetch_source_rows(
-    config: EtlTableConfig, reader: SourceReader
-) -> list[dict[str, Any]]:
-    """讀取來源列;多來源表以列位置並排合併(zip,缺列補 None)。
+async def _iter_rows(
+    reader: SourceReader, schema: str, table: str, columns: Sequence[str]
+) -> AsyncIterator[dict[str, object]]:
+    """把分批串流攤平成逐列迭代(多來源 zip 用)。"""
+    async for batch in reader.stream_rows(schema, table, columns):
+        for row in batch:
+            yield row
 
-    - 單來源:source_column 為裸欄名,直接整表讀出。
+
+async def _stream_source_rows(
+    config: EtlTableConfig, reader: SourceReader
+) -> AsyncIterator[list[dict[str, object]]]:
+    """分批串流來源列;多來源表以列位置並排合併(zip,缺列補 None)。
+
+    - 單來源:source_column 為裸欄名,分批原樣往下傳。
     - 多來源(source_table 逗號合併,fixed.md §2 約定):source_column 須為
-      `<來源表>.<欄名>` 限定名;合併列以限定名為鍵,map_row 直接以 mapping 的
-      source_column 取值。並排合併對齊 v1.0.0 m2201_job 佔位語意(無真實 join key)。
+      `<來源表>.<欄名>` 限定名;各來源逐列 zip 合併後重新分批,合併列以限定名為鍵,
+      map_row 直接以 mapping 的 source_column 取值。並排合併對齊 v1.0.0
+      m2201_job 佔位語意(無真實 join key)。
+    - 全程僅保留單批在記憶體(scan AD-006)。
     """
     tables = _split_source_tables(config.source_table)
     if not tables:
         raise ValueError(f"表設定 source_table 為空:{config.source_table!r}")
     if len(tables) == 1:
         columns = list(dict.fromkeys(m.source_column for m in config.mappings))
-        return await reader.fetch_rows(config.source_schema, tables[0], columns)
+        async for batch in reader.stream_rows(config.source_schema, tables[0], columns):
+            yield batch
+        return
 
     columns_by_table: dict[str, list[str]] = {t: [] for t in tables}
     for m in config.mappings:
@@ -314,28 +333,51 @@ async def _fetch_source_rows(
         if column not in columns_by_table[table]:
             columns_by_table[table].append(column)
 
-    rows_by_table: dict[str, list[dict[str, Any]]] = {}
-    for table, columns in columns_by_table.items():
-        if not columns:  # 該來源表未被任何 mapping 引用 → 不讀
-            continue
-        rows_by_table[table] = await reader.fetch_rows(config.source_schema, table, columns)
-
-    merged: list[dict[str, Any]] = []
-    total = max(len(rows) for rows in rows_by_table.values())
-    for i in range(total):
-        row: dict[str, Any] = {}
-        for table, rows in rows_by_table.items():
-            source_row = rows[i] if i < len(rows) else {}
-            for column in columns_by_table[table]:
-                row[f"{table}.{column}"] = source_row.get(column)
+    # 被 mapping 引用的來源表才讀;各表逐列並排 zip,短表以 None 補齊
+    active = {t: cols for t, cols in columns_by_table.items() if cols}
+    iters: dict[str, AsyncIterator[dict[str, object]]] = {
+        t: _iter_rows(reader, config.source_schema, t, cols) for t, cols in active.items()
+    }
+    exhausted: set[str] = set()
+    merged: list[dict[str, object]] = []
+    while True:
+        row: dict[str, object] = {}
+        got_any = False
+        for table, columns in active.items():
+            source_row: dict[str, object] | None = None
+            if table not in exhausted:
+                source_row = await anext(iters[table], None)
+                if source_row is None:
+                    exhausted.add(table)
+                else:
+                    got_any = True
+            for column in columns:
+                row[f"{table}.{column}"] = None if source_row is None else source_row.get(column)
+        if not got_any:
+            break
         merged.append(row)
-    return merged
+        if len(merged) >= DEFAULT_BATCH_SIZE:
+            yield merged
+            merged = []
+    if merged:
+        yield merged
+
+
+async def _transform_batches(
+    config: EtlTableConfig, reader: SourceReader
+) -> AsyncIterator[list[dict[str, object]]]:
+    """逐批轉換:來源批 → map_row 目標批(記憶體僅保留單批)。"""
+    async for batch in _stream_source_rows(config, reader):
+        yield [map_row(row, config.mappings) for row in batch]
 
 
 async def _process_table(
     config: EtlTableConfig, *, reader: SourceReader, writer: TargetWriter
 ) -> int:
-    """單表管線:驗 mapping / comment 完整性 → 讀來源 → 轉換 → 寫目標;回傳寫入筆數。"""
+    """單表管線:驗 mapping / comment 完整性 → 分批 讀 → 轉換 → 寫;回傳寫入筆數。
+
+    讀寫全程串流分批(scan AD-006);writer 端單交易,任一批失敗整表 rollback。
+    """
     if not config.mappings:
         raise ValueError(f"表 {config.source_schema}.{config.source_table} 無欄位 mapping 設定")
     target_columns = [m.target_column for m in config.mappings]
@@ -344,8 +386,6 @@ async def _process_table(
     comment_statements = build_column_comments(
         config.target_table, target_columns, comments, schema=config.target_schema
     )
-    rows = await _fetch_source_rows(config, reader)
-    out_rows = [map_row(row, config.mappings) for row in rows]
     column_types: dict[str, str | None] = {
         m.target_column: m.transform_type for m in config.mappings
     }
@@ -354,7 +394,7 @@ async def _process_table(
         table=config.target_table,
         columns=target_columns,
         column_types=column_types,
-        rows=out_rows,
+        row_batches=_transform_batches(config, reader),
         comment_statements=comment_statements,
     )
 

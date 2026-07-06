@@ -7,7 +7,6 @@ const STATUS_LABELS: Record<string, string> = {
   pending: '等待中',
   running: '執行中',
   success: '成功',
-  partial: '部分失敗',
   failed: '失敗',
   skipped: '略過',
 }
@@ -16,7 +15,6 @@ const STATUS_CLASSES: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-700',
   running: 'bg-blue-50 text-blue-700',
   success: 'bg-green-50 text-green-700',
-  partial: 'bg-orange-50 text-orange-700',
   failed: 'bg-red-50 text-red-700',
   skipped: 'bg-yellow-50 text-yellow-700',
 }

@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -8,21 +8,21 @@ from app.api.deps import get_db, require_admin, require_login
 from app.core.response import success
 from app.models.user import User
 from app.schemas.response import ApiResponse
+
+# 狀態列舉統一定義於 schemas/run.py(04-api-docs:禁 Literal 散落);非法值由 FastAPI 回 422
 from app.schemas.run import (
     RunListResponse,
     RunLogListResponse,
+    RunLogStatus,
+    RunStatus,
     RunSummaryResponse,
     RunTriggerRequest,
     RunTriggerResponse,
+    TriggerType,
 )
 from app.services.schedule_service import RunService
 
 router = APIRouter()
-
-# 狀態過濾值對齊 etl_runs / etl_run_logs 的 CHECK 約束;非法值由 FastAPI 回 422
-RunStatus = Literal["pending", "running", "success", "partial", "failed"]
-RunLogStatus = Literal["pending", "running", "success", "failed", "skipped"]
-TriggerType = Literal["schedule", "manual"]
 
 
 @router.get(
@@ -52,9 +52,10 @@ async def list_runs(
 async def trigger_run(
     payload: RunTriggerRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_admin)],
+    user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[RunTriggerResponse]:
-    return success(data=await RunService(db).trigger_manual(payload))
+    # actor_uid 供稽核紀錄 run_trigger 操作者(scan R-PII-003)
+    return success(data=await RunService(db).trigger_manual(payload, actor_uid=user.uid))
 
 
 @router.get(

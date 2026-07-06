@@ -14,6 +14,7 @@ from app.schemas.etl_config import (
     EtlTableSummaryResponse,
     EtlTableUpdateRequest,
 )
+from app.services.audit_service import AuditService
 
 # 合法轉換型別(對齊 app/etl/transforms.py _CONVERTERS;NULL 為不轉換)
 _VALID_TRANSFORM_TYPES = frozenset({"str", "int", "float"})
@@ -22,6 +23,7 @@ _VALID_TRANSFORM_TYPES = frozenset({"str", "int", "float"})
 class EtlConfigService:
     def __init__(self, db: AsyncSession) -> None:
         self._repo = EtlConfigRepository(db)
+        self._audit = AuditService(db)
 
     # ── 查詢 ────────────────────────────────────────────────────────────
     async def list_tables(self, *, page: int, page_size: int) -> EtlTableListResponse:
@@ -72,6 +74,16 @@ class EtlConfigService:
                 sort_order=item.sort_order,
                 actor_uid=actor_uid,
             )
+        await self._audit.log(
+            action="etl_table_create",
+            actor_uid=actor_uid,
+            target_type="etl_table",
+            target_uid=table.uid,
+            detail=(
+                f"新增 ETL 表 {table.source_schema}.{table.source_table} → "
+                f"{table.target_schema}.{table.target_table}(mappings {len(mappings)} 欄)"
+            ),
+        )
         return await self._to_detail(table)
 
     async def update_table(
@@ -86,6 +98,16 @@ class EtlConfigService:
         if "description" in fields_set:
             table.description = payload.description
         await self._repo.touch_table(table, actor_uid)
+        await self._audit.log(
+            action="etl_table_update",
+            actor_uid=actor_uid,
+            target_type="etl_table",
+            target_uid=table.uid,
+            detail=(
+                f"更新 ETL 表 {table.source_schema}.{table.source_table}"
+                f"(欄位:{', '.join(sorted(fields_set)) or '無'})"
+            ),
+        )
         return await self._to_detail(table)
 
     async def delete_table(self, uid: UUID, actor_uid: UUID) -> None:
@@ -93,6 +115,13 @@ class EtlConfigService:
         # 軟刪除表設定時一併軟刪其 mappings(禁物理刪除)
         await self._repo.soft_delete_mappings_by_table_pid(table.pid, actor_uid)
         await self._repo.soft_delete_table(table, actor_uid)
+        await self._audit.log(
+            action="etl_table_delete",
+            actor_uid=actor_uid,
+            target_type="etl_table",
+            target_uid=table.uid,
+            detail=f"刪除(軟刪除)ETL 表 {table.source_schema}.{table.source_table}",
+        )
 
     async def set_enabled(
         self, uid: UUID, *, enabled: bool, actor_uid: UUID
@@ -100,6 +129,16 @@ class EtlConfigService:
         table = await self._get_table_or_404(uid)
         table.is_enabled = enabled
         await self._repo.touch_table(table, actor_uid)
+        await self._audit.log(
+            action="etl_table_enable" if enabled else "etl_table_disable",
+            actor_uid=actor_uid,
+            target_type="etl_table",
+            target_uid=table.uid,
+            detail=(
+                f"{'啟用' if enabled else '停用'} ETL 表 "
+                f"{table.source_schema}.{table.source_table}"
+            ),
+        )
         return await self._to_detail(table)
 
     async def replace_mappings(
@@ -120,6 +159,16 @@ class EtlConfigService:
                 actor_uid=actor_uid,
             )
         await self._repo.touch_table(table, actor_uid)
+        await self._audit.log(
+            action="mappings_replace",
+            actor_uid=actor_uid,
+            target_type="etl_table",
+            target_uid=table.uid,
+            detail=(
+                f"全量替換 ETL 表 {table.source_schema}.{table.source_table} "
+                f"的 mappings({len(validated)} 欄)"
+            ),
+        )
         return await self._to_detail(table)
 
     # ── 內部 ────────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+from app.models.audit_log import AuditLog
 from app.models.base import BaseModel
 from app.models.etl_mapping import EtlMapping
 from app.models.etl_run import EtlRun
@@ -7,6 +8,7 @@ from app.models.schedule import Schedule
 from app.models.user import User
 
 __all__ = [
+    "AuditLog",
     "BaseModel",
     "EtlMapping",
     "EtlRun",

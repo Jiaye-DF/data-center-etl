@@ -11,8 +11,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import AsyncIterable, Mapping, Sequence
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -57,15 +56,18 @@ class PostgresTargetWriter:
         table: str,
         columns: Sequence[str],
         column_types: Mapping[str, str | None],
-        rows: Sequence[Mapping[str, Any]],
+        row_batches: AsyncIterable[Sequence[Mapping[str, object]]],
         comment_statements: Sequence[str],
     ) -> int:
-        """單一交易內完成:確保表存在(禁 DROP)→ 清空重灌 → 套欄位 Comment。
+        """單一交易內完成:確保表存在(禁 DROP)→ 清空後逐批重灌 → 套欄位 Comment。
 
+        row_batches 為分批迭代器(scan AD-006:禁整表物化,記憶體占用僅單批);
+        單交易保原子性 — 中途失敗(含來源讀取例外)整批 rollback,TRUNCATE 一併復原。
         回傳實際寫入筆數。comment_statements 由 engine 以
         `comments.build_column_comments` 產出(缺 comment 已於 engine 端 fail)。
         """
         qualified = f"{quote_ident(schema)}.{quote_ident(table)}"
+        written = 0
         async with self._get_engine().begin() as conn:
             await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {quote_ident(schema)}"))
             exists = await conn.execute(
@@ -84,19 +86,22 @@ class PostgresTargetWriter:
                 )
                 await conn.execute(text(f"CREATE TABLE {qualified} ({col_defs})"))
 
-            if rows:
-                # 欄名經白名單驗證;值一律 bind params(:c0..:cN)
-                col_list = ", ".join(quote_ident(col) for col in columns)
-                placeholders = ", ".join(f":c{i}" for i in range(len(columns)))
-                insert_sql = text(f"INSERT INTO {qualified} ({col_list}) VALUES ({placeholders})")
+            # 欄名經白名單驗證;值一律 bind params(:c0..:cN)
+            col_list = ", ".join(quote_ident(col) for col in columns)
+            placeholders = ", ".join(f":c{i}" for i in range(len(columns)))
+            insert_sql = text(f"INSERT INTO {qualified} ({col_list}) VALUES ({placeholders})")
+            async for batch in row_batches:
+                if not batch:
+                    continue
                 params = [
-                    {f"c{i}": row.get(col) for i, col in enumerate(columns)} for row in rows
+                    {f"c{i}": row.get(col) for i, col in enumerate(columns)} for row in batch
                 ]
                 await conn.execute(insert_sql, params)
+                written += len(batch)
 
             for stmt in comment_statements:
                 await conn.execute(text(stmt))
-        return len(rows)
+        return written
 
     async def dispose(self) -> None:
         """釋放連線池(worker 收尾用)。"""

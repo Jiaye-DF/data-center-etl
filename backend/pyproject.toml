@@ -8,7 +8,8 @@ dependencies = [
     "pydantic==2.13.3",
     "pydantic-settings==2.14.0",
     "httpx==0.28.1",
-    "passlib[bcrypt]==1.7.4",
+    # passlib 已移除(與 bcrypt 5 不相容,security.py 為 bcrypt 直呼;fixed.md §3)
+    "bcrypt==5.0.0",
     "pyjwt[crypto]==2.10.1",
     "python-multipart==0.0.20",
     "sqlalchemy[asyncio]==2.0.49",
@@ -53,7 +54,3 @@ select = ["E", "F", "I", "B", "UP"]
 python_version = "3.14"
 strict = true
 exclude = ["alembic/versions"]
-
-[[tool.mypy.overrides]]
-module = ["passlib.*"]
-ignore_missing_imports = true

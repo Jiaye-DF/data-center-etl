@@ -18,9 +18,12 @@ from app.schemas.run import (
     RunListResponse,
     RunLogListResponse,
     RunLogResponse,
+    RunLogStatus,
+    RunStatus,
     RunSummaryResponse,
     RunTriggerRequest,
     RunTriggerResponse,
+    TriggerType,
 )
 from app.schemas.schedule import (
     ScheduleCreateRequest,
@@ -28,6 +31,7 @@ from app.schemas.schedule import (
     ScheduleResponse,
     ScheduleUpdateRequest,
 )
+from app.services.audit_service import AuditService
 from app.worker.broker import broker
 from app.worker.tasks import run_etl
 
@@ -50,6 +54,7 @@ def _validate_cron_expr(cron_expr: str) -> str:
 class ScheduleService:
     def __init__(self, db: AsyncSession) -> None:
         self._repo = ScheduleRepository(db)
+        self._audit = AuditService(db)
 
     # ── 查詢 ────────────────────────────────────────────────────────────
     async def list_schedules(self, *, page: int, page_size: int) -> ScheduleListResponse:
@@ -80,6 +85,13 @@ class ScheduleService:
             description=payload.description,
             actor_uid=actor_uid,
         )
+        await self._audit.log(
+            action="schedule_create",
+            actor_uid=actor_uid,
+            target_type="schedule",
+            target_uid=schedule.uid,
+            detail=f"新增排程 {schedule.name}(cron={schedule.cron_expr})",
+        )
         return await self._to_response_single(schedule)
 
     async def update_schedule(
@@ -99,11 +111,28 @@ class ScheduleService:
         if "description" in fields_set:
             schedule.description = payload.description
         await self._repo.touch(schedule, actor_uid)
+        await self._audit.log(
+            action="schedule_update",
+            actor_uid=actor_uid,
+            target_type="schedule",
+            target_uid=schedule.uid,
+            detail=(
+                f"更新排程 {schedule.name}"
+                f"(欄位:{', '.join(sorted(fields_set)) or '無'})"
+            ),
+        )
         return await self._to_response_single(schedule)
 
     async def delete_schedule(self, uid: UUID, actor_uid: UUID) -> None:
         schedule = await self._get_or_404(uid)
         await self._repo.soft_delete(schedule, actor_uid)
+        await self._audit.log(
+            action="schedule_delete",
+            actor_uid=actor_uid,
+            target_type="schedule",
+            target_uid=schedule.uid,
+            detail=f"刪除(軟刪除)排程 {schedule.name}",
+        )
 
     async def set_enabled(
         self, uid: UUID, *, enabled: bool, actor_uid: UUID
@@ -111,6 +140,13 @@ class ScheduleService:
         schedule = await self._get_or_404(uid)
         schedule.is_enabled = enabled
         await self._repo.touch(schedule, actor_uid)
+        await self._audit.log(
+            action="schedule_enable" if enabled else "schedule_disable",
+            actor_uid=actor_uid,
+            target_type="schedule",
+            target_uid=schedule.uid,
+            detail=f"{'啟用' if enabled else '停用'}排程 {schedule.name}",
+        )
         return await self._to_response_single(schedule)
 
     # ── 內部 ────────────────────────────────────────────────────────────
@@ -154,6 +190,7 @@ class RunService:
     def __init__(self, db: AsyncSession) -> None:
         self._repo = RunRepository(db)
         self._ref_repo = ScheduleRepository(db)
+        self._audit = AuditService(db)
 
     # ── 查詢 ────────────────────────────────────────────────────────────
     async def list_runs(
@@ -198,7 +235,14 @@ class RunService:
         return RunLogListResponse(items=items, total=total, page=page, page_size=page_size)
 
     # ── 手動觸發(enqueue 至 taskiq;task 定義屬 task-007)────────────────
-    async def trigger_manual(self, payload: RunTriggerRequest) -> RunTriggerResponse:
+    async def trigger_manual(
+        self, payload: RunTriggerRequest, actor_uid: UUID | None = None
+    ) -> RunTriggerResponse:
+        """手動觸發一次 ETL。
+
+        actor_uid 預設 None 維持既有呼叫端(api/v1/runs.py)相容;
+        呼叫端補傳 `actor_uid=user.uid` 後,稽核 run_trigger 即帶操作者。
+        """
         etl_table_pid: int | None = None
         if payload.etl_table_uid is not None:
             table = await self._ref_repo.find_etl_table_by_uid(payload.etl_table_uid)
@@ -207,6 +251,21 @@ class RunService:
             etl_table_pid = table.pid
         task = await run_etl.kiq(trigger_type="manual", etl_table_pid=etl_table_pid)
         run_uid = await self._resolve_run_uid(task)
+        await self._audit.log(
+            action="run_trigger",
+            actor_uid=actor_uid,
+            target_type="etl_run",
+            target_uid=run_uid,
+            detail=(
+                f"手動觸發 ETL(task_id={task.task_id}"
+                + (
+                    f",指定表 uid={payload.etl_table_uid}"
+                    if payload.etl_table_uid is not None
+                    else ",全部啟用表"
+                )
+                + ")"
+            ),
+        )
         return RunTriggerResponse(task_id=task.task_id, run_uid=run_uid)
 
     async def _resolve_run_uid(
@@ -240,8 +299,8 @@ class RunService:
         ref = ref_map.get(run.schedule_pid) if run.schedule_pid is not None else None
         return RunSummaryResponse(
             uid=run.uid,
-            trigger_type=run.trigger_type,
-            status=run.status,
+            trigger_type=TriggerType(run.trigger_type),
+            status=RunStatus(run.status),
             schedule_uid=ref[0] if ref is not None else None,
             schedule_name=ref[1] if ref is not None else None,
             started_at=run.started_at,
@@ -263,7 +322,7 @@ class RunService:
             ),
             source_schema=log.source_schema,
             source_table=log.source_table,
-            status=log.status,
+            status=RunLogStatus(log.status),
             row_count=log.row_count,
             duration_ms=log.duration_ms,
             started_at=log.started_at,

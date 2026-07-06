@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import AsyncSessionLocal
+from app.core.logging import setup_logging
 from app.etl.engine import (
     DbRunStore,
     EtlTableConfig,
@@ -31,6 +32,10 @@ from app.etl.engine import run_etl as run_etl_pipeline
 from app.etl.reader import PostgresSourceReader
 from app.etl.writer import PostgresTargetWriter
 from app.worker.broker import broker
+
+# worker / scheduler 入口(taskiq 以本模組啟動):未組態時 root logger 預設 WARNING,
+# engine 的逐表 info log 會被靜音(scan R-LOG-005)
+setup_logging()
 
 logger = logging.getLogger(__name__)
 

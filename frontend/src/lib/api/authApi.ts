@@ -18,9 +18,8 @@ export interface LoginPayload {
   password: string
 }
 
-/** 後端 API base URL(與 baseApi 同源;供 SSO 登入 / 登出等整頁跳轉組 URL 用) */
-export const API_BASE_URL: string =
-  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1'
+// 後端 API base URL 單一來源在 baseApi(模組層 fail-fast);此處 re-export 維持既有 import 路徑
+export { API_BASE_URL } from '@/lib/api/baseApi'
 
 export const authApi = baseApi
   .enhanceEndpoints({ addTagTypes: ['Auth'] })

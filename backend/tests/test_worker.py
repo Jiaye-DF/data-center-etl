@@ -12,7 +12,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:
 os.environ.setdefault("INIT_ADMIN_USERNAME", "init-admin")
 os.environ.setdefault("INIT_ADMIN_PASSWORD", "init-admin-password-for-test")
 
-from collections.abc import Mapping, Sequence  # noqa: E402
+from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence  # noqa: E402
 from datetime import timedelta  # noqa: E402
 from typing import Any, cast  # noqa: E402
 
@@ -33,22 +33,26 @@ from app.worker.scheduler import CRON_OFFSET_TAIPEI, build_scheduled_tasks  # no
 
 
 class FakeReader:
-    """以 (schema, table) 對照回傳預置列。"""
+    """以 (schema, table) 對照回傳預置列(分批串流介面)。"""
 
     def __init__(self, data: dict[tuple[str, str], list[dict[str, Any]]]) -> None:
         self._data = data
         self.calls: list[tuple[str, str]] = []
 
-    async def fetch_rows(
-        self, schema: str, table: str, columns: Sequence[str]
-    ) -> list[dict[str, Any]]:
+    async def stream_rows(
+        self, schema: str, table: str, columns: Sequence[str], *, batch_size: int = 2
+    ) -> AsyncIterator[list[dict[str, Any]]]:
         self.calls.append((schema, table))
-        rows = self._data.get((schema, table), [])
-        return [{col: row.get(col) for col in columns} for row in rows]
+        rows = [
+            {col: row.get(col) for col in columns}
+            for row in self._data.get((schema, table), [])
+        ]
+        for i in range(0, len(rows), batch_size):
+            yield rows[i : i + batch_size]
 
 
 class FakeWriter:
-    """記錄每次寫入內容供斷言。"""
+    """記錄每次寫入內容供斷言(展平批次)。"""
 
     def __init__(self) -> None:
         self.writes: list[dict[str, Any]] = []
@@ -60,10 +64,13 @@ class FakeWriter:
         table: str,
         columns: Sequence[str],
         column_types: Mapping[str, str | None],
-        rows: Sequence[Mapping[str, Any]],
+        row_batches: AsyncIterable[Sequence[Mapping[str, Any]]],
         comment_statements: Sequence[str],
     ) -> int:
-        self.writes.append({"schema": schema, "table": table, "rows": [dict(r) for r in rows]})
+        rows: list[dict[str, Any]] = []
+        async for batch in row_batches:
+            rows.extend(dict(r) for r in batch)
+        self.writes.append({"schema": schema, "table": table, "rows": rows})
         return len(rows)
 
 

@@ -1,4 +1,4 @@
-"""v1.0.0 mapping 設定匯入自有 DB(seed)。
+﻿"""v1.0.0 mapping 設定匯入自有 DB(seed)。
 
 讀取 v1.0.0 `etl/config/mapping/ds.yaml` / `m2201.yaml`(唯讀來源,不改 `etl/` 任何檔),
 匯入 `etl_tables` / `etl_mappings` 作為後台初始資料。
@@ -19,7 +19,6 @@ import asyncio
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 from uuid import UUID
 
 import yaml
@@ -100,7 +99,7 @@ def infer_ds_transform(column: str) -> str:
     return "str"
 
 
-def load_yaml(path: Path) -> dict[str, Any]:
+def load_yaml(path: Path) -> dict[str, object]:
     """以 UTF-8 讀取 yaml(繁中 comment;禁裸 open,見 v1.0.0 fixed.md § 1–2)。"""
     with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
@@ -110,15 +109,15 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 
 def build_seed_entries(
-    ds_cfg: dict[str, Any], m2201_cfg: dict[str, Any], result: SeedResult
+    ds_cfg: dict[str, object], m2201_cfg: dict[str, object], result: SeedResult
 ) -> list[TableSeed]:
     """由 ds / m2201 yaml 內容組出 seed 條目;缺 comment 記入 result.missing_comments。"""
     entries: list[TableSeed] = []
 
     # --- ds.yaml:DS schema 表 1:1 搬移(source = target,轉換規則由欄名尾碼推斷)---
-    ds_tables: dict[str, Any] = ds_cfg.get("tables") or {}
+    ds_tables: dict[str, object] = ds_cfg.get("tables") or {}
     for table_name, spec in ds_tables.items():
-        columns: dict[str, Any] = (spec or {}).get("columns") or {}
+        columns: dict[str, object] = (spec or {}).get("columns") or {}
         entry = TableSeed(
             source_schema=DS_SCHEMA,
             source_table=str(table_name),
@@ -144,7 +143,7 @@ def build_seed_entries(
     # --- m2201.yaml:多來源(GAT_FILE/GAQ_FILE)→ 單一目標表 ---
     target_schema = str(m2201_cfg.get("target_schema") or "")
     target_table = str(m2201_cfg.get("target_table") or "")
-    columns_list: list[dict[str, Any]] = m2201_cfg.get("columns") or []
+    columns_list: list[dict[str, object]] = m2201_cfg.get("columns") or []
     # 來源表依 yaml 出現順序去重,合併為逗號分隔字串(etl_tables 單來源欄位的多來源表示法)
     source_tables: list[str] = []
     for col in columns_list:

@@ -1,37 +1,23 @@
 'use client'
 
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useState } from 'react'
 import Link from 'next/link'
 import {
   useSetEtlTableEnabledMutation,
   type EtlTableListData,
   type EtlTableSummary,
 } from '@/lib/api/etlConfigApi'
+import { Pagination } from '@/components/common/Pagination'
+import { StatusBadge } from '@/components/common/StatusBadge'
 import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatDateTime } from '@/utils/datetime'
-
-/** 逐表執行狀態顯示字樣(對齊 backend etl_run_logs.status) */
-const RUN_STATUS_LABELS: Record<string, string> = {
-  pending: '等待中',
-  running: '執行中',
-  success: '成功',
-  failed: '失敗',
-  skipped: '略過',
-}
-
-const RUN_STATUS_CLASSES: Record<string, string> = {
-  pending: 'bg-gray-100 text-gray-700',
-  running: 'bg-blue-50 text-blue-700',
-  success: 'bg-green-50 text-green-700',
-  failed: 'bg-red-50 text-red-700',
-  skipped: 'bg-yellow-50 text-yellow-700',
-}
 
 interface RunStatusBadgeProps {
   status: string | null
   runAt: string | null
 }
 
+/** 最近執行狀態:共用 StatusBadge + 本頁特有的執行時間副行 */
 const RunStatusBadge = memo(function RunStatusBadge({
   status,
   runAt,
@@ -39,15 +25,9 @@ const RunStatusBadge = memo(function RunStatusBadge({
   if (status === null) {
     return <span className="text-sm text-gray-400 md:text-base">尚未執行</span>
   }
-  const label = RUN_STATUS_LABELS[status] ?? status
-  const badgeClass = RUN_STATUS_CLASSES[status] ?? 'bg-gray-100 text-gray-700'
   return (
     <span className="flex flex-col gap-0.5">
-      <span
-        className={`w-fit rounded px-2 py-0.5 text-sm font-medium md:text-base ${badgeClass}`}
-      >
-        {label}
-      </span>
+      <StatusBadge status={status} />
       {runAt !== null ? (
         <span className="text-sm text-gray-500">{formatDateTime(runAt)}</span>
       ) : null}
@@ -153,19 +133,6 @@ export function TableList({
     [setEnabled],
   )
 
-  const totalPages = useMemo(
-    (): number => Math.max(1, Math.ceil(data.total / data.page_size)),
-    [data.total, data.page_size],
-  )
-
-  const handlePrevPage = useCallback((): void => {
-    onPageChange(data.page - 1)
-  }, [onPageChange, data.page])
-
-  const handleNextPage = useCallback((): void => {
-    onPageChange(data.page + 1)
-  }, [onPageChange, data.page])
-
   return (
     <div className="flex flex-col gap-3">
       {toggleError !== null ? (
@@ -222,29 +189,12 @@ export function TableList({
         ) : null}
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-gray-600 md:text-base">
-          共 {data.total} 筆,第 {data.page} / {totalPages} 頁
-        </p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={handlePrevPage}
-            disabled={data.page <= 1}
-            className="min-h-[44px] rounded border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 md:text-base"
-          >
-            上一頁
-          </button>
-          <button
-            type="button"
-            onClick={handleNextPage}
-            disabled={data.page >= totalPages}
-            className="min-h-[44px] rounded border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 md:text-base"
-          >
-            下一頁
-          </button>
-        </div>
-      </div>
+      <Pagination
+        page={data.page}
+        pageSize={data.page_size}
+        total={data.total}
+        onPageChange={onPageChange}
+      />
     </div>
   )
 }

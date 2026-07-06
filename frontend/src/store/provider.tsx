@@ -8,7 +8,9 @@ interface StoreProviderProps {
   children: React.ReactNode
 }
 
-export function StoreProvider({ children }: StoreProviderProps) {
+export function StoreProvider({
+  children,
+}: StoreProviderProps): React.ReactNode {
   const [store] = useState<AppStore>(() => {
     const created = makeStore()
     setupStoreListeners(created)

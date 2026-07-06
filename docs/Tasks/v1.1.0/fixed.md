@@ -37,6 +37,8 @@
 - **規範參照**:`docs/Design-Base/04-databases/03-passwords-and-pii.md § 密碼必 passlib[bcrypt] 或 argon2`(該規則於本情境被推翻:鎖定版本組合下 passlib 不可用)、`docs/Design-Base/03-backend/00-overview.md § 鎖定技術棧(passlib[bcrypt])`
 - **後續**:reflect 候選 — 規範改「bcrypt(直呼)或 argon2」或改鎖 `bcrypt<4.1`;收口時若調整依賴(如移除 passlib 或鎖 bcrypt 版本)由 user / 收口 agent 決定
 
+> 收口後續(2026-07-06):pyproject 已移除 passlib[bcrypt],直列 bcrypt==5.0.0(scan ⚪ 依賴殘留項);01-versions.md 同步。
+
 ## §4 — INIT_ADMIN_* 必填 env 的連動義務(.env*.example 同步、既有測試 env 注入)未被白名單覆蓋
 
 - **時間**:2026-07-03T17:40+08:00
@@ -238,3 +240,14 @@
 - **後續**:收口(或 task-005 動 worker 相關檔時)在 `create_broker()` 對 `ListQueueBroker` 傳 `socket_timeout=None` 並實連 redis 驗證;reflect 候選 — 依賴鎖版後應對「間接依賴 major 升版」跑一次實連煙霧測試,InMemory 測試替身蓋不到此類問題。另註:task-005 的 affected_files 不含 `app/worker/*`,本條仍待收口處理
 
 > 收口(2026-07-06):已完成 — `create_broker()` 對 `ListQueueBroker` 傳 `socket_timeout=None`;compose 實連 redis 驗證:worker 閒置 7+ 分鐘 log 無任何 TimeoutError / reload(修正前每 ~5 秒一次),手動觸發任務消費正常。
+
+## §20 — 基礎設施版本跨 major 未走 propose / 版本表,收口追認並鎖定
+
+- **時間**:2026-07-06T10:14+08:00
+- **commit / PR**:scan-project 260706 收口 commit(待收口 PR 統一)
+- **影響檔案**:`docs/Design-Base/00-overview/01-versions.md`、`frontend/package.json`、`frontend/Dockerfile`、`docker-compose.yml` / `docker-compose-staging.yml` / `docker-compose-production.yml`、`.env.staging.example` / `.env.production.example`
+- **問題**:scan(Issue-Scan-Project-260706093345 R-DEP-002/003)發現多項基礎設施版本實際已跨 major,但未走 `01-versions.md § 升版流程` 的 propose 評估,版本表亦未同步 — PostgreSQL 17.x→18(compose 直寫 `postgres:18-alpine`,`POSTGRES_VERSION` 登記後無人引用)、Node 22→24 / Next 15→16(骨架實際產出即為 24 / 16,`engines.node` 還用規範明文禁止的 `>=` 浮動範圍)、redis 7.4→8.8(user 於 compose 分檔時升版)
+- **根因**:v1.1.0 骨架產出與 compose 建置時,版本選擇以「當下可跑的最新線」落地,無人對照 `01-versions.md` 走跨 major propose 流程;且該表前端 / 服務側缺「Sources of Truth 同步義務」條款(後端側 §1 已補),分歧無人有義務收
+- **修正**:追認既成事實並鎖定 — PostgreSQL 追認 18(volume 已以 18 初始化,降版需 dump/restore,成本不成比例)、Node 追認 24.x LTS(engines 鎖 `24.14.0`、Dockerfile 鎖 `node:24.14.0-alpine`)、Next 追認 16.2.x、redis 追認 8.8.0(root / staging / production 三環境對齊 `redis:8.8.0-alpine`);`01-versions.md` 前端表整批以 package.json / package-lock.json 為準校正並補 Sources of Truth 註記;staging / production compose 的 postgres image 改 `${POSTGRES_VERSION}` 插值,`.env.staging.example` / `.env.production.example` 登記 `POSTGRES_VERSION=18`(本收口 commit)
+- **規範參照**:`docs/Design-Base/00-overview/01-versions.md § 鎖定原則 / 升版流程(跨 major 先寫 propose,禁單一 commit 帶過)`
+- **後續**:reflect 候選 — 版本表應明文「以 Sources of Truth(lock file / compose / .env)為準的同步義務」並覆蓋前端與服務 image(呼應 scan 報告第 7 章第 2 條);拆 task 時版本表列入連動 affected_files(與 §1 後續同項)

@@ -11,7 +11,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:
 os.environ.setdefault("INIT_ADMIN_USERNAME", "init-admin")
 os.environ.setdefault("INIT_ADMIN_PASSWORD", "init-admin-password-for-test")
 
-from collections.abc import Mapping, Sequence  # noqa: E402
+from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence  # noqa: E402
 from typing import Any  # noqa: E402
 
 import pytest  # noqa: E402
@@ -27,7 +27,10 @@ from app.etl.writer import column_sql_type  # noqa: E402
 
 
 class FakeReader:
-    """以 (schema, table) 對照回傳預置列;可指定失敗表模擬讀取例外。"""
+    """以 (schema, table) 對照回傳預置列;可指定失敗表模擬讀取例外。
+
+    stream_rows 以 batch_size=2 切批,順帶驗證 engine 逐批處理路徑。
+    """
 
     def __init__(
         self,
@@ -40,18 +43,22 @@ class FakeReader:
         self._fail_message = fail_message
         self.calls: list[tuple[str, str]] = []
 
-    async def fetch_rows(
-        self, schema: str, table: str, columns: Sequence[str]
-    ) -> list[dict[str, Any]]:
+    async def stream_rows(
+        self, schema: str, table: str, columns: Sequence[str], *, batch_size: int = 2
+    ) -> AsyncIterator[list[dict[str, Any]]]:
         self.calls.append((schema, table))
         if (schema, table) in self._fail_tables:
             raise RuntimeError(f"{self._fail_message}:{schema}.{table}")
-        rows = self._data.get((schema, table), [])
-        return [{col: row.get(col) for col in columns} for row in rows]
+        rows = [
+            {col: row.get(col) for col in columns}
+            for row in self._data.get((schema, table), [])
+        ]
+        for i in range(0, len(rows), batch_size):
+            yield rows[i : i + batch_size]
 
 
 class FakeWriter:
-    """記錄每次寫入內容供斷言。"""
+    """記錄每次寫入內容供斷言(展平批次,斷言結構不變)。"""
 
     def __init__(self) -> None:
         self.writes: list[dict[str, Any]] = []
@@ -63,16 +70,22 @@ class FakeWriter:
         table: str,
         columns: Sequence[str],
         column_types: Mapping[str, str | None],
-        rows: Sequence[Mapping[str, Any]],
+        row_batches: AsyncIterable[Sequence[Mapping[str, Any]]],
         comment_statements: Sequence[str],
     ) -> int:
+        rows: list[dict[str, Any]] = []
+        batch_sizes: list[int] = []
+        async for batch in row_batches:
+            batch_sizes.append(len(batch))
+            rows.extend(dict(row) for row in batch)
         self.writes.append(
             {
                 "schema": schema,
                 "table": table,
                 "columns": list(columns),
                 "column_types": dict(column_types),
-                "rows": [dict(row) for row in rows],
+                "rows": rows,
+                "batch_sizes": batch_sizes,
                 "comment_statements": list(comment_statements),
             }
         )
@@ -469,6 +482,22 @@ def test_rds_database_url_builds_url(monkeypatch: pytest.MonkeyPatch) -> None:
     assert url == "postgresql+asyncpg://etl_user:p%40ss+w@db.local:5433/erp_migration_test"
     target_url = rds_database_url("AWS_RDS_TARGET_DB")
     assert target_url.endswith("/erp_etl_hub_test")
+
+
+async def test_large_table_streams_in_batches() -> None:
+    """AD-006:來源多於單批(FakeReader batch_size=2)時逐批進 writer,筆數不失真。"""
+    rows = [{"GAT_NO": f"G{i:03d}", "GAT_QTY": str(i)} for i in range(5)]
+    reader = FakeReader({("DS", "GAT_FILE"): rows})
+    writer = FakeWriter()
+    store = FakeRunStore()
+
+    result = await run_etl([_gat_config()], reader=reader, writer=writer, store=store)
+
+    assert result.status == "success"
+    write = writer.writes[0]
+    assert write["batch_sizes"] == [2, 2, 1]  # 5 列 → 2+2+1 三批
+    assert len(write["rows"]) == 5
+    assert store.logs[0]["row_count"] == 5
 
 
 def test_column_sql_type_mapping() -> None:

@@ -343,9 +343,10 @@ async def test_get_run_detail_fields(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _login_as(client, session_factory, "admin")
+    # partial 狀態已移除(scan AD-004):任一表失敗即整輪 failed
     run_uid = await _seed_run(
         session_factory,
-        status="partial",
+        status="failed",
         total_tables=3,
         success_tables=2,
         failed_tables=1,
@@ -356,7 +357,7 @@ async def test_get_run_detail_fields(
     data = resp.json()["data"]
     assert data["uid"] == run_uid
     assert data["trigger_type"] == "manual"
-    assert data["status"] == "partial"
+    assert data["status"] == "failed"
     assert data["started_at"] is not None and data["finished_at"] is not None
     assert (data["total_tables"], data["success_tables"], data["failed_tables"]) == (3, 2, 1)
     assert data["error_message"] == "1 表失敗"
@@ -379,7 +380,7 @@ async def test_run_logs_fields_complete(
 ) -> None:
     await _login_as(client, session_factory, "admin")
     run_uid = await _seed_run(
-        session_factory, status="partial", total_tables=2, success_tables=1, failed_tables=1
+        session_factory, status="failed", total_tables=2, success_tables=1, failed_tables=1
     )
     await _seed_log(
         session_factory,
@@ -424,7 +425,7 @@ async def test_run_logs_filter_by_status_and_pagination(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _login_as(client, session_factory, "admin")
-    run_uid = await _seed_run(session_factory, status="partial", total_tables=3)
+    run_uid = await _seed_run(session_factory, status="failed", total_tables=3)
     await _seed_log(session_factory, run_uid, source_table="T1", status="success", row_count=1)
     await _seed_log(session_factory, run_uid, source_table="T2", status="failed")
     await _seed_log(session_factory, run_uid, source_table="T3", status="success", row_count=2)

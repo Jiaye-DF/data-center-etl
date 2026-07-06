@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from decimal import Decimal
 
 # 視為 null 的字串(去空白、轉小寫後比對;與 v1.0.0 一致)
 _NULL_TOKENS = {"", "null", "none", "nan", "na", "n/a", "-"}
@@ -33,14 +33,14 @@ class ColumnMapping:
     comment: str
 
 
-def trim(value: Any) -> Any:
+def trim(value: object) -> object:
     """字串去頭尾空白;非字串原樣回傳。"""
     if isinstance(value, str):
         return value.strip()
     return value
 
 
-def normalize_null(value: Any) -> Any:
+def normalize_null(value: object) -> object | None:
     """將常見 null 佔位字串正規化為 None。"""
     if value is None:
         return None
@@ -49,29 +49,34 @@ def normalize_null(value: Any) -> Any:
     return value
 
 
-def to_int(value: Any, default: int | None = None) -> int | None:
+def to_int(value: object, default: int | None = None) -> int | None:
     """轉整數;無法轉換回傳 default。"""
     value = normalize_null(trim(value))
     if value is None:
         return default
+    # 非數值容器類(dict / list ...)一律 default(等價舊版 int() 拋 TypeError 的路徑)
+    if not isinstance(value, str | int | float | Decimal):
+        return default
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (ValueError, ArithmeticError):
         return default
 
 
-def to_float(value: Any, default: float | None = None) -> float | None:
+def to_float(value: object, default: float | None = None) -> float | None:
     """轉浮點;無法轉換回傳 default。"""
     value = normalize_null(trim(value))
     if value is None:
         return default
+    if not isinstance(value, str | int | float | Decimal):
+        return default
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except (ValueError, ArithmeticError):
         return default
 
 
-def to_str(value: Any, default: str | None = None) -> str | None:
+def to_str(value: object, default: str | None = None) -> str | None:
     """轉字串並 trim;null 佔位回傳 default。"""
     value = normalize_null(trim(value))
     if value is None:
@@ -80,7 +85,7 @@ def to_str(value: Any, default: str | None = None) -> str | None:
 
 
 # transform_type 名稱 → 轉換函式;僅型別分派,對照關係一律由 mapping 驅動
-_CONVERTERS: dict[str, Callable[[Any], Any]] = {
+_CONVERTERS: dict[str, Callable[[object], object]] = {
     "str": to_str,
     "int": to_int,
     "float": to_float,
@@ -96,7 +101,7 @@ def infer_ds_transform_type(column: str) -> str:
     return "str"
 
 
-def convert_value(value: Any, transform_type: str | None) -> Any:
+def convert_value(value: object, transform_type: str | None) -> object:
     """依 transform_type 轉換單一值。
 
     - NULL(None)→ 不轉換,原值回傳(etl_mappings.transform_type 契約)。
@@ -104,11 +109,13 @@ def convert_value(value: Any, transform_type: str | None) -> Any:
     """
     if transform_type is None:
         return value
-    converter: Callable[[Any], Any] = _CONVERTERS.get(transform_type, to_str)
+    converter: Callable[[object], object] = _CONVERTERS.get(transform_type, to_str)
     return converter(value)
 
 
-def map_row(src_row: Mapping[str, Any], mappings: Sequence[ColumnMapping]) -> dict[str, Any]:
+def map_row(
+    src_row: Mapping[str, object], mappings: Sequence[ColumnMapping]
+) -> dict[str, object]:
     """依 mapping 把單筆來源列對映為目標列。
 
     - 來源缺欄以 None 代入後交由轉換函式處理(v1.0.0 m2201.map_row 行為)。

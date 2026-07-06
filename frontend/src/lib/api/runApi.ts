@@ -1,8 +1,8 @@
 import { baseApi } from '@/lib/api/baseApi'
 import { unwrap, type ApiEnvelope } from '@/types/api'
 
-/** run 狀態(對齊 backend etl_runs.status check constraint) */
-export type RunStatus = 'pending' | 'running' | 'success' | 'partial' | 'failed'
+/** run 狀態(對齊 backend etl_runs.status check constraint;partial 已移除) */
+export type RunStatus = 'pending' | 'running' | 'success' | 'failed'
 /** 逐表 log 狀態(對齊 backend etl_run_logs.status check constraint) */
 export type RunLogStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
 export type TriggerType = 'schedule' | 'manual'

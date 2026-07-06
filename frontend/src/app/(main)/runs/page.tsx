@@ -25,7 +25,6 @@ const STATUS_OPTIONS: { value: '' | RunStatus; label: string }[] = [
   { value: 'pending', label: '等待中' },
   { value: 'running', label: '執行中' },
   { value: 'success', label: '成功' },
-  { value: 'partial', label: '部分失敗' },
   { value: 'failed', label: '失敗' },
 ]
 

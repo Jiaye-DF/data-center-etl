@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -38,5 +39,8 @@ class Settings(BaseSettings):
         return self
 
 
+@lru_cache
 def get_settings() -> Settings:
+    # 每請求重新實例化會重讀 .env 檔(scan AD-007)→ 程序內快取;
+    # 測試改 env 後以 get_settings.cache_clear() 重置(tests/conftest.py 已統一處理)
     return Settings()  # type: ignore[call-arg]

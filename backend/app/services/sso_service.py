@@ -21,6 +21,7 @@ from app.core.exceptions import AppError
 from app.core.security import JWT_ALGORITHM
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
+from app.services.audit_service import AuditService
 
 PROVIDER_SSO = "sso"
 # 契約:cookie Max-Age 固定 86400(SSO 側 JWT 效期與之對齊)
@@ -49,6 +50,13 @@ class SsoService:
         sso_token = await client.exchange_code(code)
         sso_user = await client.get_me(sso_token)
         user = await self._get_or_create_user(sso_user)
+        # 稽核(R-PII-003):SSO 登入成功;只記帳號 / subject,禁記 token
+        await AuditService(self._db).log(
+            action="sso_login",
+            actor_uid=user.uid,
+            actor_username=user.username,
+            detail="SSO 登入成功(callback code 換 token)",
+        )
         return user, sso_token
 
     async def get_user_by_sso_subject(self, sso_subject: str) -> User | None:
