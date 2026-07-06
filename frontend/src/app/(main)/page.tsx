@@ -14,9 +14,14 @@ interface SectionItem {
 
 const SECTIONS: SectionItem[] = [
   {
-    href: '/tables',
-    title: '資料表管理',
-    description: 'ETL 表清單、啟用 / 停用、欄位 mapping 與 Comment',
+    href: '/raw-data',
+    title: '原始資料管理',
+    description: '瀏覽來源 ERP 原始資料庫的 schema 與資料表結構',
+  },
+  {
+    href: '/etl-data',
+    title: 'ETL 資料管理',
+    description: '瀏覽 ETL 轉換後的資料中心庫',
   },
   {
     href: '/schedules',
