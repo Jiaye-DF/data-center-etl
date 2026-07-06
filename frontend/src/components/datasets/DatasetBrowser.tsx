@@ -642,7 +642,7 @@ export function DatasetBrowser({
 
       <ConfirmDialog
         open={openDialog === 'filtered'}
-        title="同步篩選結果"
+        title="僅同步篩選資料表"
         confirmLabel="開始同步"
         confirmDisabled={isSyncingFiltered}
         tone="danger"
@@ -740,7 +740,7 @@ export function DatasetBrowser({
                 disabled={isSyncingFiltered}
                 className="df-btn-primary-soft min-h-[36px] px-3"
               >
-                {isSyncingFiltered ? '同步中…' : '同步篩選結果'}
+                {isSyncingFiltered ? '同步中…' : '僅同步篩選資料表'}
               </button>
             ) : null}
           </div>
