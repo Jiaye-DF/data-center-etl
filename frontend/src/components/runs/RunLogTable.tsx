@@ -43,44 +43,42 @@ const RunLogRow = memo(function RunLogRow({
   // 失敗表列醒目標示
   const rowClass =
     log.status === 'failed'
-      ? 'border-b border-red-100 bg-red-50/60 last:border-b-0'
-      : 'border-b border-gray-100 last:border-b-0 hover:bg-gray-50'
+      ? 'border-b border-danger/20 bg-danger/5 last:border-b-0'
+      : 'border-b border-border transition-colors last:border-b-0 hover:bg-muted/50'
 
   return (
     <>
       <tr className={rowClass}>
-        <td className="px-3 py-3 text-sm font-medium text-gray-900 md:text-base">
+        <td className="px-3 py-3 text-sm font-medium text-foreground md:text-base">
           {log.source_schema}.{log.source_table}
         </td>
         <td className="px-3 py-3">
           <StatusBadge status={log.status} />
         </td>
-        <td className="px-3 py-3 text-sm text-gray-700 md:text-base">
-          {log.row_count ?? '—'}
-        </td>
-        <td className="px-3 py-3 text-sm text-gray-700 md:text-base">
+        <td className="df-td text-muted-foreground">{log.row_count ?? '—'}</td>
+        <td className="df-td text-muted-foreground">
           {formatDurationMs(log.duration_ms)}
         </td>
-        <td className="px-3 py-3 text-sm text-gray-700 md:text-base">
+        <td className="df-td text-muted-foreground">
           {formatNullableDateTime(log.started_at)}
         </td>
-        <td className="px-3 py-3 text-sm text-gray-700 md:text-base">
+        <td className="df-td text-muted-foreground">
           {formatNullableDateTime(log.finished_at)}
         </td>
         <td className="px-3 py-3">
           {log.error_message !== null && log.error_message !== '' ? (
-            <p className="text-sm text-red-700 md:text-base">
+            <p className="text-sm text-danger md:text-base">
               {log.error_message}
             </p>
           ) : (
-            <span className="text-sm text-gray-400 md:text-base">—</span>
+            <span className="text-sm text-muted-foreground md:text-base">—</span>
           )}
           {log.error_stack !== null && log.error_stack !== '' ? (
             <button
               type="button"
               onClick={handleToggle}
               aria-expanded={expanded}
-              className="mt-1 min-h-[44px] rounded border border-red-200 px-2 text-sm font-medium text-red-700 hover:bg-red-100 md:min-h-[28px]"
+              className="df-btn-danger-soft mt-1 min-h-[32px] px-2"
             >
               {expanded ? '收合 stack trace' : '展開 stack trace'}
             </button>
@@ -88,10 +86,10 @@ const RunLogRow = memo(function RunLogRow({
         </td>
       </tr>
       {expanded && log.error_stack !== null ? (
-        <tr className="border-b border-red-100 bg-red-50/40 last:border-b-0">
+        <tr className="border-b border-danger/20 bg-danger/5 last:border-b-0">
           <td colSpan={7} className="px-3 py-3">
             {/* monospace code 允許 text-xs(00-overview 字級下限例外) */}
-            <pre className="max-h-96 overflow-auto rounded bg-gray-900 p-3 font-mono text-xs whitespace-pre-wrap text-red-200">
+            <pre className="max-h-96 overflow-auto rounded-lg bg-zinc-900 p-3 font-mono text-xs whitespace-pre-wrap text-red-200">
               {log.error_stack}
             </pre>
           </td>
@@ -149,7 +147,7 @@ export function RunLogTable({ runUid }: RunLogTableProps): React.ReactNode {
       <div className="flex items-center gap-2">
         <label
           htmlFor="run-log-status-filter"
-          className="text-sm font-medium text-gray-700 md:text-base"
+          className="text-sm font-medium text-foreground md:text-base"
         >
           逐表狀態
         </label>
@@ -157,7 +155,7 @@ export function RunLogTable({ runUid }: RunLogTableProps): React.ReactNode {
           id="run-log-status-filter"
           value={statusFilter}
           onChange={handleStatusChange}
-          className="min-h-[44px] rounded border border-gray-300 bg-white px-2 text-sm text-gray-700 md:text-base"
+          className="df-input w-auto min-w-[8rem]"
         >
           {LOG_STATUS_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
@@ -168,12 +166,12 @@ export function RunLogTable({ runUid }: RunLogTableProps): React.ReactNode {
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-gray-500 md:text-base">載入中…</p>
+        <p className="text-sm text-muted-foreground md:text-base">載入中…</p>
       ) : null}
       {isError ? (
         <p
           role="alert"
-          className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
           載入逐表詳細 log 失敗,請稍後再試
         </p>
@@ -181,31 +179,17 @@ export function RunLogTable({ runUid }: RunLogTableProps): React.ReactNode {
 
       {data !== undefined ? (
         <>
-          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-            <table className="w-full min-w-[880px] text-left">
+          <div className="df-card overflow-x-auto">
+            <table className="df-table min-w-[880px]">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    來源表
-                  </th>
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    狀態
-                  </th>
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    讀寫筆數
-                  </th>
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    耗時
-                  </th>
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    開始時間
-                  </th>
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    結束時間
-                  </th>
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    錯誤明細
-                  </th>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="df-th">來源表</th>
+                  <th className="df-th">狀態</th>
+                  <th className="df-th">讀寫筆數</th>
+                  <th className="df-th">耗時</th>
+                  <th className="df-th">開始時間</th>
+                  <th className="df-th">結束時間</th>
+                  <th className="df-th">錯誤明細</th>
                 </tr>
               </thead>
               <tbody>
@@ -220,7 +204,7 @@ export function RunLogTable({ runUid }: RunLogTableProps): React.ReactNode {
               </tbody>
             </table>
             {data.items.length === 0 ? (
-              <p className="px-3 py-8 text-center text-sm text-gray-500 md:text-base">
+              <p className="px-3 py-8 text-center text-sm text-muted-foreground md:text-base">
                 無符合條件的逐表 log
               </p>
             ) : null}

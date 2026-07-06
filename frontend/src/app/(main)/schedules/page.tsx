@@ -99,23 +99,23 @@ function ScheduleForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm md:p-5"
+      className="df-card flex flex-col gap-4 p-5 md:p-6"
     >
-      <h2 className="text-lg font-bold text-gray-900 md:text-xl">
+      <h2 className="text-lg font-bold text-foreground md:text-xl">
         {initial === null ? '新增排程' : `編輯排程:${initial.name}`}
       </h2>
 
       {submitError !== null ? (
         <p
           role="alert"
-          className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
           {submitError}
         </p>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm font-medium text-gray-700 md:text-base">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
           名稱
           <input
             type="text"
@@ -123,10 +123,10 @@ function ScheduleForm({
             maxLength={200}
             value={name}
             onChange={handleNameChange}
-            className="min-h-[44px] rounded border border-gray-300 px-3 text-sm text-gray-900 md:text-base"
+            className="df-input"
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-gray-700 md:text-base">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
           cron 運算式(UTC+8)
           <input
             type="text"
@@ -135,15 +135,15 @@ function ScheduleForm({
             value={cronExpr}
             onChange={handleCronChange}
             placeholder="分 時 日 月 週,例:0 2 * * *"
-            className="min-h-[44px] rounded border border-gray-300 px-3 text-sm text-gray-900 md:text-base"
+            className="df-input"
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-gray-700 md:text-base">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
           執行範圍
           <select
             value={etlTableUid}
             onChange={handleTableChange}
-            className="min-h-[44px] rounded border border-gray-300 bg-white px-2 text-sm text-gray-900 md:text-base"
+            className="df-input"
           >
             <option value="">全部啟用表</option>
             {tableOptions.map((option) => (
@@ -153,42 +153,34 @@ function ScheduleForm({
             ))}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-gray-700 md:text-base">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
           描述
           <textarea
             value={description}
             onChange={handleDescriptionChange}
             rows={2}
-            className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 md:text-base"
+            className="df-input min-h-[44px] py-2"
           />
         </label>
       </div>
 
       {initial === null ? (
-        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 md:text-base">
+        <label className="flex items-center gap-2 text-sm font-medium text-foreground md:text-base">
           <input
             type="checkbox"
             checked={isEnabled}
             onChange={handleEnabledChange}
-            className="h-5 w-5"
+            className="h-5 w-5 accent-[rgb(var(--primary))]"
           />
           建立後立即啟用
         </label>
       ) : null}
 
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="min-h-[44px] rounded bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50 md:text-base"
-        >
+        <button type="submit" disabled={submitting} className="df-btn-primary">
           {initial === null ? '建立' : '儲存'}
         </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="min-h-[44px] rounded border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 md:text-base"
-        >
+        <button type="button" onClick={onCancel} className="df-btn-outline">
           取消
         </button>
       </div>
@@ -241,45 +233,42 @@ const ScheduleRow = memo(function ScheduleRow({
   }, [onConfirmDelete, schedule.uid])
 
   const enabledClass = schedule.is_enabled
-    ? 'bg-green-50 text-green-700'
-    : 'bg-gray-100 text-gray-500'
-  const actionClass =
-    'min-h-[44px] rounded border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 md:min-h-[32px] md:text-base'
+    ? 'bg-success/15 text-success'
+    : 'bg-muted text-muted-foreground'
+  const actionSize = 'min-h-[36px] px-3'
 
   return (
-    <tr className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
+    <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/50">
       <td className="px-3 py-3">
-        <p className="text-sm font-medium text-gray-900 md:text-base">
+        <p className="text-sm font-medium text-foreground md:text-base">
           {schedule.name}
         </p>
         {schedule.description !== null && schedule.description !== '' ? (
-          <p className="mt-0.5 text-sm text-gray-500">{schedule.description}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {schedule.description}
+          </p>
         ) : null}
       </td>
-      <td className="px-3 py-3 font-mono text-sm text-gray-700 md:text-base">
+      <td className="df-td font-mono text-muted-foreground">
         {schedule.cron_expr}
       </td>
-      <td className="px-3 py-3 text-sm text-gray-700 md:text-base">
-        {scopeLabel}
-      </td>
+      <td className="df-td text-muted-foreground">{scopeLabel}</td>
       <td className="px-3 py-3">
-        <span
-          className={`rounded px-2 py-0.5 text-sm font-medium md:text-base ${enabledClass}`}
-        >
+        <span className={`df-badge ${enabledClass}`}>
           {schedule.is_enabled ? '啟用' : '停用'}
         </span>
       </td>
-      <td className="px-3 py-3 text-sm text-gray-700 md:text-base">
+      <td className="df-td text-muted-foreground">
         {formatDateTime(schedule.updated_at)}
       </td>
       {canEdit ? (
         <td className="px-3 py-3">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-nowrap gap-2">
             <button
               type="button"
               onClick={handleEdit}
               disabled={busy}
-              className={actionClass}
+              className={`df-btn-info-soft ${actionSize}`}
             >
               編輯
             </button>
@@ -287,7 +276,7 @@ const ScheduleRow = memo(function ScheduleRow({
               type="button"
               onClick={handleToggle}
               disabled={busy}
-              className={actionClass}
+              className={`df-btn-warning-soft ${actionSize}`}
             >
               {schedule.is_enabled ? '停用' : '啟用'}
             </button>
@@ -295,7 +284,7 @@ const ScheduleRow = memo(function ScheduleRow({
               type="button"
               onClick={handleTrigger}
               disabled={busy}
-              className={actionClass}
+              className={`df-btn-primary-soft ${actionSize}`}
             >
               手動觸發
             </button>
@@ -305,7 +294,7 @@ const ScheduleRow = memo(function ScheduleRow({
                   type="button"
                   onClick={handleConfirmDelete}
                   disabled={busy}
-                  className="min-h-[44px] rounded bg-red-600 px-3 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50 md:min-h-[32px] md:text-base"
+                  className={`df-btn-danger ${actionSize}`}
                 >
                   確認刪除
                 </button>
@@ -313,7 +302,7 @@ const ScheduleRow = memo(function ScheduleRow({
                   type="button"
                   onClick={onCancelDelete}
                   disabled={busy}
-                  className={actionClass}
+                  className={`df-btn-outline ${actionSize}`}
                 >
                   取消
                 </button>
@@ -323,7 +312,7 @@ const ScheduleRow = memo(function ScheduleRow({
                 type="button"
                 onClick={handleRequestDelete}
                 disabled={busy}
-                className="min-h-[44px] rounded border border-red-200 px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 md:min-h-[32px] md:text-base"
+                className={`df-btn-danger-soft ${actionSize}`}
               >
                 刪除
               </button>
@@ -499,10 +488,10 @@ export default function SchedulesPage(): React.ReactNode {
     <section className="mx-auto flex max-w-7xl flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 md:text-2xl">
+          <h1 className="text-xl font-bold text-foreground md:text-2xl">
             排程管理
           </h1>
-          <p className="mt-1 text-sm text-gray-600 md:text-base">
+          <p className="mt-1 text-sm text-muted-foreground md:text-base">
             cron 排程 CRUD、啟停與手動觸發(時間一律 UTC+8)
           </p>
         </div>
@@ -510,7 +499,7 @@ export default function SchedulesPage(): React.ReactNode {
           <button
             type="button"
             onClick={openCreate}
-            className="min-h-[44px] rounded bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 md:text-base"
+            className="df-btn-primary"
           >
             新增排程
           </button>
@@ -532,13 +521,13 @@ export default function SchedulesPage(): React.ReactNode {
       {actionError !== null ? (
         <p
           role="alert"
-          className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
           {actionError}
         </p>
       ) : null}
       {triggerNotice !== null ? (
-        <p className="rounded bg-green-50 px-3 py-2 text-sm text-green-700 md:text-base">
+        <p className="rounded-lg bg-success/15 px-3 py-2 text-sm text-success md:text-base">
           {triggerNotice},
           <Link
             href="/runs"
@@ -550,12 +539,12 @@ export default function SchedulesPage(): React.ReactNode {
       ) : null}
 
       {isLoading ? (
-        <p className="text-sm text-gray-500 md:text-base">載入中…</p>
+        <p className="text-sm text-muted-foreground md:text-base">載入中…</p>
       ) : null}
       {isError ? (
         <p
           role="alert"
-          className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
           載入排程清單失敗,請稍後再試
         </p>
@@ -563,30 +552,16 @@ export default function SchedulesPage(): React.ReactNode {
 
       {data !== undefined ? (
         <div className="flex flex-col gap-3">
-          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-            <table className="w-full min-w-[880px] text-left">
+          <div className="df-card overflow-x-auto">
+            <table className="df-table min-w-[880px]">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    名稱
-                  </th>
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    cron
-                  </th>
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    執行範圍
-                  </th>
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    狀態
-                  </th>
-                  <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                    更新時間
-                  </th>
-                  {isAdmin ? (
-                    <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                      操作
-                    </th>
-                  ) : null}
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="df-th">名稱</th>
+                  <th className="df-th">cron</th>
+                  <th className="df-th">執行範圍</th>
+                  <th className="df-th">狀態</th>
+                  <th className="df-th">更新時間</th>
+                  {isAdmin ? <th className="df-th">操作</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -609,7 +584,7 @@ export default function SchedulesPage(): React.ReactNode {
               </tbody>
             </table>
             {data.items.length === 0 ? (
-              <p className="px-3 py-8 text-center text-sm text-gray-500 md:text-base">
+              <p className="px-3 py-8 text-center text-sm text-muted-foreground md:text-base">
                 尚無排程
               </p>
             ) : null}

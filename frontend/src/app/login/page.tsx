@@ -94,30 +94,44 @@ function LoginContent(): React.ReactNode {
   }, [loginError, queryError])
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-sm md:p-8">
-        <h1 className="text-xl font-bold text-gray-900 md:text-2xl">
-          ETL 管理後台
-        </h1>
-        <p className="mt-1 text-sm text-gray-600 md:text-base">請登入以繼續</p>
+    <main className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="df-card w-full max-w-md p-6 md:p-8">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <ellipse cx="8" cy="6" rx="5" ry="2.2" />
+              <path d="M3 6v5c0 1.2 2.24 2.2 5 2.2s5-1 5-2.2V6" />
+              <path d="M3 11v5c0 1.2 2.24 2.2 5 2.2" />
+              <path d="M15 13h6m0 0-2.5-2.5M21 13l-2.5 2.5" />
+            </svg>
+          </span>
+          <div>
+            <h1 className="text-xl font-bold text-foreground md:text-2xl">
+              ETL 管理後台
+            </h1>
+            <p className="text-sm text-muted-foreground md:text-base">
+              請登入以繼續
+            </p>
+          </div>
+        </div>
 
         {loggedOut ? (
-          <p className="mt-4 rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 md:text-base">
+          <p className="mt-6 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground md:text-base">
             已登出
           </p>
         ) : null}
         {errorMessage !== null ? (
           <p
             role="alert"
-            className="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+            className="mt-6 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
           >
             {errorMessage}
           </p>
         ) : null}
 
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
-          <label className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-gray-700 md:text-base">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground md:text-base">
               帳號
             </span>
             <input
@@ -127,11 +141,11 @@ function LoginContent(): React.ReactNode {
               required
               value={username}
               onChange={handleUsernameChange}
-              className="min-h-[44px] rounded border border-gray-300 px-3 text-sm text-gray-900 md:text-base"
+              className="df-input"
             />
           </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-gray-700 md:text-base">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground md:text-base">
               密碼
             </span>
             <input
@@ -141,36 +155,36 @@ function LoginContent(): React.ReactNode {
               required
               value={password}
               onChange={handlePasswordChange}
-              className="min-h-[44px] rounded border border-gray-300 px-3 text-sm text-gray-900 md:text-base"
+              className="df-input"
             />
           </label>
           <button
             type="submit"
             disabled={isLoggingIn || isAuthLoading}
-            className="min-h-[44px] rounded bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-50 md:text-base"
+            className="df-btn-primary mt-1"
           >
             {isLoggingIn ? '登入中…' : '登入'}
           </button>
         </form>
 
-        <div className="mt-6 flex items-center gap-3">
-          <span className="h-px flex-1 bg-gray-200" />
-          <span className="text-sm text-gray-500 md:text-base">或</span>
-          <span className="h-px flex-1 bg-gray-200" />
-        </div>
+        {ssoConfigured ? (
+          <>
+            <div className="mt-6 flex items-center gap-3">
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-sm text-muted-foreground md:text-base">
+                或
+              </span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
 
-        <button
-          type="button"
-          onClick={handleSsoLogin}
-          disabled={!ssoConfigured}
-          className="mt-4 min-h-[44px] w-full rounded border border-gray-300 px-4 text-sm font-medium text-gray-900 disabled:opacity-50 md:text-base"
-        >
-          透過 DF-SSO 登入
-        </button>
-        {!ssoConfigured ? (
-          <p className="mt-2 text-sm text-gray-500">
-            尚未設定 DF-SSO(NEXT_PUBLIC_SSO_URL / NEXT_PUBLIC_SSO_APP_ID)
-          </p>
+            <button
+              type="button"
+              onClick={handleSsoLogin}
+              className="df-btn-outline mt-4 w-full"
+            >
+              透過 DF-SSO 登入
+            </button>
+          </>
         ) : null}
       </div>
     </main>
@@ -182,8 +196,8 @@ export default function LoginPage(): React.ReactNode {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center">
-          <p className="text-sm text-gray-500 md:text-base">載入中…</p>
+        <main className="flex min-h-screen items-center justify-center bg-background">
+          <p className="text-sm text-muted-foreground md:text-base">載入中…</p>
         </main>
       }
     >

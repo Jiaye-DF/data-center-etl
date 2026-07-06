@@ -40,12 +40,15 @@ const SectionCard = memo(function SectionCard({
   return (
     <Link
       href={item.href}
-      className="flex min-h-[44px] flex-col gap-1 rounded-lg border border-gray-200 bg-white p-4 shadow-sm hover:border-gray-400 md:p-5"
+      className="df-card group flex min-h-[44px] flex-col gap-1.5 p-5 transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
     >
-      <span className="text-base font-semibold text-gray-900 md:text-lg">
+      <span className="flex items-center gap-2 text-base font-semibold text-foreground md:text-lg">
         {item.title}
+        <span className="text-muted-foreground transition-transform group-hover:translate-x-0.5">
+          →
+        </span>
       </span>
-      <span className="text-sm text-gray-600 md:text-base">
+      <span className="text-sm text-muted-foreground md:text-base">
         {item.description}
       </span>
     </Link>
@@ -67,9 +70,9 @@ export default function DashboardPage(): React.ReactNode {
   return (
     <section className="mx-auto flex max-w-7xl flex-col gap-6">
       <div>
-        <h1 className="text-xl font-bold text-gray-900 md:text-2xl">總覽</h1>
+        <h1 className="text-xl font-bold text-foreground md:text-2xl">總覽</h1>
         {user !== null ? (
-          <p className="mt-1 text-sm text-gray-600 md:text-base">
+          <p className="mt-1 text-sm text-muted-foreground md:text-base">
             歡迎,{user.username}
           </p>
         ) : null}

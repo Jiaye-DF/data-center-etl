@@ -30,7 +30,7 @@ export const Pagination = memo(function Pagination({
 
   return (
     <div className="flex items-center justify-between gap-2">
-      <p className="text-sm text-gray-600 md:text-base">
+      <p className="text-sm text-muted-foreground md:text-base">
         共 {total} 筆,第 {page} / {totalPages} 頁
       </p>
       <div className="flex gap-2">
@@ -38,7 +38,7 @@ export const Pagination = memo(function Pagination({
           type="button"
           onClick={handlePrev}
           disabled={page <= 1}
-          className="min-h-[44px] rounded border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 md:text-base"
+          className="df-btn-outline"
         >
           上一頁
         </button>
@@ -46,7 +46,7 @@ export const Pagination = memo(function Pagination({
           type="button"
           onClick={handleNext}
           disabled={page >= totalPages}
-          className="min-h-[44px] rounded border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 md:text-base"
+          className="df-btn-outline"
         >
           下一頁
         </button>

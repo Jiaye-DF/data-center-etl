@@ -23,13 +23,19 @@ const RunStatusBadge = memo(function RunStatusBadge({
   runAt,
 }: RunStatusBadgeProps): React.ReactNode {
   if (status === null) {
-    return <span className="text-sm text-gray-400 md:text-base">尚未執行</span>
+    return (
+      <span className="text-sm text-muted-foreground md:text-base">
+        尚未執行
+      </span>
+    )
   }
   return (
     <span className="flex flex-col gap-0.5">
       <StatusBadge status={status} />
       {runAt !== null ? (
-        <span className="text-sm text-gray-500">{formatDateTime(runAt)}</span>
+        <span className="text-sm text-muted-foreground">
+          {formatDateTime(runAt)}
+        </span>
       ) : null}
     </span>
   )
@@ -53,32 +59,30 @@ const TableRow = memo(function TableRow({
   }, [onToggle, item.uid, item.is_enabled])
 
   const enabledClass = item.is_enabled
-    ? 'bg-green-50 text-green-700'
-    : 'bg-gray-100 text-gray-500'
+    ? 'bg-success/15 text-success'
+    : 'bg-muted text-muted-foreground'
 
   return (
-    <tr className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
+    <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/50">
       <td className="px-3 py-3">
         <Link
           href={`/tables/${item.uid}`}
-          className="text-sm font-medium text-gray-900 underline-offset-2 hover:underline md:text-base"
+          className="text-sm font-medium text-primary underline-offset-2 hover:underline md:text-base"
         >
           {item.source_schema}.{item.source_table}
         </Link>
         {item.description !== null && item.description !== '' ? (
-          <p className="mt-0.5 text-sm text-gray-500">{item.description}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {item.description}
+          </p>
         ) : null}
       </td>
-      <td className="px-3 py-3 text-sm text-gray-700 md:text-base">
+      <td className="df-td text-muted-foreground">
         {item.target_schema}.{item.target_table}
       </td>
-      <td className="px-3 py-3 text-sm text-gray-700 md:text-base">
-        {item.mapping_count}
-      </td>
+      <td className="df-td text-muted-foreground">{item.mapping_count}</td>
       <td className="px-3 py-3">
-        <span
-          className={`rounded px-2 py-0.5 text-sm font-medium md:text-base ${enabledClass}`}
-        >
+        <span className={`df-badge ${enabledClass}`}>
           {item.is_enabled ? '啟用' : '停用'}
         </span>
       </td>
@@ -91,7 +95,7 @@ const TableRow = memo(function TableRow({
             type="button"
             onClick={handleToggle}
             disabled={toggling}
-            className="min-h-[44px] rounded border border-gray-300 px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 md:min-h-[32px] md:text-base"
+            className="df-btn-warning-soft min-h-[36px] px-3"
           >
             {item.is_enabled ? '停用' : '啟用'}
           </button>
@@ -138,36 +142,22 @@ export function TableList({
       {toggleError !== null ? (
         <p
           role="alert"
-          className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
           {toggleError}
         </p>
       ) : null}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-        <table className="w-full min-w-[720px] text-left">
+      <div className="df-card overflow-x-auto">
+        <table className="df-table min-w-[720px]">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                來源表
-              </th>
-              <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                目標表
-              </th>
-              <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                欄位數
-              </th>
-              <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                啟用狀態
-              </th>
-              <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                最近執行
-              </th>
-              {canEdit ? (
-                <th className="px-3 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                  操作
-                </th>
-              ) : null}
+            <tr className="border-b border-border bg-muted/50">
+              <th className="df-th">來源表</th>
+              <th className="df-th">目標表</th>
+              <th className="df-th">欄位數</th>
+              <th className="df-th">啟用狀態</th>
+              <th className="df-th">最近執行</th>
+              {canEdit ? <th className="df-th">操作</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -183,7 +173,7 @@ export function TableList({
           </tbody>
         </table>
         {data.items.length === 0 ? (
-          <p className="px-3 py-8 text-center text-sm text-gray-500 md:text-base">
+          <p className="px-3 py-8 text-center text-sm text-muted-foreground md:text-base">
             尚無納管的資料表
           </p>
         ) : null}

@@ -82,12 +82,10 @@ const MappingRow = memo(function MappingRow({
 
   // 缺 Comment 欄位醒目標示(後端每欄位必帶 Comment,缺值儲存會 400)
   const commentMissing = row.comment.trim() === ''
-  const inputClass =
-    'min-h-[44px] w-full rounded border px-2 text-sm text-gray-900 disabled:bg-gray-50 disabled:text-gray-500 md:min-h-[36px] md:text-base'
 
   return (
-    <tr className="border-b border-gray-100 align-top last:border-b-0">
-      <td className="px-2 py-2 text-sm text-gray-500 md:text-base">
+    <tr className="border-b border-border align-top last:border-b-0">
+      <td className="px-2 py-2 text-sm text-muted-foreground md:text-base">
         {index + 1}
       </td>
       <td className="px-2 py-2">
@@ -98,7 +96,7 @@ const MappingRow = memo(function MappingRow({
           onChange={handleChange}
           disabled={readOnly}
           aria-label="來源欄位"
-          className={`${inputClass} border-gray-300`}
+          className="df-input min-h-[40px] px-2"
         />
       </td>
       <td className="px-2 py-2">
@@ -109,7 +107,7 @@ const MappingRow = memo(function MappingRow({
           onChange={handleChange}
           disabled={readOnly}
           aria-label="目標欄位"
-          className={`${inputClass} border-gray-300`}
+          className="df-input min-h-[40px] px-2"
         />
       </td>
       <td className="px-2 py-2">
@@ -121,7 +119,7 @@ const MappingRow = memo(function MappingRow({
           disabled={readOnly}
           aria-label="轉換型別"
           placeholder="(無)"
-          className={`${inputClass} border-gray-300`}
+          className="df-input min-h-[40px] px-2"
         />
       </td>
       <td className="px-2 py-2">
@@ -132,10 +130,10 @@ const MappingRow = memo(function MappingRow({
           onChange={handleChange}
           disabled={readOnly}
           aria-label="欄位 Comment"
-          className={`${inputClass} ${commentMissing ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+          className={`df-input min-h-[40px] px-2 ${commentMissing ? 'border-danger bg-danger/10 focus:border-danger focus:ring-danger/30' : ''}`}
         />
         {commentMissing ? (
-          <p className="mt-1 text-sm text-red-600">缺 Comment(必填)</p>
+          <p className="mt-1 text-sm text-danger">缺 Comment(必填)</p>
         ) : null}
       </td>
       {!readOnly ? (
@@ -143,7 +141,7 @@ const MappingRow = memo(function MappingRow({
           <button
             type="button"
             onClick={handleRemove}
-            className="min-h-[44px] min-w-[44px] rounded border border-gray-300 px-2 text-sm font-medium text-gray-700 hover:bg-gray-100 md:min-h-[36px] md:min-w-0 md:text-base"
+            className="df-btn-outline min-h-[40px] px-3"
           >
             刪除
           </button>
@@ -238,7 +236,7 @@ export function MappingEditor({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-gray-900 md:text-xl">
+        <h2 className="text-lg font-semibold text-foreground md:text-xl">
           欄位 mapping(共 {rows.length} 欄
           {missingCommentCount > 0 ? `,${missingCommentCount} 欄缺 Comment` : ''})
         </h2>
@@ -247,7 +245,7 @@ export function MappingEditor({
             <button
               type="button"
               onClick={handleAdd}
-              className="min-h-[44px] rounded border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 md:text-base"
+              className="df-btn-outline"
             >
               新增欄位
             </button>
@@ -255,7 +253,7 @@ export function MappingEditor({
               type="button"
               onClick={handleSave}
               disabled={isSaving}
-              className="min-h-[44px] rounded bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-50 md:text-base"
+              className="df-btn-primary"
             >
               {isSaving ? '儲存中…' : '儲存 mapping'}
             </button>
@@ -266,41 +264,27 @@ export function MappingEditor({
       {errorMessage !== null ? (
         <p
           role="alert"
-          className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
           {errorMessage}
         </p>
       ) : null}
       {savedMessage !== null ? (
-        <p className="rounded bg-green-50 px-3 py-2 text-sm text-green-700 md:text-base">
+        <p className="rounded-lg bg-success/15 px-3 py-2 text-sm text-success md:text-base">
           {savedMessage}
         </p>
       ) : null}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-        <table className="w-full min-w-[720px] text-left">
+      <div className="df-card overflow-x-auto">
+        <table className="df-table min-w-[720px]">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="px-2 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                #
-              </th>
-              <th className="px-2 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                來源欄位
-              </th>
-              <th className="px-2 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                目標欄位
-              </th>
-              <th className="px-2 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                轉換型別
-              </th>
-              <th className="px-2 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                Comment
-              </th>
-              {!readOnly ? (
-                <th className="px-2 py-2 text-sm font-semibold text-gray-700 md:text-base">
-                  操作
-                </th>
-              ) : null}
+            <tr className="border-b border-border bg-muted/50">
+              <th className="df-th">#</th>
+              <th className="df-th">來源欄位</th>
+              <th className="df-th">目標欄位</th>
+              <th className="df-th">轉換型別</th>
+              <th className="df-th">Comment</th>
+              {!readOnly ? <th className="df-th">操作</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -317,7 +301,7 @@ export function MappingEditor({
           </tbody>
         </table>
         {rows.length === 0 ? (
-          <p className="px-3 py-8 text-center text-sm text-gray-500 md:text-base">
+          <p className="px-3 py-8 text-center text-sm text-muted-foreground md:text-base">
             尚無 mapping 欄位
           </p>
         ) : null}

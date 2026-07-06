@@ -37,19 +37,19 @@ export default function TableDetailPage(): React.ReactNode {
       <div>
         <Link
           href="/tables"
-          className="text-sm text-gray-600 underline-offset-2 hover:underline md:text-base"
+          className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline md:text-base"
         >
           ← 回資料表清單
         </Link>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-gray-500 md:text-base">載入中…</p>
+        <p className="text-sm text-muted-foreground md:text-base">載入中…</p>
       ) : null}
       {isError ? (
         <p
           role="alert"
-          className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
           {extractApiErrorDetail(error, '載入資料表明細失敗,請稍後再試')}
         </p>
@@ -57,27 +57,27 @@ export default function TableDetailPage(): React.ReactNode {
 
       {data !== undefined ? (
         <>
-          <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm md:p-5">
+          <div className="df-card flex flex-col gap-3 p-5 md:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h1 className="text-xl font-bold text-gray-900 md:text-2xl">
+                <h1 className="text-xl font-bold text-foreground md:text-2xl">
                   {data.source_schema}.{data.source_table}
                 </h1>
-                <p className="mt-1 text-sm text-gray-600 md:text-base">
+                <p className="mt-1 text-sm text-muted-foreground md:text-base">
                   目標:{data.target_schema}.{data.target_table}
                 </p>
                 {data.description !== null && data.description !== '' ? (
-                  <p className="mt-1 text-sm text-gray-500 md:text-base">
+                  <p className="mt-1 text-sm text-muted-foreground md:text-base">
                     {data.description}
                   </p>
                 ) : null}
               </div>
               <div className="flex items-center gap-3">
                 <span
-                  className={`rounded px-2 py-0.5 text-sm font-medium md:text-base ${
+                  className={`df-badge ${
                     data.is_enabled
-                      ? 'bg-green-50 text-green-700'
-                      : 'bg-gray-100 text-gray-500'
+                      ? 'bg-success/15 text-success'
+                      : 'bg-muted text-muted-foreground'
                   }`}
                 >
                   {data.is_enabled ? '啟用中' : '已停用'}
@@ -87,7 +87,7 @@ export default function TableDetailPage(): React.ReactNode {
                     type="button"
                     onClick={handleToggle}
                     disabled={isToggling}
-                    className="min-h-[44px] rounded border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 md:text-base"
+                    className="df-btn-warning-soft"
                   >
                     {isToggling
                       ? '切換中…'
@@ -101,7 +101,7 @@ export default function TableDetailPage(): React.ReactNode {
             {toggleError !== null ? (
               <p
                 role="alert"
-                className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+                className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
               >
                 {toggleError}
               </p>

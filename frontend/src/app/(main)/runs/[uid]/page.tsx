@@ -17,10 +17,10 @@ interface SummaryItemProps {
 function SummaryItem({ label, children }: SummaryItemProps): React.ReactNode {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-sm font-medium text-gray-500 md:text-base">
+      <dt className="text-sm font-medium text-muted-foreground md:text-base">
         {label}
       </dt>
-      <dd className="text-sm text-gray-900 md:text-base">{children}</dd>
+      <dd className="text-sm text-foreground md:text-base">{children}</dd>
     </div>
   )
 }
@@ -34,19 +34,19 @@ export default function RunDetailPage(): React.ReactNode {
       <div>
         <Link
           href="/runs"
-          className="text-sm text-gray-600 underline-offset-2 hover:underline md:text-base"
+          className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline md:text-base"
         >
           ← 回執行紀錄清單
         </Link>
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-gray-500 md:text-base">載入中…</p>
+        <p className="text-sm text-muted-foreground md:text-base">載入中…</p>
       ) : null}
       {isError ? (
         <p
           role="alert"
-          className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
           {extractApiErrorDetail(error, '載入執行明細失敗,請稍後再試')}
         </p>
@@ -54,9 +54,9 @@ export default function RunDetailPage(): React.ReactNode {
 
       {data !== undefined ? (
         <>
-          <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm md:p-5">
+          <div className="df-card flex flex-col gap-4 p-5 md:p-6">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-xl font-bold text-gray-900 md:text-2xl">
+              <h1 className="text-xl font-bold text-foreground md:text-2xl">
                 執行明細
               </h1>
               <StatusBadge status={data.status} />
@@ -76,11 +76,11 @@ export default function RunDetailPage(): React.ReactNode {
               </SummaryItem>
               <SummaryItem label="總表數">{data.total_tables}</SummaryItem>
               <SummaryItem label="成功表數">
-                <span className="text-green-700">{data.success_tables}</span>
+                <span className="text-success">{data.success_tables}</span>
               </SummaryItem>
               <SummaryItem label="失敗表數">
                 <span
-                  className={data.failed_tables > 0 ? 'text-red-700' : undefined}
+                  className={data.failed_tables > 0 ? 'text-danger' : undefined}
                 >
                   {data.failed_tables}
                 </span>
@@ -92,7 +92,7 @@ export default function RunDetailPage(): React.ReactNode {
             {data.error_message !== null && data.error_message !== '' ? (
               <p
                 role="alert"
-                className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 md:text-base"
+                className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
               >
                 {data.error_message}
               </p>
@@ -100,7 +100,7 @@ export default function RunDetailPage(): React.ReactNode {
           </div>
 
           <div className="flex flex-col gap-3">
-            <h2 className="text-lg font-bold text-gray-900 md:text-xl">
+            <h2 className="text-lg font-bold text-foreground md:text-xl">
               逐表詳細 log
             </h2>
             <RunLogTable runUid={uid} />

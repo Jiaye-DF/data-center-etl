@@ -1,1 +1,208 @@
 @import "tailwindcss";
+
+/* 語意色彩以 `R G B` 三元組存放,消費端用 rgb(var(--x) / <alpha>);
+   主題切換靠切換 .dark class 或 data-theme 屬性換整組變數 */
+
+@theme inline {
+  --color-background: rgb(var(--background));
+  --color-foreground: rgb(var(--foreground));
+  --color-card: rgb(var(--card));
+  --color-card-foreground: rgb(var(--card-foreground));
+  --color-muted: rgb(var(--muted));
+  --color-muted-foreground: rgb(var(--muted-foreground));
+  --color-border: rgb(var(--border));
+  --color-primary: rgb(var(--primary));
+  --color-primary-foreground: rgb(var(--primary-foreground));
+  --color-accent: rgb(var(--accent));
+  --color-success: rgb(var(--success));
+  --color-warning: rgb(var(--warning));
+  --color-danger: rgb(var(--danger));
+  --color-info: rgb(var(--info));
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "PingFang TC", "Microsoft JhengHei", sans-serif;
+}
+
+/* 晨曦(預設淺色) */
+:root {
+  --background: 248 250 252;
+  --foreground: 15 23 42;
+  --card: 255 255 255;
+  --card-foreground: 15 23 42;
+  --muted: 241 245 249;
+  --muted-foreground: 100 116 139;
+  --border: 226 232 240;
+  --primary: 37 99 235;
+  --primary-foreground: 255 255 255;
+  --accent: 59 130 246;
+  --success: 22 163 74;
+  --warning: 217 119 6;
+  --danger: 220 38 38;
+  --info: 2 132 199;
+}
+
+/* 深夜 */
+.dark {
+  --background: 9 9 11;
+  --foreground: 244 244 245;
+  --card: 24 24 27;
+  --card-foreground: 244 244 245;
+  --muted: 39 39 42;
+  --muted-foreground: 161 161 170;
+  --border: 39 39 42;
+  --primary: 96 165 250;
+  --primary-foreground: 9 9 11;
+  --accent: 147 197 253;
+  --success: 34 197 94;
+  --warning: 234 179 8;
+  --danger: 248 113 113;
+  --info: 56 189 248;
+}
+
+/* 霧境 */
+[data-theme="cool"] {
+  --background: 240 244 248;
+  --foreground: 30 41 59;
+  --card: 255 255 255;
+  --card-foreground: 30 41 59;
+  --muted: 226 232 240;
+  --muted-foreground: 71 85 105;
+  --border: 203 213 225;
+  --primary: 14 165 233;
+  --primary-foreground: 255 255 255;
+  --accent: 6 182 212;
+  --success: 13 148 136;
+  --warning: 202 138 4;
+  --danger: 220 38 38;
+  --info: 2 132 199;
+}
+
+/* 夕映 */
+[data-theme="warm"] {
+  --background: 253 246 236;
+  --foreground: 68 64 60;
+  --card: 255 251 244;
+  --card-foreground: 68 64 60;
+  --muted: 245 232 208;
+  --muted-foreground: 120 113 108;
+  --border: 231 215 191;
+  --primary: 234 88 12;
+  --primary-foreground: 255 255 255;
+  --accent: 245 158 11;
+  --success: 22 163 74;
+  --warning: 202 138 4;
+  --danger: 220 38 38;
+  --info: 2 132 199;
+}
+
+/* 暮霞 */
+[data-theme="purple"] {
+  --background: 250 245 255;
+  --foreground: 59 7 100;
+  --card: 255 255 255;
+  --card-foreground: 59 7 100;
+  --muted: 243 232 255;
+  --muted-foreground: 124 58 237;
+  --border: 233 213 255;
+  --primary: 168 85 247;
+  --primary-foreground: 255 255 255;
+  --accent: 232 121 249;
+  --success: 22 163 74;
+  --warning: 202 138 4;
+  --danger: 220 38 38;
+  --info: 2 132 199;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background-color: rgb(var(--background));
+    color: rgb(var(--foreground));
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgb(var(--border));
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--muted-foreground) / 0.5);
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* 設計系統原子類別:卡片 / 按鈕 / 輸入框 / 徽章 / 表格,全頁共用一致圓角風格 */
+@layer components {
+  .df-card {
+    @apply rounded-2xl border border-border bg-card shadow-sm;
+  }
+
+  .df-btn,
+  .df-btn-primary,
+  .df-btn-outline,
+  .df-btn-danger,
+  .df-btn-danger-soft,
+  .df-btn-primary-soft,
+  .df-btn-info-soft,
+  .df-btn-warning-soft,
+  .df-btn-success-soft {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 md:text-base;
+  }
+  .df-btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+  .df-btn-outline {
+    @apply border border-border bg-card text-foreground hover:bg-muted;
+  }
+  .df-btn-danger {
+    @apply bg-danger text-white hover:bg-danger/90;
+  }
+  .df-btn-danger-soft {
+    @apply border border-danger/30 bg-danger/10 text-danger hover:bg-danger/20;
+  }
+  .df-btn-primary-soft {
+    @apply border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20;
+  }
+  .df-btn-info-soft {
+    @apply border border-info/30 bg-info/10 text-info hover:bg-info/20;
+  }
+  .df-btn-warning-soft {
+    @apply border border-warning/30 bg-warning/10 text-warning hover:bg-warning/20;
+  }
+  .df-btn-success-soft {
+    @apply border border-success/30 bg-success/10 text-success hover:bg-success/20;
+  }
+
+  .df-input {
+    @apply min-h-[44px] w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:bg-muted disabled:text-muted-foreground md:text-base;
+  }
+
+  .df-badge {
+    @apply inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-sm font-medium md:text-base;
+  }
+
+  .df-table {
+    @apply w-full text-left;
+  }
+  .df-th {
+    @apply px-3 py-3 text-sm font-semibold whitespace-nowrap text-muted-foreground md:text-base;
+  }
+  .df-td {
+    @apply px-3 py-3 text-sm whitespace-nowrap text-foreground md:text-base;
+  }
+}

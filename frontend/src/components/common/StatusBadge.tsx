@@ -12,11 +12,11 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const STATUS_CLASSES: Record<string, string> = {
-  pending: 'bg-gray-100 text-gray-700',
-  running: 'bg-blue-50 text-blue-700',
-  success: 'bg-green-50 text-green-700',
-  failed: 'bg-red-50 text-red-700',
-  skipped: 'bg-yellow-50 text-yellow-700',
+  pending: 'bg-muted text-muted-foreground',
+  running: 'bg-info/15 text-info',
+  success: 'bg-success/15 text-success',
+  failed: 'bg-danger/15 text-danger',
+  skipped: 'bg-warning/15 text-warning',
 }
 
 interface StatusBadgeProps {
@@ -27,12 +27,6 @@ export const StatusBadge = memo(function StatusBadge({
   status,
 }: StatusBadgeProps): React.ReactNode {
   const label = STATUS_LABELS[status] ?? status
-  const badgeClass = STATUS_CLASSES[status] ?? 'bg-gray-100 text-gray-700'
-  return (
-    <span
-      className={`w-fit rounded px-2 py-0.5 text-sm font-medium md:text-base ${badgeClass}`}
-    >
-      {label}
-    </span>
-  )
+  const badgeClass = STATUS_CLASSES[status] ?? 'bg-muted text-muted-foreground'
+  return <span className={`df-badge ${badgeClass}`}>{label}</span>
 })
