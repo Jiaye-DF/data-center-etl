@@ -12,8 +12,8 @@ export interface SchemaSummary {
 export interface TableSummary {
   name: string
   column_count: number
-  /** pg_class.reltuples 估算;未 ANALYZE 的表為 -1(未知) */
-  row_estimate: number
+  /** bounded row 數(SELECT 1 … LIMIT 1001 探測);> 1000 代表超過上限,顯示 1000+ */
+  row_count: number
 }
 
 export interface DatasetTableListData {

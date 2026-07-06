@@ -10,9 +10,13 @@
 from __future__ import annotations
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
+from app.etl.comments import quote_ident
 from app.etl.reader import rds_database_url
+
+# row 數上限:超過即以 1000+ 呈現(禁 COUNT(*),改 SELECT 1 ... LIMIT 1001 探測)
+ROW_COUNT_CAP = 1000
 
 # dataset 名稱 → 對應 database 的 env key
 DATASET_ENV_KEYS: dict[str, str] = {
@@ -61,11 +65,8 @@ _TABLES_SQL = text(
     SELECT t.table_name AS name,
            (SELECT count(*) FROM information_schema.columns c
              WHERE c.table_schema = t.table_schema AND c.table_name = t.table_name)
-             AS column_count,
-           COALESCE(pc.reltuples, 0)::bigint AS row_estimate
+             AS column_count
     FROM information_schema.tables t
-    JOIN pg_namespace n ON n.nspname = t.table_schema
-    LEFT JOIN pg_class pc ON pc.relname = t.table_name AND pc.relnamespace = n.oid
     WHERE t.table_schema = :schema AND t.table_type = 'BASE TABLE'
     ORDER BY t.table_name
     LIMIT :limit OFFSET :offset
@@ -92,10 +93,35 @@ async def list_schemas(dataset: str) -> list[dict[str, object]]:
     return [dict(r) for r in rows]
 
 
+async def _bounded_row_counts(
+    conn: AsyncConnection, schema: str, names: list[str]
+) -> dict[str, int]:
+    """一次 UNION ALL 探測整頁各表的 row 數(每表 SELECT 1 ... LIMIT CAP+1,禁 COUNT(*))。
+
+    回傳值上限為 CAP+1:值 > CAP 代表「超過上限」,呈現端顯示 1000+。
+    """
+    if not names:
+        return {}
+    limit = ROW_COUNT_CAP + 1
+    parts: list[str] = []
+    params: dict[str, object] = {}
+    for i, name in enumerate(names):
+        qualified = f"{quote_ident(schema)}.{quote_ident(name)}"
+        # 識別字走白名單引號化(來自 information_schema,再引號化雙保險);表名另以 bind 值回傳對應
+        parts.append(
+            f"SELECT :n{i} AS name, "
+            f"(SELECT count(*) FROM (SELECT 1 FROM {qualified} LIMIT {limit}) s) AS c"
+        )
+        params[f"n{i}"] = name
+    sql = text(" UNION ALL ".join(parts))
+    rows = (await conn.execute(sql, params)).mappings().all()
+    return {str(r["name"]): int(r["c"]) for r in rows}
+
+
 async def list_tables(
     dataset: str, schema: str, *, page: int, page_size: int
 ) -> dict[str, object]:
-    """分頁列出指定 schema 的表(含欄位數與 row 估算)。"""
+    """分頁列出指定 schema 的表(含欄位數與 bounded row 數)。"""
     offset = (page - 1) * page_size
     async with _get_engine(dataset).connect() as conn:
         total = (await conn.execute(_TABLE_COUNT_SQL, {"schema": schema})).scalar_one()
@@ -104,8 +130,18 @@ async def list_tables(
                 _TABLES_SQL, {"schema": schema, "limit": page_size, "offset": offset}
             )
         ).mappings().all()
+        names = [str(r["name"]) for r in rows]
+        counts = await _bounded_row_counts(conn, schema, names)
+    items = [
+        {
+            "name": str(r["name"]),
+            "column_count": int(r["column_count"]),
+            "row_count": counts.get(str(r["name"]), 0),
+        }
+        for r in rows
+    ]
     return {
-        "items": [dict(r) for r in rows],
+        "items": items,
         "total": int(total),
         "page": page,
         "page_size": page_size,

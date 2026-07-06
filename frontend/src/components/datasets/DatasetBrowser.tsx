@@ -21,8 +21,9 @@ function orderSchemas(names: string[]): string[] {
   })
 }
 
-function formatRowEstimate(value: number): string {
-  return value < 0 ? '—' : `≈ ${value.toLocaleString()}`
+/** > 1000 統一顯示 1000+;否則精確值(後端已以 LIMIT 1001 探測封頂) */
+function formatRowCount(value: number): string {
+  return value > 1000 ? '1000+' : value.toLocaleString()
 }
 
 interface DatasetBrowserProps {
@@ -187,7 +188,7 @@ function SchemaTables({
             <tr className="border-b border-border bg-muted/50">
               <th className="df-th">資料表</th>
               <th className="df-th">欄位數</th>
-              <th className="df-th">資料筆數(估算)</th>
+              <th className="df-th">資料筆數</th>
               <th className="df-th">欄位結構</th>
             </tr>
           </thead>
@@ -247,7 +248,7 @@ const TableRow = memo(function TableRow({
         </td>
         <td className="df-td text-muted-foreground">{table.column_count}</td>
         <td className="df-td text-muted-foreground">
-          {formatRowEstimate(table.row_estimate)}
+          {formatRowCount(table.row_count)}
         </td>
         <td className="px-3 py-3">
           <button

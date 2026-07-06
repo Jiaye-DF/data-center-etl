@@ -19,7 +19,9 @@ class SchemaListResponse(BaseModel):
 class TableSummary(BaseModel):
     name: str = Field(description="表名")
     column_count: int = Field(description="欄位數")
-    row_estimate: int = Field(description="row 數估算(pg_class.reltuples)")
+    row_count: int = Field(
+        description="bounded row 數(SELECT 1 ... LIMIT 1001 探測);> 1000 代表超過上限"
+    )
 
 
 class TableListResponse(BaseModel):
