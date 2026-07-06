@@ -7,7 +7,7 @@ export default function EtlDataPage(): React.ReactNode {
     <DatasetBrowser
       dataset="target"
       title="ETL 資料管理"
-      description="ETL 轉換後的資料中心庫:依 schema 瀏覽已同步 / 轉換的資料表快照"
+      description="檢視經 ETL 轉換後存入資料中心的資料,可依資料分類查看每張資料表的筆數與最新轉換時間"
     />
   )
 }

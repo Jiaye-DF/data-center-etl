@@ -34,6 +34,12 @@ _TABLE_COMMENT_SQL = text(
     'SELECT "GAT03" FROM "DS"."GAT_FILE" WHERE lower("GAT01") = :t AND "GAT02" = :lang'
 )
 
+# 表中文名:一次批量查多表(繁優先缺退簡);避免 refresh 全量內省逐表 N 次 RDS 來回
+_TABLE_COMMENTS_BATCH_SQL = text(
+    'SELECT lower("GAT01") k, "GAT03" v FROM "DS"."GAT_FILE"'
+    ' WHERE lower("GAT01") = ANY(:tables) AND "GAT02" = :lang'
+)
+
 # 欄中文名:一次批量查該表所有欄(設計要點 GAQ 查詢,一字不差)
 _COLUMN_COMMENT_SQL = text(
     'SELECT lower("GAQ01") k, "GAQ03" v FROM "DS"."GAQ_FILE"'
@@ -59,6 +65,34 @@ async def fetch_table_comment(conn: AsyncConnection, table: str) -> str | None:
         if row is not None and row[0] is not None and str(row[0]).strip():
             return str(row[0]).strip()
     return None
+
+
+async def fetch_table_comments(
+    conn: AsyncConnection, tables: Sequence[str]
+) -> dict[str, str]:
+    """批量查多表中文名(逐表繁優先缺退簡);回傳 key 為小寫表名。
+
+    取代 fetch_table_comment 的逐表查詢(N 表 = N 次 RDS 來回),供 refresh 全量內省用;
+    字典表缺失、表無對應者靜默略過(不 raise)。
+    """
+    if not tables or not await _dict_table_exists(conn, TABLE_NAME_DICT):
+        return {}
+    wanted = [t.lower() for t in tables]
+    result: dict[str, str] = {}
+    for lang in _LANG_PREFERENCE:
+        remaining = [t for t in wanted if t not in result]
+        if not remaining:
+            break
+        rows = (
+            await conn.execute(
+                _TABLE_COMMENTS_BATCH_SQL, {"tables": remaining, "lang": lang}
+            )
+        ).mappings().all()
+        for r in rows:
+            value = r["v"]
+            if value is not None and str(value).strip():
+                result[str(r["k"])] = str(value).strip()
+    return result
 
 
 async def fetch_column_comments(

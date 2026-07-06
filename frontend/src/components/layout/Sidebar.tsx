@@ -12,12 +12,25 @@ interface NavItem {
   icon: React.ReactNode
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { href: '/', label: '總覽', icon: <OverviewIcon /> },
-  { href: '/raw-data', label: '原始資料管理', icon: <DatabaseIcon /> },
-  { href: '/etl-data', label: 'ETL 資料管理', icon: <LayersIcon /> },
-  { href: '/schedules', label: '排程管理', icon: <ClockIcon /> },
-  { href: '/runs', label: '執行紀錄', icon: <HistoryIcon /> },
+interface NavGroup {
+  /** 分組標題;省略代表無標題的頂層項目(如總覽) */
+  title?: string
+  items: NavItem[]
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    items: [{ href: '/', label: '總覽', icon: <OverviewIcon /> }],
+  },
+  {
+    title: 'ETL 作業',
+    items: [
+      { href: '/raw-data', label: '原始資料管理', icon: <DatabaseIcon /> },
+      { href: '/etl-data', label: 'ETL 資料管理', icon: <LayersIcon /> },
+      { href: '/schedules', label: 'ETL 排程管理', icon: <ClockIcon /> },
+      { href: '/runs', label: 'ETL 執行紀錄', icon: <HistoryIcon /> },
+    ],
+  },
 ]
 
 function isActivePath(pathname: string, href: string): boolean {
@@ -62,15 +75,28 @@ interface NavListProps {
 function NavList({ collapsed, onNavigate }: NavListProps): React.ReactNode {
   const pathname = usePathname()
   return (
-    <nav className="flex flex-col gap-1 px-2 py-4">
-      {NAV_ITEMS.map((item) => (
-        <NavLink
-          key={item.href}
-          item={item}
-          active={isActivePath(pathname, item.href)}
-          collapsed={collapsed}
-          onNavigate={onNavigate}
-        />
+    <nav className="flex flex-col gap-4 px-2 py-4">
+      {NAV_GROUPS.map((group, index) => (
+        <div key={group.title ?? `group-${index}`} className="flex flex-col gap-1">
+          {group.title !== undefined ? (
+            collapsed ? (
+              <div className="mx-auto my-1 h-px w-6 bg-border" aria-hidden />
+            ) : (
+              <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {group.title}
+              </p>
+            )
+          ) : null}
+          {group.items.map((item) => (
+            <NavLink
+              key={item.href}
+              item={item}
+              active={isActivePath(pathname, item.href)}
+              collapsed={collapsed}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </div>
       ))}
     </nav>
   )

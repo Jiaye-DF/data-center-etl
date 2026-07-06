@@ -11,8 +11,9 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, update
+from sqlalchemy import ColumnElement, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from app.models.rds_table_meta import Dataset, RdsTableMeta
 from app.utils.datetime import db_now as _db_now
@@ -84,6 +85,27 @@ class RdsTableMetaRepository:
         rows = (await self._db.execute(stmt)).all()
         return [(str(schema), int(count)) for schema, count in rows]
 
+    @staticmethod
+    def _presence_cutoff(
+        column: InstrumentedAttribute[datetime | None],
+        want_present: bool | None,
+        before: datetime | None,
+    ) -> ColumnElement[bool] | None:
+        """「是否在截止日前有值」條件;want_present=None(全部)回 None 不加條件。
+
+        - want_present=True(已同步/已轉換):有截止日 → column <= before(<= 已隱含 NOT NULL);
+          無截止日 → column IS NOT NULL
+        - want_present=False(未同步/未轉換):有截止日 → 到該日仍無
+          = column IS NULL OR column > before;無截止日 → column IS NULL
+        """
+        if want_present is None:
+            return None
+        if want_present:
+            return column <= before if before is not None else column.is_not(None)
+        if before is not None:
+            return or_(column.is_(None), column > before)
+        return column.is_(None)
+
     async def list_by_schema(
         self,
         dataset: Dataset,
@@ -91,22 +113,64 @@ class RdsTableMetaRepository:
         *,
         offset: int,
         limit: int,
-        hide_empty: bool,
+        rows: str = "nonempty",
+        synced: str = "all",
+        transformed: str = "all",
+        synced_before: datetime | None = None,
+        transformed_before: datetime | None = None,
+        keyword: str = "",
     ) -> tuple[list[RdsTableMeta], int]:
-        """分頁列出指定 schema 的表;hide_empty 過濾 row_count=0。"""
-        conds = [
+        """分頁列出指定 schema 的表,套進階篩選(狀態分段 + 截止日 + 關鍵字,AND 疊加)。
+
+        - rows: all / nonempty(row_count>0)/ empty(row_count=0)
+        - synced / transformed: all / 有值 / 無值(搭配截止日 → 「是否在該日前(含)同步/轉換」)
+        - *_before: 截止日上界(含);state=all 時忽略
+        - keyword: 對 table_name 或 business_name 做 ILIKE 子字串比對(空字串不套)
+        """
+        conds: list[ColumnElement[bool]] = [
             RdsTableMeta.dataset == dataset,
             RdsTableMeta.schema_name == schema,
             RdsTableMeta.is_deleted.is_(False),
         ]
-        if hide_empty:
+        if rows == "nonempty":
             conds.append(RdsTableMeta.row_count > 0)
+        elif rows == "empty":
+            conds.append(RdsTableMeta.row_count == 0)
+        keyword = keyword.strip()
+        if keyword:
+            # 跳脫 LIKE 萬用字元,讓輸入以字面比對(escape 反斜線自身在前)
+            escaped = (
+                keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            pattern = f"%{escaped}%"
+            conds.append(
+                or_(
+                    RdsTableMeta.table_name.ilike(pattern, escape="\\"),
+                    RdsTableMeta.business_name.ilike(pattern, escape="\\"),
+                )
+            )
+        synced_present = {"synced": True, "unsynced": False}.get(synced)
+        transformed_present = {"transformed": True, "untransformed": False}.get(
+            transformed
+        )
+        for cond in (
+            self._presence_cutoff(
+                RdsTableMeta.last_synced_at, synced_present, synced_before
+            ),
+            self._presence_cutoff(
+                RdsTableMeta.last_transformed_at,
+                transformed_present,
+                transformed_before,
+            ),
+        ):
+            if cond is not None:
+                conds.append(cond)
         total = (
             await self._db.execute(
                 select(func.count()).select_from(RdsTableMeta).where(*conds)
             )
         ).scalar_one()
-        rows = (
+        result = (
             await self._db.execute(
                 select(RdsTableMeta)
                 .where(*conds)
@@ -115,7 +179,7 @@ class RdsTableMetaRepository:
                 .limit(limit)
             )
         ).scalars()
-        return list(rows.all()), total
+        return list(result.all()), total
 
     async def mark_synced(
         self,

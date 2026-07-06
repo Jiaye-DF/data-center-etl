@@ -9,13 +9,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import redis as cache
 from app.etl import introspect
-from app.etl.dictionary import fetch_table_comment
+from app.etl.dictionary import fetch_table_comments
 from app.models.rds_table_meta import Dataset, RdsTableMeta
 from app.repositories.rds_table_meta_repo import RdsTableMetaRepository
 from app.schemas.rawdata import (
@@ -29,6 +30,37 @@ from app.utils.datetime import db_now
 
 # cache TTL:快照為手動 refresh 觸發,短 TTL 防髒讀無限存活即可
 _CACHE_TTL_SECONDS = 300
+
+
+@dataclass(frozen=True)
+class TableFilters:
+    """list_tables 進階篩選條件;截止日為 naive UTC+8 上界(含當日)。
+
+    rows: all / nonempty / empty;synced / transformed: all / (un)synced / (un)transformed;
+    *_before 搭配狀態 → 「是否在該日前(含)同步/轉換」。
+    """
+
+    rows: str = "nonempty"
+    synced: str = "all"
+    transformed: str = "all"
+    synced_before: datetime | None = None
+    transformed_before: datetime | None = None
+    keyword: str = ""
+
+    def cache_fragment(self) -> tuple[str, ...]:
+        """組 cache key 用的穩定片段(None 截止日以 '-' 佔位)。"""
+
+        def ts(value: datetime | None) -> str:
+            return value.isoformat() if value is not None else "-"
+
+        return (
+            self.rows,
+            self.synced,
+            self.transformed,
+            ts(self.synced_before),
+            ts(self.transformed_before),
+            self.keyword,
+        )
 
 
 @dataclass(frozen=True)
@@ -76,19 +108,19 @@ class SnapshotService:
         engine = introspect.get_engine(dataset_value)
         async with engine.connect() as conn:
             tables = await introspect.snapshot_tables(conn)
-            collected: list[_CollectedTable] = []
-            for t in tables:
-                table_name = str(t["name"])
-                business_name = await fetch_table_comment(conn, table_name)
-                collected.append(
-                    _CollectedTable(
-                        schema_name=str(t["schema"]),
-                        table_name=table_name,
-                        business_name=business_name,
-                        column_count=int(t["column_count"]),
-                        row_count=int(t["row_count"]),
-                    )
+            # 批量查全部表名的字典業務名(一次 RDS 來回,取代逐表 N 次)
+            names = [str(t["name"]) for t in tables]
+            comments = await fetch_table_comments(conn, names)
+            collected: list[_CollectedTable] = [
+                _CollectedTable(
+                    schema_name=str(t["schema"]),
+                    table_name=str(t["name"]),
+                    business_name=comments.get(str(t["name"]).lower()),
+                    column_count=int(t["column_count"]),
+                    row_count=int(t["row_count"]),
                 )
+                for t in tables
+            ]
         return collected
 
     # ── 讀快照(cache 命中免打 repo)─────────────────────────────────────
@@ -115,10 +147,16 @@ class SnapshotService:
         *,
         page: int,
         page_size: int,
-        hide_empty: bool,
+        filters: TableFilters,
     ) -> TableListResponse:
         key = cache.cache_key(
-            "datasets", dataset_value, "tables", schema, page, page_size, int(hide_empty)
+            "datasets",
+            dataset_value,
+            "tables",
+            schema,
+            page,
+            page_size,
+            *filters.cache_fragment(),
         )
         cached = await cache.cache_get(key)
         if cached is not None:
@@ -129,7 +167,12 @@ class SnapshotService:
             schema,
             offset=offset,
             limit=page_size,
-            hide_empty=hide_empty,
+            rows=filters.rows,
+            synced=filters.synced,
+            transformed=filters.transformed,
+            synced_before=filters.synced_before,
+            transformed_before=filters.transformed_before,
+            keyword=filters.keyword,
         )
         response = TableListResponse(
             items=[self._to_summary(r) for r in rows],

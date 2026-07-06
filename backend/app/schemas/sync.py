@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -19,6 +21,22 @@ class SyncTableRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class SyncFilteredRequest(BaseModel):
+    """篩選同步請求:對指定 schema 套進階篩選條件,只同步符合的表(對齊瀏覽頁篩選)。"""
+
+    schema_name: str = Field(
+        alias="schema", min_length=1, max_length=128, description="來源 schema"
+    )
+    rows: Literal["all", "nonempty", "empty"] = "nonempty"
+    synced: Literal["all", "synced", "unsynced"] = "all"
+    transformed: Literal["all", "transformed", "untransformed"] = "all"
+    synced_before: date | None = None
+    transformed_before: date | None = None
+    keyword: str = Field("", max_length=128)
+
+    model_config = {"populate_by_name": True}
+
+
 class SyncTriggerResponse(BaseModel):
     """同步觸發結果:taskiq 任務識別碼 + 新建 run uid(佇列模式下 enqueue 當下為 null)。"""
 
@@ -29,4 +47,8 @@ class SyncTriggerResponse(BaseModel):
             "enqueue 當下尚無 run → null(對齊 runs 觸發語意)"
         )
     )
-    scope: str = Field(description="同步範圍:table(單表)/ all(全量)")
+    scope: str = Field(description="同步範圍:table(單表)/ all(全量)/ filtered(符合篩選)")
+    matched: int | None = Field(
+        default=None,
+        description="filtered 範圍下符合條件並送出同步的表數;其他範圍為 null",
+    )

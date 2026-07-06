@@ -218,9 +218,16 @@ def _sync_elapsed_ms(started: datetime) -> int:
 
 
 async def _resolve_sync_targets(
-    mirror: MirrorEngine, schema: str | None, table: str | None
+    mirror: MirrorEngine,
+    schema: str | None,
+    table: str | None,
+    tables: list[str] | None = None,
 ) -> list[tuple[str, str]]:
-    """單表(schema+table 皆給)→ 該表;全量(皆空)→ 全來源表(DS 優先)。"""
+    """篩選(schema+tables)→ 該清單;單表(schema+table)→ 該表;全量(皆空)→ 全來源表。"""
+    if tables is not None:
+        if schema is None:
+            raise ValueError("tables 指定時 schema 必填")
+        return [(schema, t) for t in tables]
     if schema is not None and table is not None:
         return [(schema, table)]
     if schema is None and table is None:
@@ -257,11 +264,13 @@ async def _mark_meta_synced(
 
 @broker.task(task_name="mirror_sync")
 async def mirror_sync(
-    schema: str | None = None, table: str | None = None
+    schema: str | None = None,
+    table: str | None = None,
+    tables: list[str] | None = None,
 ) -> dict[str, object]:
     """執行一輪自動鏡像同步:建 run → 逐表鏡像(來源 → hub,套字典 COMMENT)→ 更新快照 → 收尾 run。
 
-    - 單表:schema + table 皆給;全量:皆空(worker 端 DS 優先,不由本 task 觸發時強制)。
+    - 篩選:schema + tables 清單;單表:schema + table 皆給;全量:皆空(worker 端 DS 優先)。
     - 單表失敗不中斷整輪:錯誤明細(含 stack trace,機密遮罩)寫入該表 log,續跑下一表;
       任一表失敗 → run 總狀態 failed(對齊既有 run_etl 慣例)。
     - 同步後失效 datasets:source:* 快取(對齊 snapshot_service 失效用法)。
@@ -272,7 +281,7 @@ async def mirror_sync(
         repo = RdsTableMetaRepository(session)
         configs: list[EtlTableConfig] = []
         try:
-            targets = await _resolve_sync_targets(mirror, schema, table)
+            targets = await _resolve_sync_targets(mirror, schema, table, tables)
             configs = [_mirror_config(s, t) for s, t in targets]
             run_pid = await store.create_run(trigger_type="manual", schedule_pid=None)
             success = failed = 0

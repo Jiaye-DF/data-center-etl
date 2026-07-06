@@ -1,6 +1,6 @@
 """task-002 快照服務測試(真實 PostgreSQL 測試 DB + fake introspect)。
 
-涵蓋:refresh 落地筆數 / 業務名寫入 / upsert 冪等、list_tables hide_empty 過濾、
+涵蓋:refresh 落地筆數 / 業務名寫入 / upsert 冪等、list_tables 進階篩選(rows / synced)、
 list_schemas 聚合、cache 命中第二次不打 repo(以計數驗)、移除的 columns 端點回 404。
 introspect / 字典查詢以 monkeypatch `_collect_from_rds` 取代(不打 RDS);Redis 走記憶體 fake。
 """
@@ -25,6 +25,7 @@ os.environ.setdefault("INIT_ADMIN_USERNAME", "init-admin")
 os.environ.setdefault("INIT_ADMIN_PASSWORD", "init-admin-password-for-test")
 
 from collections.abc import AsyncIterator  # noqa: E402
+from datetime import datetime  # noqa: E402
 from uuid import uuid4  # noqa: E402
 
 import pytest  # noqa: E402
@@ -45,7 +46,11 @@ from app.core.db import Base  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models import Dataset, RdsTableMeta  # noqa: E402
 from app.repositories.rds_table_meta_repo import RdsTableMetaRepository  # noqa: E402
-from app.services.snapshot_service import SnapshotService, _CollectedTable  # noqa: E402
+from app.services.snapshot_service import (  # noqa: E402
+    SnapshotService,
+    TableFilters,
+    _CollectedTable,
+)
 
 
 # ── fixtures ────────────────────────────────────────────────────────────
@@ -179,27 +184,105 @@ async def test_refresh_is_idempotent_upsert(
         assert total == 3  # 重複 refresh 不新增(find-or-create)
 
 
-# ── list_tables:hide_empty 過濾 row_count=0 ────────────────────────────
-async def test_list_tables_hide_empty_filters_zero(
+# ── list_tables:rows 篩選(nonempty / empty / all)────────────────────
+async def test_list_tables_rows_filter(
     session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _patch_collect(monkeypatch)
     await _refresh(session_factory)
     async with session_factory() as session:
         svc = SnapshotService(session)
-        hidden = await svc.list_tables(
-            "source", "DS", page=1, page_size=50, hide_empty=True
+        nonempty = await svc.list_tables(
+            "source", "DS", page=1, page_size=50, filters=TableFilters(rows="nonempty")
         )
-        assert {i.name for i in hidden.items} == {"AAA_FILE", "GAT_FILE"}
-        assert hidden.total == 2
+        assert {i.name for i in nonempty.items} == {"AAA_FILE", "GAT_FILE"}
+        assert nonempty.total == 2
+        empty = await svc.list_tables(
+            "source", "DS", page=1, page_size=50, filters=TableFilters(rows="empty")
+        )
+        assert {i.name for i in empty.items} == {"EMPTY_FILE"}
+        assert empty.total == 1
         shown = await svc.list_tables(
-            "source", "DS", page=1, page_size=50, hide_empty=False
+            "source", "DS", page=1, page_size=50, filters=TableFilters(rows="all")
         )
         assert shown.total == 3
         # 業務名隨快照帶回
         by_name = {i.name: i.business_name for i in shown.items}
         assert by_name["AAA_FILE"] == "帳別參數檔"
         assert by_name["EMPTY_FILE"] is None
+
+
+# ── list_tables:synced 狀態篩選(NULL / NOT NULL)──────────────────────
+async def test_list_tables_synced_filter(
+    session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_collect(monkeypatch)
+    await _refresh(session_factory)
+    async with session_factory() as session:
+        # 只把 GAT_FILE 標記為已同步,其餘維持 NULL
+        await RdsTableMetaRepository(session).mark_synced(
+            Dataset.SOURCE, "DS", "GAT_FILE", actor_uid=uuid4()
+        )
+        await session.commit()
+    async with session_factory() as session:
+        svc = SnapshotService(session)
+        synced = await svc.list_tables(
+            "source",
+            "DS",
+            page=1,
+            page_size=50,
+            filters=TableFilters(rows="all", synced="synced"),
+        )
+        assert {i.name for i in synced.items} == {"GAT_FILE"}
+        unsynced = await svc.list_tables(
+            "source",
+            "DS",
+            page=1,
+            page_size=50,
+            filters=TableFilters(rows="all", synced="unsynced"),
+        )
+        assert {i.name for i in unsynced.items} == {"AAA_FILE", "EMPTY_FILE"}
+
+
+# ── list_tables:synced + 截止日(是否在該日前同步)──────────────────────
+async def test_list_tables_synced_before_cutoff(
+    session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_collect(monkeypatch)
+    await _refresh(session_factory)
+    async with session_factory() as session:
+        # GAT_FILE 於 2026-06-01 同步;AAA_FILE / EMPTY_FILE 維持未同步(NULL)
+        await RdsTableMetaRepository(session).mark_synced(
+            Dataset.SOURCE, "DS", "GAT_FILE", actor_uid=uuid4(),
+            when=datetime(2026, 6, 1, 12, 0, 0),
+        )
+        await session.commit()
+    async with session_factory() as session:
+        svc = SnapshotService(session)
+        # 已同步 + 截止日在同步之後 → 含 GAT_FILE
+        after = await svc.list_tables(
+            "source", "DS", page=1, page_size=50,
+            filters=TableFilters(
+                rows="all", synced="synced", synced_before=datetime(2026, 6, 2, 23, 59)
+            ),
+        )
+        assert {i.name for i in after.items} == {"GAT_FILE"}
+        # 已同步 + 截止日在同步之前 → 不含(同步發生在截止日後)
+        before = await svc.list_tables(
+            "source", "DS", page=1, page_size=50,
+            filters=TableFilters(
+                rows="all", synced="synced", synced_before=datetime(2026, 5, 31, 23, 59)
+            ),
+        )
+        assert before.total == 0
+        # 未同步 + 截止日在同步之前 → GAT 到該日仍未同步,連同 NULL 兩張一起
+        unsynced_by = await svc.list_tables(
+            "source", "DS", page=1, page_size=50,
+            filters=TableFilters(
+                rows="all", synced="unsynced", synced_before=datetime(2026, 5, 31, 23, 59)
+            ),
+        )
+        assert {i.name for i in unsynced_by.items} == {"AAA_FILE", "EMPTY_FILE", "GAT_FILE"}
 
 
 # ── list_schemas:聚合表數 ──────────────────────────────────────────────
@@ -234,8 +317,12 @@ async def test_list_tables_cache_hit_skips_repo(
 
     async with session_factory() as session:
         svc = SnapshotService(session)
-        first = await svc.list_tables("source", "DS", page=1, page_size=50, hide_empty=True)
-        second = await svc.list_tables("source", "DS", page=1, page_size=50, hide_empty=True)
+        first = await svc.list_tables(
+            "source", "DS", page=1, page_size=50, filters=TableFilters()
+        )
+        second = await svc.list_tables(
+            "source", "DS", page=1, page_size=50, filters=TableFilters()
+        )
 
     assert calls["n"] == 1  # 第二次命中 cache,不再打 repo
     assert first.total == second.total == 2
@@ -248,10 +335,15 @@ async def test_refresh_invalidates_cache(
     await _refresh(session_factory)
     async with session_factory() as session:
         svc = SnapshotService(session)
-        before = await svc.list_tables("source", "DS", page=1, page_size=50, hide_empty=False)
+        filters = TableFilters(rows="all")
+        before = await svc.list_tables(
+            "source", "DS", page=1, page_size=50, filters=filters
+        )
         assert before.total == 3
     # 第二次 refresh 應失效 cache;此處以 delete_pattern 直接驗鍵已清
-    key = cache.cache_key("datasets", "source", "tables", "DS", 1, 50, 0)
+    key = cache.cache_key(
+        "datasets", "source", "tables", "DS", 1, 50, *filters.cache_fragment()
+    )
     assert await cache.cache_get(key) is not None
     await cache.delete_pattern(cache.cache_key("datasets", "source", "*"))
     assert await cache.cache_get(key) is None

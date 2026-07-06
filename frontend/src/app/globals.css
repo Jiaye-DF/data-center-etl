@@ -146,6 +146,15 @@
   }
 }
 
+/* 可點選物件一律 pointer 游標(停用態維持 not-allowed) */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  a[href] {
+    cursor: pointer;
+  }
+}
+
 /* 設計系統原子類別:卡片 / 按鈕 / 輸入框 / 徽章 / 表格,全頁共用一致圓角風格 */
 @layer components {
   .df-card {

@@ -7,6 +7,7 @@ dataset ∈ {source, target}:
 瀏覽端點改讀 rds_table_meta 快照(不即時打 RDS);快照重建走 POST snapshot/refresh(admin)。
 """
 
+from datetime import date, datetime, time
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -21,11 +22,19 @@ from app.schemas.rawdata import (
     TableListResponse,
 )
 from app.schemas.response import ApiResponse
-from app.services.snapshot_service import SnapshotService
+from app.services.snapshot_service import SnapshotService, TableFilters
 
 router = APIRouter()
 
 Dataset = Literal["source", "target"]
+RowFilter = Literal["all", "nonempty", "empty"]
+SyncedFilter = Literal["all", "synced", "unsynced"]
+TransformedFilter = Literal["all", "transformed", "untransformed"]
+
+
+def _end_of_day(value: date | None) -> datetime | None:
+    """截止日轉當日 23:59:59.999999 上界(含當日)。"""
+    return datetime.combine(value, time.max) if value is not None else None
 
 
 @router.get(
@@ -54,10 +63,23 @@ async def list_tables(
     _user: Annotated[User, Depends(require_login)],
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
-    hide_empty: Annotated[bool, Query()] = True,
+    rows: Annotated[RowFilter, Query()] = "nonempty",
+    synced: Annotated[SyncedFilter, Query()] = "all",
+    transformed: Annotated[TransformedFilter, Query()] = "all",
+    synced_before: Annotated[date | None, Query()] = None,
+    transformed_before: Annotated[date | None, Query()] = None,
+    keyword: Annotated[str, Query(max_length=128)] = "",
 ) -> ApiResponse[TableListResponse]:
+    filters = TableFilters(
+        rows=rows,
+        synced=synced,
+        transformed=transformed,
+        synced_before=_end_of_day(synced_before),
+        transformed_before=_end_of_day(transformed_before),
+        keyword=keyword,
+    )
     data = await SnapshotService(db).list_tables(
-        dataset, schema, page=page, page_size=page_size, hide_empty=hide_empty
+        dataset, schema, page=page, page_size=page_size, filters=filters
     )
     return success(data=data)
 

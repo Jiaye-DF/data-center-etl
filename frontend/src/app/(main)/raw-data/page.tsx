@@ -7,7 +7,7 @@ export default function RawDataPage(): React.ReactNode {
     <DatasetBrowser
       dataset="source"
       title="原始資料管理"
-      description="來源 ERP 原始資料庫(Raw Data):依 schema 瀏覽資料表快照與同步狀態"
+      description="檢視從 ERP 系統同步進來的原始資料,可依資料分類查看每張資料表的筆數與最新同步時間"
     />
   )
 }

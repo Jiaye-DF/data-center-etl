@@ -29,13 +29,30 @@ export interface DatasetTableListData {
   page_size: number
 }
 
-export interface ListTablesParams {
+/** 資料總筆數篩選:全部 / 僅有資料(>0)/ 僅空表(=0) */
+export type RowsFilter = 'all' | 'nonempty' | 'empty'
+/** RDS 同步狀態:全部 / 已同步(有時間)/ 未同步(無時間) */
+export type SyncedFilter = 'all' | 'synced' | 'unsynced'
+/** ETL 轉換狀態:全部 / 已轉換(有時間)/ 未轉換(無時間) */
+export type TransformedFilter = 'all' | 'transformed' | 'untransformed'
+
+/** 進階篩選狀態(狀態分段 + 截止日 YYYY-MM-DD;空字串代表未設)
+ *  截止日搭配狀態 → 「是否在該日前(含)同步/轉換」 */
+export interface TableFilters {
+  rows: RowsFilter
+  synced: SyncedFilter
+  transformed: TransformedFilter
+  syncedBefore: string
+  transformedBefore: string
+  /** 對 table_name 或 business_name 做子字串比對(空字串不套) */
+  keyword: string
+}
+
+export interface ListTablesParams extends TableFilters {
   dataset: Dataset
   schema: string
   page: number
   pageSize: number
-  /** 過濾資料筆數 = 0 的表;預設 true(呼叫端需明確帶入) */
-  hideEmpty: boolean
 }
 
 export const datasetApi = baseApi
@@ -52,13 +69,32 @@ export const datasetApi = baseApi
         ): SchemaSummary[] => unwrap(response).items,
       }),
       listDatasetTables: build.query<DatasetTableListData, ListTablesParams>({
-        query: ({ dataset, schema, page, pageSize, hideEmpty }) => ({
+        query: ({
+          dataset,
+          schema,
+          page,
+          pageSize,
+          rows,
+          synced,
+          transformed,
+          syncedBefore,
+          transformedBefore,
+          keyword,
+        }) => ({
           url: `/datasets/${dataset}/tables`,
           params: {
             schema,
             page,
             page_size: pageSize,
-            hide_empty: hideEmpty,
+            rows,
+            synced,
+            transformed,
+            // 截止日 / 關鍵字僅在有值時帶上,避免送空字串
+            ...(syncedBefore !== '' ? { synced_before: syncedBefore } : {}),
+            ...(transformedBefore !== ''
+              ? { transformed_before: transformedBefore }
+              : {}),
+            ...(keyword !== '' ? { keyword } : {}),
           },
         }),
         providesTags: (_result, _error, { dataset }) => [

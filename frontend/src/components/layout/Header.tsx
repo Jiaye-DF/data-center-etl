@@ -66,7 +66,7 @@ export function Header(): React.ReactNode {
             <BrandIcon />
           </span>
           <span className="font-semibold tracking-tight text-foreground">
-            ETL 管理後台
+            DataHub 管理後台
           </span>
         </Link>
       </div>

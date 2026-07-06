@@ -322,3 +322,54 @@ async def test_sync_all_enqueues(
     detail = (await client.get(f"/api/v1/runs/{run_uid}")).json()["data"]
     assert detail["status"] == "success"
     assert (detail["total_tables"], detail["success_tables"]) == (2, 2)
+
+
+# ── 篩選同步:只鏡像符合條件的表；無符合 → 不觸發 ────────────────────────
+async def test_sync_filtered_enqueues_matching_only(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _login_as(client, session_factory, "admin")
+    await _seed_source_meta(session_factory, "DS", "AAA_FILE")  # row_count=0(空表)
+    actor = uuid4()
+    async with session_factory() as session:
+        session.add(
+            RdsTableMeta(
+                uid=uuid4(),
+                dataset=Dataset.SOURCE,
+                schema_name="DS",
+                table_name="GAT_FILE",
+                column_count=3,
+                row_count=900,
+                snapshot_at=datetime(2026, 7, 3, 2, 0, 0),
+                created_by=actor,
+                updated_by=actor,
+            )
+        )
+        await session.commit()
+    fake = FakeMirror([], written=5)
+    monkeypatch.setattr(tasks, "make_mirror", lambda: fake)
+
+    # rows=nonempty → 只有 GAT_FILE 符合
+    resp = await client.post(
+        "/api/v1/sync/filtered", json={"schema": "DS", "rows": "nonempty"}
+    )
+    assert resp.status_code == 202, resp.text
+    data = resp.json()["data"]
+    assert data["scope"] == "filtered"
+    assert data["matched"] == 1
+    assert fake.mirrored == [("DS", "GAT_FILE")]
+
+    # 關鍵字無符合 → matched=0、task_id 空、mirror 完全不被呼叫(不建空 run)
+    fake_none = FakeMirror([], written=5)
+    monkeypatch.setattr(tasks, "make_mirror", lambda: fake_none)
+    resp0 = await client.post(
+        "/api/v1/sync/filtered",
+        json={"schema": "DS", "keyword": "NO_SUCH_TABLE"},
+    )
+    assert resp0.status_code == 202, resp0.text
+    data0 = resp0.json()["data"]
+    assert data0["matched"] == 0
+    assert data0["task_id"] == ""
+    assert fake_none.mirrored == []
