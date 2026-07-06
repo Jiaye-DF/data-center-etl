@@ -15,8 +15,10 @@ import { useTriggerRunMutation } from '@/lib/api/runApi'
 import { useListEtlTablesQuery } from '@/lib/api/etlConfigApi'
 import { useAuth } from '@/lib/auth/useAuth'
 import { Pagination } from '@/components/common/Pagination'
+import { CronFriendlyPicker } from '@/components/schedules/CronFriendlyPicker'
 import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatDateTime } from '@/utils/datetime'
+import { DEFAULT_CRON_EXPR } from '@/utils/cron'
 
 const PAGE_SIZE = 20
 // 指定表下拉選單來源(page_size 上限 100;超出者顯示 fallback 字樣)
@@ -46,7 +48,7 @@ function ScheduleForm({
   onCancel,
 }: ScheduleFormProps): React.ReactNode {
   const [name, setName] = useState(initial?.name ?? '')
-  const [cronExpr, setCronExpr] = useState(initial?.cron_expr ?? '')
+  const [cronExpr, setCronExpr] = useState(initial?.cron_expr ?? DEFAULT_CRON_EXPR)
   const [etlTableUid, setEtlTableUid] = useState(initial?.etl_table_uid ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [isEnabled, setIsEnabled] = useState(initial?.is_enabled ?? true)
@@ -54,12 +56,6 @@ function ScheduleForm({
   const handleNameChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>): void => {
       setName(event.target.value)
-    },
-    [],
-  )
-  const handleCronChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>): void => {
-      setCronExpr(event.target.value)
     },
     [],
   )
@@ -126,18 +122,10 @@ function ScheduleForm({
             className="df-input"
           />
         </label>
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-          cron 運算式(UTC+8)
-          <input
-            type="text"
-            required
-            maxLength={100}
-            value={cronExpr}
-            onChange={handleCronChange}
-            placeholder="分 時 日 月 週,例:0 2 * * *"
-            className="df-input"
-          />
-        </label>
+        <div className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:col-span-2 md:text-base">
+          執行時間(UTC+8)
+          <CronFriendlyPicker value={cronExpr} onChange={setCronExpr} />
+        </div>
         <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
           執行範圍
           <select

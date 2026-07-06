@@ -1,14 +1,19 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import {
-  useListDatasetColumnsQuery,
   useListDatasetSchemasQuery,
   useListDatasetTablesQuery,
+  useRefreshDatasetSnapshotMutation,
   type Dataset,
   type TableSummary,
 } from '@/lib/api/datasetApi'
+import { useSyncAllMutation, useSyncTableMutation } from '@/lib/api/syncApi'
+import { useAuth } from '@/lib/auth/useAuth'
 import { Pagination } from '@/components/common/Pagination'
+import { extractApiErrorDetail } from '@/utils/apiError'
+import { formatNullableDateTime } from '@/utils/datetime'
+import { getSchemaDescription } from '@/constants/schemaDescriptions'
 
 const PAGE_SIZE = 50
 
@@ -37,6 +42,7 @@ export function DatasetBrowser({
   title,
   description,
 }: DatasetBrowserProps): React.ReactNode {
+  const { isAdmin } = useAuth()
   const {
     data: schemas,
     isLoading: schemasLoading,
@@ -45,19 +51,21 @@ export function DatasetBrowser({
 
   const [activeSchema, setActiveSchema] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [hideEmpty, setHideEmpty] = useState(true)
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const [refreshSnapshot, { isLoading: isRefreshing }] =
+    useRefreshDatasetSnapshotMutation()
+  const [syncAll, { isLoading: isSyncingAll }] = useSyncAllMutation()
 
   const orderedSchemas = useMemo(
     () => orderSchemas((schemas ?? []).map((s) => s.schema)),
     [schemas],
   )
 
-  // schemas 載入後預設選第一個(DS 優先)
-  useEffect(() => {
-    const first = orderedSchemas[0]
-    if (activeSchema === null && first !== undefined) {
-      setActiveSchema(first)
-    }
-  }, [activeSchema, orderedSchemas])
+  // 尚未手動選擇時,以載入後的排序第一個(DS 優先)當預設,不在 effect 內 setState
+  const effectiveSchema = activeSchema ?? orderedSchemas[0] ?? null
 
   const handleSchemaSelect = useCallback((schema: string): void => {
     setActiveSchema(schema)
@@ -68,14 +76,84 @@ export function DatasetBrowser({
     setPage(next)
   }, [])
 
+  const handleHideEmptyToggle = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>): void => {
+      setHideEmpty(!event.target.checked)
+      setPage(1)
+    },
+    [],
+  )
+
+  const handleRefresh = useCallback(async (): Promise<void> => {
+    setActionError(null)
+    setNoticeMessage(null)
+    const result = await refreshSnapshot(dataset)
+    if ('error' in result) {
+      setActionError(
+        extractApiErrorDetail(result.error, '重整快照失敗,請稍後再試'),
+      )
+      return
+    }
+    setNoticeMessage('已重整快照')
+  }, [refreshSnapshot, dataset])
+
+  const handleSyncAll = useCallback(async (): Promise<void> => {
+    setActionError(null)
+    setNoticeMessage(null)
+    const result = await syncAll()
+    if ('error' in result) {
+      setActionError(
+        extractApiErrorDetail(result.error, '全量同步觸發失敗,請稍後再試'),
+      )
+      return
+    }
+    setNoticeMessage('已送出全量同步')
+  }, [syncAll])
+
   return (
     <section className="mx-auto flex max-w-7xl flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-bold text-foreground md:text-2xl">{title}</h1>
-        <p className="mt-1 text-sm text-muted-foreground md:text-base">
-          {description}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-foreground md:text-2xl">{title}</h1>
+          <p className="mt-1 text-sm text-muted-foreground md:text-base">
+            {description}
+          </p>
+        </div>
+        {isAdmin ? (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleSyncAll}
+              disabled={isSyncingAll}
+              className="df-btn-primary-soft"
+            >
+              全量同步
+            </button>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="df-btn-outline"
+            >
+              重整快照
+            </button>
+          </div>
+        ) : null}
       </div>
+
+      {actionError !== null ? (
+        <p
+          role="alert"
+          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
+        >
+          {actionError}
+        </p>
+      ) : null}
+      {noticeMessage !== null ? (
+        <p className="rounded-lg bg-success/15 px-3 py-2 text-sm text-success md:text-base">
+          {noticeMessage}
+        </p>
+      ) : null}
 
       {schemasError ? (
         <p
@@ -101,13 +179,14 @@ export function DatasetBrowser({
             {orderedSchemas.map((schema) => {
               const count =
                 schemas?.find((s) => s.schema === schema)?.table_count ?? 0
-              const active = schema === activeSchema
+              const active = schema === effectiveSchema
               return (
                 <button
                   key={schema}
                   type="button"
                   onClick={() => handleSchemaSelect(schema)}
                   aria-pressed={active}
+                  title={getSchemaDescription(schema)}
                   className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors md:text-base ${
                     active
                       ? 'border-primary bg-primary text-primary-foreground'
@@ -125,11 +204,29 @@ export function DatasetBrowser({
             })}
           </div>
 
-          {activeSchema !== null ? (
+          {effectiveSchema !== null ? (
+            <p className="text-sm text-muted-foreground md:text-base">
+              {getSchemaDescription(effectiveSchema)}
+            </p>
+          ) : null}
+
+          <label className="flex w-fit items-center gap-2 text-sm font-medium text-foreground md:text-base">
+            <input
+              type="checkbox"
+              checked={!hideEmpty}
+              onChange={handleHideEmptyToggle}
+              className="h-5 w-5 accent-[rgb(var(--primary))]"
+            />
+            顯示 0 筆表
+          </label>
+
+          {effectiveSchema !== null ? (
             <SchemaTables
               dataset={dataset}
-              schema={activeSchema}
+              schema={effectiveSchema}
               page={page}
+              hideEmpty={hideEmpty}
+              canSync={isAdmin}
               onPageChange={handlePageChange}
             />
           ) : null}
@@ -143,6 +240,8 @@ interface SchemaTablesProps {
   dataset: Dataset
   schema: string
   page: number
+  hideEmpty: boolean
+  canSync: boolean
   onPageChange: (page: number) => void
 }
 
@@ -150,6 +249,8 @@ function SchemaTables({
   dataset,
   schema,
   page,
+  hideEmpty,
+  canSync,
   onPageChange,
 }: SchemaTablesProps): React.ReactNode {
   const { data, isLoading, isError, isFetching } = useListDatasetTablesQuery({
@@ -157,12 +258,30 @@ function SchemaTables({
     schema,
     page,
     pageSize: PAGE_SIZE,
+    hideEmpty,
   })
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [syncTable] = useSyncTableMutation()
+  const [busyTable, setBusyTable] = useState<string | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [syncNotice, setSyncNotice] = useState<string | null>(null)
 
-  const handleToggle = useCallback((name: string): void => {
-    setExpanded((prev) => (prev === name ? null : name))
-  }, [])
+  const handleSync = useCallback(
+    async (table: string): Promise<void> => {
+      setSyncError(null)
+      setSyncNotice(null)
+      setBusyTable(table)
+      const result = await syncTable({ schema, table })
+      if ('error' in result) {
+        setSyncError(
+          extractApiErrorDetail(result.error, `同步 ${table} 失敗,請稍後再試`),
+        )
+      } else {
+        setSyncNotice(`已送出 ${schema}.${table} 同步`)
+      }
+      setBusyTable(null)
+    },
+    [syncTable, schema],
+  )
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground md:text-base">載入中…</p>
@@ -180,34 +299,51 @@ function SchemaTables({
 
   return (
     <div className="flex flex-col gap-3">
+      {syncError !== null ? (
+        <p
+          role="alert"
+          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
+        >
+          {syncError}
+        </p>
+      ) : null}
+      {syncNotice !== null ? (
+        <p className="rounded-lg bg-success/15 px-3 py-2 text-sm text-success md:text-base">
+          {syncNotice}
+        </p>
+      ) : null}
       <div
         className={`df-card overflow-x-auto transition-opacity ${isFetching ? 'opacity-60' : ''}`}
       >
-        <table className="df-table min-w-[640px]">
+        <table className="df-table min-w-[880px]">
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="df-th">資料表</th>
+              <th className="df-th">業務資料名稱</th>
               <th className="df-th">欄位數</th>
               <th className="df-th">資料筆數</th>
-              <th className="df-th">欄位結構</th>
+              <th className="df-th">RDS 同步時間</th>
+              <th className="df-th">ETL 轉換時間</th>
+              {canSync ? <th className="df-th">操作</th> : null}
             </tr>
           </thead>
           <tbody>
             {data.items.map((table) => (
               <TableRow
                 key={table.name}
-                dataset={dataset}
-                schema={schema}
                 table={table}
-                expanded={expanded === table.name}
-                onToggle={handleToggle}
+                canSync={canSync}
+                busy={busyTable === table.name}
+                onSync={handleSync}
               />
             ))}
           </tbody>
         </table>
         {data.items.length === 0 ? (
           <p className="px-3 py-8 text-center text-sm text-muted-foreground md:text-base">
-            此 schema 尚無資料表
+            {hideEmpty
+              ? '此 schema 尚無資料表(或皆為 0 筆已隱藏,可切換「顯示 0 筆表」)'
+              : '此 schema 尚無資料表'}
           </p>
         ) : null}
       </div>
@@ -222,100 +358,52 @@ function SchemaTables({
 }
 
 interface TableRowProps {
-  dataset: Dataset
-  schema: string
   table: TableSummary
-  expanded: boolean
-  onToggle: (name: string) => void
+  canSync: boolean
+  busy: boolean
+  onSync: (table: string) => void
 }
 
 const TableRow = memo(function TableRow({
-  dataset,
-  schema,
   table,
-  expanded,
-  onToggle,
+  canSync,
+  busy,
+  onSync,
 }: TableRowProps): React.ReactNode {
-  const handleToggle = useCallback((): void => {
-    onToggle(table.name)
-  }, [onToggle, table.name])
+  const handleSync = useCallback((): void => {
+    onSync(table.name)
+  }, [onSync, table.name])
 
   return (
-    <>
-      <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/50">
-        <td className="px-3 py-3 font-mono text-sm font-medium text-foreground md:text-base">
-          {table.name}
-        </td>
-        <td className="df-td text-muted-foreground">{table.column_count}</td>
-        <td className="df-td text-muted-foreground">
-          {formatRowCount(table.row_count)}
-        </td>
+    <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/50">
+      <td className="px-3 py-3 font-mono text-sm font-medium text-foreground md:text-base">
+        {table.name}
+      </td>
+      <td className="df-td text-muted-foreground">
+        {table.business_name ?? '—'}
+      </td>
+      <td className="df-td text-muted-foreground">{table.column_count}</td>
+      <td className="df-td text-muted-foreground">
+        {formatRowCount(table.row_count)}
+      </td>
+      <td className="df-td text-muted-foreground">
+        {formatNullableDateTime(table.last_synced_at)}
+      </td>
+      <td className="df-td text-muted-foreground">
+        {formatNullableDateTime(table.last_transformed_at)}
+      </td>
+      {canSync ? (
         <td className="px-3 py-3">
           <button
             type="button"
-            onClick={handleToggle}
-            aria-expanded={expanded}
-            className="df-btn-outline min-h-[36px] px-3"
+            onClick={handleSync}
+            disabled={busy}
+            className="df-btn-primary-soft min-h-[36px] px-3"
           >
-            {expanded ? '收合' : '查看欄位'}
+            同步
           </button>
         </td>
-      </tr>
-      {expanded ? (
-        <tr className="border-b border-border bg-muted/30 last:border-b-0">
-          <td colSpan={4} className="px-3 py-3">
-            <ColumnsPanel dataset={dataset} schema={schema} table={table.name} />
-          </td>
-        </tr>
       ) : null}
-    </>
+    </tr>
   )
 })
-
-interface ColumnsPanelProps {
-  dataset: Dataset
-  schema: string
-  table: string
-}
-
-function ColumnsPanel({
-  dataset,
-  schema,
-  table,
-}: ColumnsPanelProps): React.ReactNode {
-  const { data, isLoading, isError } = useListDatasetColumnsQuery({
-    dataset,
-    schema,
-    table,
-  })
-
-  if (isLoading) {
-    return <p className="text-sm text-muted-foreground md:text-base">載入欄位…</p>
-  }
-  if (isError || data === undefined) {
-    return (
-      <p className="text-sm text-danger md:text-base">載入欄位結構失敗</p>
-    )
-  }
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {data.map((col) => (
-        <span
-          key={col.name}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1 text-sm md:text-base"
-        >
-          <span className="font-mono font-medium text-foreground">
-            {col.name}
-          </span>
-          <span className="text-muted-foreground">{col.data_type}</span>
-          {col.nullable ? null : (
-            <span className="rounded bg-warning/15 px-1.5 text-sm text-warning">
-              NOT NULL
-            </span>
-          )}
-        </span>
-      ))}
-    </div>
-  )
-}

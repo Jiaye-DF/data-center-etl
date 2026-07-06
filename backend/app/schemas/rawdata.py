@@ -1,6 +1,8 @@
-"""原始資料管理 / ETL 資料管理 瀏覽頁的回應 schema(RDS 結構內省)。"""
+"""原始資料管理 / ETL 資料管理 瀏覽頁的回應 schema(讀 rds_table_meta 快照)。"""
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -18,9 +20,18 @@ class SchemaListResponse(BaseModel):
 
 class TableSummary(BaseModel):
     name: str = Field(description="表名")
+    business_name: str | None = Field(
+        default=None, description="業務資料名稱(中文,快照時 JOIN GAT_FILE 落地;缺對應為 null)"
+    )
     column_count: int = Field(description="欄位數")
     row_count: int = Field(
         description="bounded row 數(SELECT 1 ... LIMIT 1001 探測);> 1000 代表超過上限"
+    )
+    last_synced_at: datetime | None = Field(
+        default=None, description="最近從 RDS 同步到 hub 的時間(UTC+8;未同步為 null)"
+    )
+    last_transformed_at: datetime | None = Field(
+        default=None, description="最近套字典 COMMENT 的時間(UTC+8;未轉換為 null)"
     )
 
 
@@ -31,12 +42,7 @@ class TableListResponse(BaseModel):
     page_size: int = Field(description="每頁筆數")
 
 
-class ColumnInfo(BaseModel):
-    name: str = Field(description="欄位名")
-    data_type: str = Field(description="PostgreSQL 型別")
-    nullable: bool = Field(description="是否可為 NULL")
-    ordinal_position: int = Field(description="欄位順序")
-
-
-class ColumnListResponse(BaseModel):
-    columns: list[ColumnInfo] = Field(description="欄位清單")
+class SnapshotRefreshResponse(BaseModel):
+    dataset: str = Field(description="重新快照的資料集(source / target)")
+    table_count: int = Field(description="本次快照落地的表數")
+    snapshot_at: datetime = Field(description="快照擷取時間(UTC+8)")

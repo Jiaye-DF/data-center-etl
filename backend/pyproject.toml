@@ -18,6 +18,8 @@ dependencies = [
     # v1.1.0 新依賴一次性鎖版(task-001;後續 task 不再動本檔)
     "taskiq==0.12.4",
     "taskiq-redis==1.2.3",
+    # v1.2.0 新增:metadata 快照/同步狀態直用 redis async client(task-001)
+    "redis==8.0.1",
     "pyyaml==6.0.3",
     # 收口補依賴:本機 Windows 無系統 IANA tz 資料庫,ZoneInfo 需 tzdata(fixed.md §6)
     "tzdata==2026.2",

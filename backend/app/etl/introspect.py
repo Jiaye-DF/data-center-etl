@@ -155,3 +155,60 @@ async def list_columns(dataset: str, schema: str, table: str) -> list[dict[str, 
             await conn.execute(_COLUMNS_SQL, {"schema": schema, "table": table})
         ).mappings().all()
     return [dict(r) for r in rows]
+
+
+# snapshot 用:一次列全 schema 全 base table + 欄位數(供 rds_table_meta 快照落地)
+_ALL_TABLES_SQL = text(
+    """
+    SELECT t.table_schema AS schema,
+           t.table_name AS name,
+           (SELECT count(*) FROM information_schema.columns c
+             WHERE c.table_schema = t.table_schema AND c.table_name = t.table_name)
+             AS column_count
+    FROM information_schema.tables t
+    WHERE t.table_type = 'BASE TABLE'
+      AND t.table_schema NOT IN ('pg_catalog', 'information_schema')
+    ORDER BY t.table_schema, t.table_name
+    """
+)
+
+# bounded row 探測單批表數上限(表數多時避免單條 UNION ALL 過長)
+_ROW_PROBE_CHUNK = 50
+
+
+def get_engine(dataset: str) -> AsyncEngine:
+    """取得 dataset 的 RDS engine(快照服務重用連線池;對外公開包裝,語意同 `_get_engine`)。"""
+    return _get_engine(dataset)
+
+
+async def snapshot_tables(conn: AsyncConnection) -> list[dict[str, int | str]]:
+    """一次列全 schema 全 base table + 欄位數 + bounded row 數(供 metadata 快照)。
+
+    row 數沿用 `_bounded_row_counts` 的 `SELECT 1 ... LIMIT` 探測(禁 COUNT(*));
+    表數多時分批探測,避免單條 UNION ALL 過長。連線由呼叫端提供(供 refresh 於同連線續查字典)。
+    """
+    rows = (await conn.execute(_ALL_TABLES_SQL)).mappings().all()
+    names_by_schema: dict[str, list[str]] = {}
+    column_counts: dict[tuple[str, str], int] = {}
+    for r in rows:
+        schema = str(r["schema"])
+        name = str(r["name"])
+        names_by_schema.setdefault(schema, []).append(name)
+        column_counts[(schema, name)] = int(r["column_count"])
+
+    result: list[dict[str, int | str]] = []
+    for schema, names in names_by_schema.items():
+        row_counts: dict[str, int] = {}
+        for start in range(0, len(names), _ROW_PROBE_CHUNK):
+            chunk = names[start : start + _ROW_PROBE_CHUNK]
+            row_counts.update(await _bounded_row_counts(conn, schema, chunk))
+        for name in names:
+            result.append(
+                {
+                    "schema": schema,
+                    "name": name,
+                    "column_count": column_counts[(schema, name)],
+                    "row_count": row_counts.get(name, 0),
+                }
+            )
+    return result
