@@ -33,7 +33,7 @@ from app.utils.datetime import now_tw
 logger = logging.getLogger(__name__)
 
 # 錯誤訊息 / stack trace 落 DB 前須遮罩的機密 env(02-secrets.md § Log / error 過濾)
-_SECRET_ENV_KEYS = ("SOURCE_DB_PASSWORD", "TARGET_DB_PASSWORD")
+_SECRET_ENV_KEYS = ("AWS_RDS_PASSWORD",)
 
 
 def mask_secrets(message: str) -> str:

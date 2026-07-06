@@ -17,7 +17,7 @@ from typing import Any  # noqa: E402
 import pytest  # noqa: E402
 
 from app.etl.engine import EtlTableConfig, run_etl  # noqa: E402
-from app.etl.reader import database_url_from_env  # noqa: E402
+from app.etl.reader import rds_database_url  # noqa: E402
 from app.etl.transforms import ColumnMapping  # noqa: E402
 from app.etl.writer import column_sql_type  # noqa: E402
 
@@ -430,7 +430,7 @@ async def test_db_password_is_masked_in_error_detail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     secret = "s3cret-pw-value"
-    monkeypatch.setenv("SOURCE_DB_PASSWORD", secret)
+    monkeypatch.setenv("AWS_RDS_PASSWORD", secret)
     reader = FakeReader(
         {}, fail_tables={("DS", "GAT_FILE")}, fail_message=f"auth failed {secret} at"
     )
@@ -449,22 +449,26 @@ async def test_db_password_is_masked_in_error_detail(
 # ---------------------------------------------------------------------------
 
 
-def test_database_url_from_env_fail_fast(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key in ("HOST", "PORT", "NAME", "USER", "PASSWORD"):
-        monkeypatch.delenv(f"SOURCE_DB_{key}", raising=False)
-    with pytest.raises(RuntimeError, match="SOURCE_DB_HOST"):
-        database_url_from_env("SOURCE_DB")
+def test_rds_database_url_fail_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in ("HOST", "PORT", "USER", "PASSWORD", "SOURCE_DB"):
+        monkeypatch.delenv(f"AWS_RDS_{key}", raising=False)
+    with pytest.raises(RuntimeError, match="AWS_RDS_HOST"):
+        rds_database_url("AWS_RDS_SOURCE_DB")
 
 
-def test_database_url_from_env_builds_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SOURCE_DB_HOST", "db.local")
-    monkeypatch.setenv("SOURCE_DB_PORT", "5433")
-    monkeypatch.setenv("SOURCE_DB_NAME", "erp_migration_test")
-    monkeypatch.setenv("SOURCE_DB_USER", "etl_user")
-    monkeypatch.setenv("SOURCE_DB_PASSWORD", "p@ss w")
-    url = database_url_from_env("SOURCE_DB")
+def test_rds_database_url_builds_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AWS_RDS_HOST", "db.local")
+    monkeypatch.setenv("AWS_RDS_PORT", "5433")
+    monkeypatch.setenv("AWS_RDS_USER", "etl_user")
+    monkeypatch.setenv("AWS_RDS_PASSWORD", "p@ss w")
+    # 來源/目標共用連線組,僅 database env 不同
+    monkeypatch.setenv("AWS_RDS_SOURCE_DB", "erp_migration_test")
+    monkeypatch.setenv("AWS_RDS_TARGET_DB", "erp_etl_hub_test")
+    url = rds_database_url("AWS_RDS_SOURCE_DB")
     # 帳密 URL-encode 後進 URL;host / port / db 名正確
     assert url == "postgresql+asyncpg://etl_user:p%40ss+w@db.local:5433/erp_migration_test"
+    target_url = rds_database_url("AWS_RDS_TARGET_DB")
+    assert target_url.endswith("/erp_etl_hub_test")
 
 
 def test_column_sql_type_mapping() -> None:

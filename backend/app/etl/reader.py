@@ -1,7 +1,10 @@
-"""來源端讀取:從 `erp_migration_test` 以 SQLAlchemy async(asyncpg)整表讀出。
+"""來源端讀取:從 AWS RDS 來源 database 以 SQLAlchemy async(asyncpg)整表讀出。
 
-- 連線一律由 env 注入(`SOURCE_DB_*`),缺值 fail-fast;禁硬編、禁 log 帳密
+- 連線一律由 env 注入,缺值 fail-fast;禁硬編、禁 log 帳密
   (`docs/Design-Base/00-overview/02-secrets.md`)。
+- ETL 來源/目標同一 RDS 實例(`AWS_RDS_HOST/PORT/USER/PASSWORD` 共用),
+  僅 database 不同(`AWS_RDS_SOURCE_DB` / `AWS_RDS_TARGET_DB`);
+  與本專案自有 PostgreSQL(`POSTGRES_*` / `DATABASE_URL`)明確分離。
 - SELECT 的 schema / table / column 識別字走白名單 + 引號跳脫(`04-sql-safety.md`)。
 """
 
@@ -17,8 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.etl.comments import quote_ident
 
-# 來源 DB(erp_migration_test)env 變數前綴
-SOURCE_ENV_PREFIX = "SOURCE_DB"
+# ETL 來源 database 名稱的 env key(ERP 鏡像庫,如 erp_migration_test)
+RDS_SOURCE_DB_ENV = "AWS_RDS_SOURCE_DB"
 
 
 def require_env(key: str) -> str:
@@ -29,16 +32,16 @@ def require_env(key: str) -> str:
     return value
 
 
-def database_url_from_env(prefix: str) -> str:
-    """由 `<PREFIX>_HOST/PORT/NAME/USER/PASSWORD` 組 asyncpg 連線 URL。
+def rds_database_url(db_env_key: str) -> str:
+    """由共用 `AWS_RDS_HOST/PORT/USER/PASSWORD` + 指定 database env 組 asyncpg 連線 URL。
 
     帳密僅進入回傳值供建立連線;呼叫端禁 log 完整 URL。
     """
-    host = require_env(f"{prefix}_HOST")
-    port = os.environ.get(f"{prefix}_PORT", "5432")
-    name = require_env(f"{prefix}_NAME")
-    user = require_env(f"{prefix}_USER")
-    password = require_env(f"{prefix}_PASSWORD")
+    host = require_env("AWS_RDS_HOST")
+    port = os.environ.get("AWS_RDS_PORT", "5432")
+    user = require_env("AWS_RDS_USER")
+    password = require_env("AWS_RDS_PASSWORD")
+    name = require_env(db_env_key)
     return (
         f"postgresql+asyncpg://{quote_plus(user)}:{quote_plus(password)}"
         f"@{host}:{port}/{quote_plus(name)}"
@@ -53,7 +56,7 @@ class PostgresSourceReader:
 
     def _get_engine(self) -> AsyncEngine:
         if self._engine is None:
-            self._engine = create_async_engine(database_url_from_env(SOURCE_ENV_PREFIX))
+            self._engine = create_async_engine(rds_database_url(RDS_SOURCE_DB_ENV))
         return self._engine
 
     async def fetch_rows(

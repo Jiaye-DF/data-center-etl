@@ -108,12 +108,12 @@ def make_store(session: AsyncSession) -> RunStore:
 
 
 def make_reader() -> SourceReader:
-    """建立來源讀取器(SOURCE_DB_* env,lazy 連線)。"""
+    """建立來源讀取器(AWS_RDS_* + AWS_RDS_SOURCE_DB env,lazy 連線)。"""
     return PostgresSourceReader()
 
 
 def make_writer() -> TargetWriter:
-    """建立目標寫入器(TARGET_DB_* env,lazy 連線)。"""
+    """建立目標寫入器(AWS_RDS_* + AWS_RDS_TARGET_DB env,lazy 連線)。"""
     return PostgresTargetWriter()
 
 

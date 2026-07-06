@@ -1,9 +1,11 @@
-"""目標端寫入:把轉換後資料落地到 `erp_etl_hub_test`,並逐條套 COMMENT ON COLUMN。
+"""目標端寫入:把轉換後資料落地到 AWS RDS 目標 database,並逐條套 COMMENT ON COLUMN。
 
 - 寫入策略禁 DROP:表已存在 → TRUNCATE + INSERT(保留結構與既有 Comment);
   不存在 → CREATE TABLE(欄位型別由 mapping 的 transform_type 決定)。
-- 連線一律由 env 注入(`TARGET_DB_*`),缺值 fail-fast;禁硬編、禁 log 帳密
+- 連線一律由 env 注入,缺值 fail-fast;禁硬編、禁 log 帳密
   (`docs/Design-Base/00-overview/02-secrets.md`)。
+- 連線組(host/port/user/password)與來源共用 `AWS_RDS_*`,
+  僅 database 由 `AWS_RDS_TARGET_DB` 指定(見 reader.py)。
 - DDL 識別字走白名單引號化;INSERT 值走 bind params(`04-sql-safety.md`)。
 """
 
@@ -16,10 +18,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.etl.comments import quote_ident
-from app.etl.reader import database_url_from_env
+from app.etl.reader import rds_database_url
 
-# 目標 DB(erp_etl_hub_test)env 變數前綴
-TARGET_ENV_PREFIX = "TARGET_DB"
+# ETL 目標 database 名稱的 env key(資料中心庫,如 erp_etl_hub_test)
+RDS_TARGET_DB_ENV = "AWS_RDS_TARGET_DB"
 
 # transform_type → PostgreSQL 欄位型別;NULL / 未知型別以 TEXT 落地
 _TYPE_MAP: dict[str, str] = {
@@ -45,7 +47,7 @@ class PostgresTargetWriter:
 
     def _get_engine(self) -> AsyncEngine:
         if self._engine is None:
-            self._engine = create_async_engine(database_url_from_env(TARGET_ENV_PREFIX))
+            self._engine = create_async_engine(rds_database_url(RDS_TARGET_DB_ENV))
         return self._engine
 
     async def write_table(
