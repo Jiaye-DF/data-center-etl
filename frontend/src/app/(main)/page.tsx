@@ -173,7 +173,7 @@ function SyncHealthPanel({
   )
 }
 
-/** 待處理失敗表 */
+/** ETL 同步失敗資料表 */
 function PendingFailuresPanel({
   runUid,
   items,
@@ -183,7 +183,7 @@ function PendingFailuresPanel({
 }): React.ReactNode {
   return (
     <Panel
-      title="待處理失敗表"
+      title="ETL 同步失敗資料表"
       action={
         runUid !== null ? (
           <Link
@@ -197,7 +197,7 @@ function PendingFailuresPanel({
     >
       {items.length === 0 ? (
         <p className="rounded-lg bg-success/15 px-3 py-2 text-sm text-success md:text-base">
-          目前無待處理失敗
+          目前無同步失敗
         </p>
       ) : (
         <ul className="flex flex-col divide-y divide-border">
