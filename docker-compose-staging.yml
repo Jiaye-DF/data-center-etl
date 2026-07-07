@@ -201,6 +201,23 @@ services:
       timeout: 3s
       retries: 10
 
+  adminer:
+    # 輕量 DB 管理 UI(Docker-Compose-Spec-v1.4 § Adminer);鎖版禁 latest
+    # ⚠️ 登入密碼=DB 密碼,SERVICE_URL 勿外流;正式環境須加 Basic Auth / IP 白名單或平時停用
+    image: adminer:4.8.1-standalone
+    restart: unless-stopped
+    environment:
+      SERVICE_URL_ADMINER_8080:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DEFAULT_DB_DRIVER: pgsql
+      ADMINER_DESIGN: pepa-linha
+      TZ: Asia/Taipei
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
     name: ${COMPOSE_PROJECT_NAME}-postgres-data
