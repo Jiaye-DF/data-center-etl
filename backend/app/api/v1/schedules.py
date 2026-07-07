@@ -107,7 +107,7 @@ async def disable_schedule(
 @router.post(
     "/batch-enabled",
     response_model=ApiResponse[ScheduleBatchEnabledResponse],
-    summary="批次啟停(指定 schema 或全部來源表排程)",
+    summary="批次啟停(全部來源表排程,或僅作用於符合篩選者)",
 )
 async def batch_set_enabled(
     payload: ScheduleBatchEnabledRequest,
@@ -115,6 +115,11 @@ async def batch_set_enabled(
     user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[ScheduleBatchEnabledResponse]:
     data = await ScheduleService(db).batch_set_enabled(
-        schema=payload.schema_name, enabled=payload.enabled, actor_uid=user.uid
+        schema=payload.schema_name,
+        enabled=payload.enabled,
+        actor_uid=user.uid,
+        filter_enabled=payload.filter_enabled,
+        filter_last_result=payload.filter_last_result,
+        filter_keyword=payload.filter_keyword,
     )
     return success(data=data)

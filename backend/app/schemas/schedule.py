@@ -79,6 +79,18 @@ class ScheduleBatchEnabledRequest(BaseModel):
         alias="schema",
         description="限定 schema(省略為全部 schema 的來源表排程)",
     )
+    filter_enabled: str = Field(
+        default="all",
+        description="僅作用於啟用狀態符合者:all / enabled / disabled(對齊逐表列表篩選)",
+    )
+    filter_last_result: str = Field(
+        default="all",
+        description="僅作用於上次結果符合者:all / success / failed / never",
+    )
+    filter_keyword: str = Field(
+        default="",
+        description="僅作用於表名 / 業務名符合關鍵字者(空字串不套)",
+    )
 
 
 class ScheduleBatchEnabledResponse(BaseModel):

@@ -147,14 +147,32 @@ class ScheduleService:
         return await self._to_response_single(schedule)
 
     async def batch_set_enabled(
-        self, *, schema: str | None, enabled: bool, actor_uid: UUID
+        self,
+        *,
+        schema: str | None,
+        enabled: bool,
+        actor_uid: UUID,
+        filter_enabled: str = "all",
+        filter_last_result: str = "all",
+        filter_keyword: str = "",
     ) -> ScheduleBatchEnabledResponse:
-        """對(指定 schema 或全部)來源表排程批次啟停,回實際變更筆數。"""
+        """對「符合篩選(schema + 啟用狀態 + 上次結果 + 關鍵字)」的來源表排程批次啟停。
+
+        篩選皆為 all / 空 時等同「全部來源表排程」;帶篩選時僅作用於逐表列表命中的表。
+        """
         affected = await self._repo.batch_set_enabled(
             schema=schema,
             enabled=enabled,
             only_source_tables=True,
             actor_uid=actor_uid,
+            filter_enabled=filter_enabled,
+            filter_last_result=filter_last_result,
+            filter_keyword=filter_keyword,
+        )
+        has_filter = (
+            filter_enabled != "all"
+            or filter_last_result != "all"
+            or filter_keyword.strip() != ""
         )
         await self._audit.log(
             action="schedule_batch_enable" if enabled else "schedule_batch_disable",
@@ -162,7 +180,8 @@ class ScheduleService:
             target_type="schedule",
             detail=(
                 f"批次{'啟用' if enabled else '停用'}排程"
-                f"(schema={schema or '全部'},影響 {affected} 筆)"
+                f"(schema={schema or '全部'}"
+                f"{',符合篩選' if has_filter else ''},影響 {affected} 筆)"
             ),
         )
         return ScheduleBatchEnabledResponse(affected=affected)

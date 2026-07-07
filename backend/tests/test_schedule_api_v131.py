@@ -555,3 +555,41 @@ async def test_batch_enabled_affected_count(
         "/api/v1/schedules/batch-enabled", json={"enabled": True}
     )
     assert resp.json()["data"]["affected"] == 2
+
+
+async def test_batch_enabled_respects_filters(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """僅啟停符合篩選(schema + 關鍵字)者;不命中的表不受影響。"""
+    await _login_as(client, session_factory, "admin")
+    await _snapshot(session_factory, schema="DS", table="orders", business_name="訂單")
+    await _snapshot(session_factory, schema="DS", table="items", business_name="品項")
+    await _bind_schedule(session_factory, schema="DS", table="orders", is_enabled=False)
+    await _bind_schedule(session_factory, schema="DS", table="items", is_enabled=False)
+
+    # 關鍵字「訂單」僅命中 orders → 啟用 1 筆
+    resp = await client.post(
+        "/api/v1/schedules/batch-enabled",
+        json={"enabled": True, "schema": "DS", "filter_keyword": "訂單"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["affected"] == 1
+
+    # 篩選 filter_enabled=disabled + 表名關鍵字「items」→ 啟用剩下的 items = 1
+    resp = await client.post(
+        "/api/v1/schedules/batch-enabled",
+        json={
+            "enabled": True,
+            "schema": "DS",
+            "filter_enabled": "disabled",
+            "filter_keyword": "items",
+        },
+    )
+    assert resp.json()["data"]["affected"] == 1
+
+    # 兩張皆已啟用,再帶篩選啟用 → 0
+    resp = await client.post(
+        "/api/v1/schedules/batch-enabled",
+        json={"enabled": True, "schema": "DS", "filter_keyword": "訂單"},
+    )
+    assert resp.json()["data"]["affected"] == 0

@@ -1,6 +1,7 @@
 'use client'
 
 import { memo, useCallback, useId, useMemo, useState } from 'react'
+import { skipToken } from '@reduxjs/toolkit/query'
 import {
   useBatchSetEnabledMutation,
   useGetScheduleSchemasQuery,
@@ -9,12 +10,17 @@ import {
   useUpdateScheduleMutation,
   type EnabledFilter,
   type LastResultFilter,
+  type ScheduleBatchEnabledPayload,
   type ScheduleTableView,
 } from '@/lib/api/scheduleApi'
 import { useAuth } from '@/lib/auth/useAuth'
 import { Pagination } from '@/components/common/Pagination'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import {
+  TableSearchCombobox,
+  type SuggestItem,
+} from '@/components/common/TableSearchCombobox'
 import {
   ScheduleFormDialog,
   type ScheduleEditInitial,
@@ -186,18 +192,20 @@ function CollapsibleSection({
 /** 進階篩選內容:啟用狀態 / 上次結果 / 關鍵字 + 清除 */
 function AdvancedFilters({
   filters,
+  suggestions,
   onChange,
   onReset,
   activeCount,
 }: {
   filters: ScheduleFilters
+  suggestions: readonly SuggestItem[]
   onChange: (patch: Partial<ScheduleFilters>) => void
   onReset: () => void
   activeCount: number
 }): React.ReactNode {
-  const handleKeywordChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>): void => {
-      onChange({ keyword: event.target.value })
+  const handleKeywordCommit = useCallback(
+    (keyword: string): void => {
+      onChange({ keyword })
     },
     [onChange],
   )
@@ -208,13 +216,10 @@ function AdvancedFilters({
         <span className="w-24 shrink-0 text-sm font-medium text-foreground md:text-base">
           資料表搜尋
         </span>
-        <input
-          type="search"
+        <TableSearchCombobox
           value={filters.keyword}
-          onChange={handleKeywordChange}
-          placeholder="輸入業務名稱或資料表名稱搜尋"
-          aria-label="業務名稱 / 資料表名稱搜尋"
-          className="df-input w-full sm:w-96"
+          suggestions={suggestions}
+          onCommit={handleKeywordCommit}
         />
       </div>
 
@@ -284,7 +289,7 @@ const ScheduleRow = memo(function ScheduleRow({
         {row.table_name}
       </td>
       <td className="df-td text-muted-foreground">{row.business_name ?? '—'}</td>
-      <td className="px-3 py-3">
+      <td className="whitespace-nowrap px-3 py-3">
         {!hasSchedule ? (
           <span className="text-muted-foreground">—</span>
         ) : canEdit ? (
@@ -293,7 +298,7 @@ const ScheduleRow = memo(function ScheduleRow({
             onClick={handleToggle}
             disabled={busy}
             aria-pressed={row.is_enabled === true}
-            className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+            className={`inline-flex whitespace-nowrap rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
               row.is_enabled === true
                 ? 'border-success bg-success/15 text-success hover:bg-success/25'
                 : 'border-border bg-muted text-muted-foreground hover:bg-muted/70'
@@ -303,7 +308,7 @@ const ScheduleRow = memo(function ScheduleRow({
           </button>
         ) : (
           <span
-            className={`df-badge ${
+            className={`df-badge whitespace-nowrap ${
               row.is_enabled === true
                 ? 'bg-success/15 text-success'
                 : 'bg-muted text-muted-foreground'
@@ -313,20 +318,11 @@ const ScheduleRow = memo(function ScheduleRow({
           </span>
         )}
       </td>
-      <td className="px-3 py-3">
+      <td className="df-td text-foreground">
         {row.cron_expr === null ? (
           <span className="text-muted-foreground">—</span>
-        ) : canEdit ? (
-          <button
-            type="button"
-            onClick={handleEdit}
-            disabled={busy}
-            className="df-btn-info-soft min-h-[36px] px-3"
-          >
-            {describeCron(row.cron_expr)}
-          </button>
         ) : (
-          <span className="text-foreground">{describeCron(row.cron_expr)}</span>
+          describeCron(row.cron_expr)
         )}
       </td>
       <td className="df-td text-muted-foreground">
@@ -338,6 +334,18 @@ const ScheduleRow = memo(function ScheduleRow({
       <td className="df-td text-muted-foreground">
         {formatNextRun(row.cron_expr, row.is_enabled)}
       </td>
+      {canEdit ? (
+        <td className="px-3 py-3">
+          <button
+            type="button"
+            onClick={handleEdit}
+            disabled={busy || !hasSchedule}
+            className="df-btn-info-soft min-h-[36px] px-3"
+          >
+            編輯
+          </button>
+        </td>
+      ) : null}
     </tr>
   )
 })
@@ -403,6 +411,7 @@ function SchemaTables({
               <th className="df-th">上次同步</th>
               <th className="df-th">上次結果</th>
               <th className="df-th">下次執行</th>
+              {canEdit ? <th className="df-th">操作</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -436,8 +445,8 @@ function SchemaTables({
   )
 }
 
-/** 批次啟停確認的目標(scope=all → 全部 schema;scope=schema → 當前 schema) */
-type BatchTarget = { enabled: boolean; scope: 'all' | 'schema' }
+/** 批次啟停確認的目標(scope=all → 全部 schema;scope=filtered → 當前 schema 且符合進階篩選) */
+type BatchTarget = { enabled: boolean; scope: 'all' | 'filtered' }
 
 export function ScheduleTableBrowser(): React.ReactNode {
   const { isAdmin } = useAuth()
@@ -467,6 +476,30 @@ export function ScheduleTableBrowser(): React.ReactNode {
     [schemas],
   )
   const effectiveSchema = activeSchema ?? orderedSchemas[0] ?? null
+
+  // combobox 建議:取當前 schema(不含關鍵字)的表名 / 業務名
+  const { data: suggestData } = useListScheduleTablesQuery(
+    effectiveSchema !== null
+      ? {
+          schema: effectiveSchema,
+          page: 1,
+          pageSize: PAGE_SIZE,
+          enabled: filters.enabled,
+          lastResult: filters.lastResult,
+          keyword: '',
+        }
+      : skipToken,
+  )
+  const nameSuggestions = useMemo((): SuggestItem[] => {
+    const seen = new Set<string>()
+    const out: SuggestItem[] = []
+    for (const item of suggestData?.items ?? []) {
+      if (seen.has(item.table_name)) continue
+      seen.add(item.table_name)
+      out.push({ name: item.table_name, business_name: item.business_name })
+    }
+    return out
+  }, [suggestData])
 
   const activeSummary = useMemo(
     () => schemas?.find((s) => s.schema_name === effectiveSchema) ?? null,
@@ -573,9 +606,15 @@ export function ScheduleTableBrowser(): React.ReactNode {
     if (batchTarget === null) return
     setActionError(null)
     setNoticeMessage(null)
-    const scoped =
-      batchTarget.scope === 'schema' && effectiveSchema !== null
-        ? { enabled: batchTarget.enabled, schema: effectiveSchema }
+    const scoped: ScheduleBatchEnabledPayload =
+      batchTarget.scope === 'filtered' && effectiveSchema !== null
+        ? {
+            enabled: batchTarget.enabled,
+            schema: effectiveSchema,
+            filter_enabled: filters.enabled,
+            filter_last_result: filters.lastResult,
+            filter_keyword: filters.keyword,
+          }
         : { enabled: batchTarget.enabled }
     const result = await batchSetEnabled(scoped)
     setBatchTarget(null)
@@ -588,7 +627,7 @@ export function ScheduleTableBrowser(): React.ReactNode {
     setNoticeMessage(
       `已${batchTarget.enabled ? '啟用' : '停用'} ${result.data.affected} 筆排程`,
     )
-  }, [batchTarget, effectiveSchema, batchSetEnabled])
+  }, [batchTarget, effectiveSchema, filters, batchSetEnabled])
 
   return (
     <section className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -598,7 +637,7 @@ export function ScheduleTableBrowser(): React.ReactNode {
             排程管理
           </h1>
           <p className="mt-1 text-sm text-muted-foreground md:text-base">
-            逐表檢視排程啟停、執行時間與上次同步結果(時間一律 UTC+8;排程由系統自動建立)
+            逐表檢視排程啟停、執行時間與上次同步結果,排程由系統自動建立、時間一律 UTC+8
           </p>
         </div>
         {isAdmin ? (
@@ -657,12 +696,18 @@ export function ScheduleTableBrowser(): React.ReactNode {
         ) : batchTarget !== null ? (
           <p className="text-foreground">
             將{batchTarget.enabled ? '啟用' : '停用'}「
-            {effectiveSchema ?? '—'}」分類下的所有來源表排程(共{' '}
-            {activeSummary?.table_count ?? 0} 張表,目前已啟用{' '}
-            {activeSummary?.enabled_count ?? 0} 筆)。
+            {effectiveSchema ?? '—'}」分類中
+            <strong>
+              {activeFilterCount > 0 ? '符合目前篩選條件' : '全部'}
+            </strong>
+            的來源表排程
+            {activeFilterCount > 0
+              ? `(套用 ${activeFilterCount} 項進階篩選)`
+              : `(共 ${activeSummary?.table_count ?? 0} 張表,目前已啟用 ${activeSummary?.enabled_count ?? 0} 筆)`}
+            。
           </p>
         ) : null}
-        <p>停用的排程不會派工;可隨時再切回啟用。</p>
+        <p>停用的排程不會派工,可隨時再切回啟用。</p>
       </ConfirmDialog>
 
       {schemasError ? (
@@ -729,6 +774,7 @@ export function ScheduleTableBrowser(): React.ReactNode {
           >
             <AdvancedFilters
               filters={filters}
+              suggestions={nameSuggestions}
               onChange={updateFilters}
               onReset={resetFilters}
               activeCount={activeFilterCount}
@@ -744,22 +790,22 @@ export function ScheduleTableBrowser(): React.ReactNode {
                 <button
                   type="button"
                   onClick={() =>
-                    setBatchTarget({ enabled: true, scope: 'schema' })
+                    setBatchTarget({ enabled: true, scope: 'filtered' })
                   }
                   disabled={isBatching}
                   className="df-btn-primary-soft min-h-[36px] px-3"
                 >
-                  本分類全部啟用
+                  僅啟用符合篩選排程
                 </button>
                 <button
                   type="button"
                   onClick={() =>
-                    setBatchTarget({ enabled: false, scope: 'schema' })
+                    setBatchTarget({ enabled: false, scope: 'filtered' })
                   }
                   disabled={isBatching}
                   className="df-btn-warning-soft min-h-[36px] px-3"
                 >
-                  本分類全部停用
+                  僅停用符合篩選排程
                 </button>
               </div>
             ) : null}

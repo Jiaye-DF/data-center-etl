@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, Row, and_, func, or_, select, update
+from sqlalchemy import ColumnElement, Row, and_, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Dataset, EtlRun, EtlRunLog, EtlTable, RdsTableMeta, Schedule
@@ -355,10 +355,17 @@ class ScheduleRepository:
         enabled: bool,
         only_source_tables: bool,
         actor_uid: UUID,
+        filter_enabled: str = "all",
+        filter_last_result: str = "all",
+        filter_keyword: str = "",
     ) -> int:
-        """對(指定 schema 或全部)排程批次設 is_enabled,回實際變更筆數。
+        """批次設 is_enabled,回實際變更筆數;可依逐表列表相同的篩選限縮命中表。
 
         - schema=None 為全部 schema;only_source_tables=True 僅限有 source_table 的排程。
+        - filter_enabled: all / enabled / disabled(對排程當下 is_enabled)。
+        - filter_last_result: all / success / failed / never(對每表最新 etl_run_logs)。
+        - filter_keyword: 對 table_name / business_name ILIKE(空字串不套)。
+          篩選皆 all / 空 時等同「(該 schema 或全部)全部來源表排程」。
         """
         conds: list[ColumnElement[bool]] = [
             Schedule.is_deleted.is_(False),
@@ -369,6 +376,65 @@ class ScheduleRepository:
             conds.append(Schedule.source_table.is_not(None))
         if schema is not None:
             conds.append(Schedule.source_schema == schema)
+        if filter_enabled == "enabled":
+            conds.append(Schedule.is_enabled.is_(True))
+        elif filter_enabled == "disabled":
+            conds.append(Schedule.is_enabled.is_not(True))
+
+        keyword = filter_keyword.strip()
+        if keyword or filter_last_result != "all":
+            # 關鍵字 / 上次結果篩選走 rds_table_meta × 每表最新 log → 取命中表 (schema, table)
+            latest_log = (
+                select(
+                    EtlRunLog.source_schema.label("ls_schema"),
+                    EtlRunLog.source_table.label("ls_table"),
+                    EtlRunLog.status.label("last_status"),
+                )
+                .distinct(EtlRunLog.source_schema, EtlRunLog.source_table)
+                .order_by(
+                    EtlRunLog.source_schema,
+                    EtlRunLog.source_table,
+                    EtlRunLog.pid.desc(),
+                )
+                .subquery()
+            )
+            meta_conds: list[ColumnElement[bool]] = [
+                RdsTableMeta.dataset == Dataset.SOURCE,
+                RdsTableMeta.is_deleted.is_(False),
+            ]
+            if schema is not None:
+                meta_conds.append(RdsTableMeta.schema_name == schema)
+            if filter_last_result == "never":
+                meta_conds.append(latest_log.c.last_status.is_(None))
+            elif filter_last_result != "all":
+                meta_conds.append(latest_log.c.last_status == filter_last_result)
+            if keyword:
+                escaped = (
+                    keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                )
+                pattern = f"%{escaped}%"
+                meta_conds.append(
+                    or_(
+                        RdsTableMeta.table_name.ilike(pattern, escape="\\"),
+                        RdsTableMeta.business_name.ilike(pattern, escape="\\"),
+                    )
+                )
+            matching = (
+                select(RdsTableMeta.schema_name, RdsTableMeta.table_name)
+                .select_from(RdsTableMeta)
+                .outerjoin(
+                    latest_log,
+                    and_(
+                        latest_log.c.ls_schema == RdsTableMeta.schema_name,
+                        latest_log.c.ls_table == RdsTableMeta.table_name,
+                    ),
+                )
+                .where(*meta_conds)
+            )
+            conds.append(
+                tuple_(Schedule.source_schema, Schedule.source_table).in_(matching)
+            )
+
         result = await self._db.execute(
             update(Schedule)
             .where(*conds)

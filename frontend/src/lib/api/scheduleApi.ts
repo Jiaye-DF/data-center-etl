@@ -69,10 +69,16 @@ export interface ScheduleSetEnabledPayload {
   enabled: boolean
 }
 
-/** 批次啟停:省略 schema 代表全部來源表排程 */
+/**
+ * 批次啟停:省略 schema 與所有 filter_* 代表全部來源表排程;
+ * 帶篩選則僅作用於逐表列表命中的表(對齊進階篩選)。
+ */
 export interface ScheduleBatchEnabledPayload {
   enabled: boolean
   schema?: string
+  filter_enabled?: EnabledFilter
+  filter_last_result?: LastResultFilter
+  filter_keyword?: string
 }
 
 export interface ScheduleBatchEnabledResult {
