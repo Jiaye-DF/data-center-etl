@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import EtlRun, EtlRunLog
@@ -9,6 +9,34 @@ from app.models import EtlRun, EtlRunLog
 class RunRepository:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
+
+    # ── dashboard 聚合(最新 run / 近 N 筆統計)──────────────────────────
+    async def latest_run(self) -> EtlRun | None:
+        """最新一筆未刪除 run(pid 遞增即時間序)。"""
+        stmt = (
+            select(EtlRun)
+            .where(EtlRun.is_deleted.is_(False))
+            .order_by(EtlRun.pid.desc())
+            .limit(1)
+        )
+        return (await self._db.execute(stmt)).scalar_one_or_none()
+
+    async def recent_run_stats(self, limit: int) -> tuple[int, int, int]:
+        """最近 limit 筆 run 的 (總數, 成功數, 失敗數)。"""
+        recent = (
+            select(EtlRun.status)
+            .where(EtlRun.is_deleted.is_(False))
+            .order_by(EtlRun.pid.desc())
+            .limit(limit)
+            .subquery()
+        )
+        stmt = select(
+            func.count(),
+            func.count(case((recent.c.status == "success", 1))),
+            func.count(case((recent.c.status == "failed", 1))),
+        )
+        total, success, failed = (await self._db.execute(stmt)).one()
+        return int(total), int(success), int(failed)
 
     # ── etl_runs ────────────────────────────────────────────────────────
     async def list_runs(

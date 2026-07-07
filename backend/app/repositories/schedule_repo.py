@@ -382,6 +382,20 @@ class ScheduleRepository:
         result_rows = (await self._db.execute(stmt)).all()
         return list(result_rows), int(total)
 
+    async def enabled_cron_exprs(self) -> list[str]:
+        """回啟用中來源表排程的相異 cron 表達式(供儀表板前端算最近一班)。"""
+        stmt = (
+            select(Schedule.cron_expr)
+            .where(
+                Schedule.is_deleted.is_(False),
+                Schedule.is_enabled.is_(True),
+                Schedule.source_table.is_not(None),
+            )
+            .distinct()
+        )
+        rows = (await self._db.execute(stmt)).scalars().all()
+        return [str(c) for c in rows]
+
     async def list_schema_summaries(self) -> list[tuple[str, int, int]]:
         """聚合來源表各 schema 的 (表數, 已啟用排程數),未刪除範圍,依 schema 名排序。"""
         table_stmt = (

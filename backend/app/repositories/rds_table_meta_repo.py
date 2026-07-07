@@ -123,6 +123,24 @@ class RdsTableMetaRepository:
         total, nonempty, empty, capped = (await self._db.execute(stmt)).one()
         return int(total), int(nonempty), int(empty), int(capped)
 
+    async def dataset_scale(
+        self, dataset: Dataset
+    ) -> tuple[int, int, int, datetime | None, datetime | None]:
+        """儀表板用:回 dataset 規模 + 新鮮度(未刪除範圍):
+        (總表數, 有資料表數, 空表數, 最近快照時間, 最近同步時間)。"""
+        stmt = select(
+            func.count(),
+            func.count(case((RdsTableMeta.row_count > 0, 1))),
+            func.count(case((RdsTableMeta.row_count == 0, 1))),
+            func.max(RdsTableMeta.snapshot_at),
+            func.max(RdsTableMeta.last_synced_at),
+        ).where(
+            RdsTableMeta.dataset == dataset,
+            RdsTableMeta.is_deleted.is_(False),
+        )
+        total, nonempty, empty, snap, synced = (await self._db.execute(stmt)).one()
+        return int(total), int(nonempty), int(empty), snap, synced
+
     @staticmethod
     def _presence_cutoff(
         column: InstrumentedAttribute[datetime | None],
