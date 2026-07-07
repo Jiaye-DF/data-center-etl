@@ -58,6 +58,7 @@ services:
       SSO_APP_ID: ${SSO_APP_ID}
       SSO_APP_SECRET: ${SSO_APP_SECRET}
       FRONTEND_URL: ${FRONTEND_URL}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN}
       TZ: Asia/Taipei
     expose:
       - "8000"
@@ -100,6 +101,7 @@ services:
       SSO_APP_ID: ${SSO_APP_ID}
       SSO_APP_SECRET: ${SSO_APP_SECRET}
       FRONTEND_URL: ${FRONTEND_URL}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN}
       TZ: Asia/Taipei
     depends_on:
       postgres:
@@ -143,6 +145,7 @@ services:
       SSO_APP_ID: ${SSO_APP_ID}
       SSO_APP_SECRET: ${SSO_APP_SECRET}
       FRONTEND_URL: ${FRONTEND_URL}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN}
       TZ: Asia/Taipei
     depends_on:
       postgres:

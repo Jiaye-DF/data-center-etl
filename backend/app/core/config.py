@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     SSO_APP_SECRET: str = ""
     # 前端對外 origin(SSO callback / logout 的 redirect 落點)
     FRONTEND_URL: str = "http://localhost:3000"
+    # Cookie Domain:跨子網域共用登入 cookie 用(例:.zerozero.tw 讓所有 *.zerozero.tw 都收得到)。
+    # 留空 = host-only(本機開發預設,cookie 綁單一 host);部署跨二級子網域時必填。
+    COOKIE_DOMAIN: str = ""
 
     @model_validator(mode="after")
     def _fail_fast_in_prod(self) -> Settings:
