@@ -74,6 +74,7 @@ class SyncService:
             synced_before=filters.synced_before,
             transformed_before=filters.transformed_before,
             keyword=filters.keyword,
+            exact=filters.exact,
         )
         names = [r.table_name for r in rows]
         if not names:

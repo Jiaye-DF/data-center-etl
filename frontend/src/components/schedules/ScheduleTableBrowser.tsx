@@ -38,12 +38,15 @@ interface ScheduleFilters {
   enabled: EnabledFilter
   lastResult: LastResultFilter
   keyword: string
+  /** true=keyword 自下拉選定(精準等值);false=自由輸入(子字串模糊) */
+  keywordExact: boolean
 }
 
 const DEFAULT_FILTERS: ScheduleFilters = {
   enabled: 'all',
   lastResult: 'all',
   keyword: '',
+  keywordExact: false,
 }
 
 interface SegmentedOption<T extends string> {
@@ -204,8 +207,8 @@ function AdvancedFilters({
   activeCount: number
 }): React.ReactNode {
   const handleKeywordCommit = useCallback(
-    (keyword: string): void => {
-      onChange({ keyword })
+    (keyword: string, exact: boolean): void => {
+      onChange({ keyword, keywordExact: exact })
     },
     [onChange],
   )
@@ -380,6 +383,7 @@ function SchemaTables({
     enabled: filters.enabled,
     lastResult: filters.lastResult,
     keyword: filters.keyword,
+    keywordExact: filters.keywordExact,
   })
 
   if (isLoading) {
@@ -487,6 +491,7 @@ export function ScheduleTableBrowser(): React.ReactNode {
           enabled: filters.enabled,
           lastResult: filters.lastResult,
           keyword: '',
+          keywordExact: false,
         }
       : skipToken,
   )
@@ -614,6 +619,7 @@ export function ScheduleTableBrowser(): React.ReactNode {
             filter_enabled: filters.enabled,
             filter_last_result: filters.lastResult,
             filter_keyword: filters.keyword,
+            filter_keyword_exact: filters.keywordExact,
           }
         : { enabled: batchTarget.enabled }
     const result = await batchSetEnabled(scoped)

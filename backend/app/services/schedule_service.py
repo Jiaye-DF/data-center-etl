@@ -69,6 +69,7 @@ class ScheduleService:
         enabled: str,
         last_result: str,
         keyword: str,
+        keyword_exact: bool = False,
     ) -> ScheduleTableViewListResponse:
         offset = (page - 1) * page_size
         rows, total = await self._repo.list_tables_view(
@@ -78,6 +79,7 @@ class ScheduleService:
             enabled=enabled,
             last_result=last_result,
             keyword=keyword,
+            exact=keyword_exact,
         )
         items = [
             ScheduleTableViewItem(
@@ -155,6 +157,7 @@ class ScheduleService:
         filter_enabled: str = "all",
         filter_last_result: str = "all",
         filter_keyword: str = "",
+        filter_keyword_exact: bool = False,
     ) -> ScheduleBatchEnabledResponse:
         """對「符合篩選(schema + 啟用狀態 + 上次結果 + 關鍵字)」的來源表排程批次啟停。
 
@@ -168,6 +171,7 @@ class ScheduleService:
             filter_enabled=filter_enabled,
             filter_last_result=filter_last_result,
             filter_keyword=filter_keyword,
+            filter_keyword_exact=filter_keyword_exact,
         )
         has_filter = (
             filter_enabled != "all"

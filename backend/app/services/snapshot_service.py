@@ -52,6 +52,8 @@ class TableFilters:
     synced_before: datetime | None = None
     transformed_before: datetime | None = None
     keyword: str = ""
+    # True=下拉選定某表(table_name 精準等值);False=自由輸入(table_name / business_name 子字串)
+    exact: bool = False
 
     def cache_fragment(self) -> tuple[str, ...]:
         """組 cache key 用的穩定片段(None 截止日以 '-' 佔位)。"""
@@ -66,6 +68,7 @@ class TableFilters:
             ts(self.synced_before),
             ts(self.transformed_before),
             self.keyword,
+            "exact" if self.exact else "fuzzy",
         )
 
 
@@ -206,6 +209,7 @@ class SnapshotService:
             synced_before=filters.synced_before,
             transformed_before=filters.transformed_before,
             keyword=filters.keyword,
+            exact=filters.exact,
         )
         response = TableListResponse(
             items=[self._to_summary(r) for r in rows],

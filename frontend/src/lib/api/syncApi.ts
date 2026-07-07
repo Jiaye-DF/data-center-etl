@@ -15,6 +15,8 @@ export interface SyncFilteredPayload {
   syncedBefore: string
   transformedBefore: string
   keyword: string
+  /** true=keyword 為下拉選定表名(精準等值);false=子字串模糊 */
+  keywordExact: boolean
 }
 
 /** 同步觸發結果:filtered 範圍會回符合並送出的表數 matched */
@@ -54,6 +56,7 @@ export const syncApi = baseApi.injectEndpoints({
         syncedBefore,
         transformedBefore,
         keyword,
+        keywordExact,
       }) => ({
         url: '/sync/filtered',
         method: 'POST',
@@ -66,7 +69,7 @@ export const syncApi = baseApi.injectEndpoints({
           ...(transformedBefore !== ''
             ? { transformed_before: transformedBefore }
             : {}),
-          ...(keyword !== '' ? { keyword } : {}),
+          ...(keyword !== '' ? { keyword, keyword_exact: keywordExact } : {}),
         },
       }),
       transformResponse: (

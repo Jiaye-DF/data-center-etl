@@ -91,6 +91,10 @@ class ScheduleBatchEnabledRequest(BaseModel):
         default="",
         description="僅作用於表名 / 業務名符合關鍵字者(空字串不套)",
     )
+    filter_keyword_exact: bool = Field(
+        default=False,
+        description="true=關鍵字為下拉選定的表名,精準等值比對;false=子字串模糊比對",
+    )
 
 
 class ScheduleBatchEnabledResponse(BaseModel):

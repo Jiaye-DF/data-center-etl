@@ -33,6 +33,9 @@ class SyncFilteredRequest(BaseModel):
     synced_before: date | None = None
     transformed_before: date | None = None
     keyword: str = Field("", max_length=128)
+    keyword_exact: bool = Field(
+        False, description="true=關鍵字為下拉選定的表名,精準等值比對;false=子字串模糊"
+    )
 
     model_config = {"populate_by_name": True}
 

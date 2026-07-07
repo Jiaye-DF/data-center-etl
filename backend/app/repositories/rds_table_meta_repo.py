@@ -19,6 +19,22 @@ from app.models.rds_table_meta import Dataset, RdsTableMeta
 from app.utils.datetime import db_now as _db_now
 
 
+def _keyword_cond(keyword: str, exact: bool) -> ColumnElement[bool]:
+    """關鍵字比對條件(呼叫端須先確認 keyword 非空)。
+
+    - exact=True:下拉選定某表 → table_name 精準等值(不會被子字串誤命中他表)
+    - exact=False:自由輸入 → table_name / business_name ILIKE 子字串(跳脫 LIKE 萬用字元)
+    """
+    if exact:
+        return RdsTableMeta.table_name == keyword
+    escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{escaped}%"
+    return or_(
+        RdsTableMeta.table_name.ilike(pattern, escape="\\"),
+        RdsTableMeta.business_name.ilike(pattern, escape="\\"),
+    )
+
+
 class RdsTableMetaRepository:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
@@ -119,13 +135,15 @@ class RdsTableMetaRepository:
         synced_before: datetime | None = None,
         transformed_before: datetime | None = None,
         keyword: str = "",
+        exact: bool = False,
     ) -> tuple[list[RdsTableMeta], int]:
         """分頁列出指定 schema 的表,套進階篩選(狀態分段 + 截止日 + 關鍵字,AND 疊加)。
 
         - rows: all / nonempty(row_count>0)/ empty(row_count=0)
         - synced / transformed: all / 有值 / 無值(搭配截止日 → 「是否在該日前(含)同步/轉換」)
         - *_before: 截止日上界(含);state=all 時忽略
-        - keyword: 對 table_name 或 business_name 做 ILIKE 子字串比對(空字串不套)
+        - keyword: 空字串不套;exact=False 對 table_name 或 business_name ILIKE 子字串比對,
+          exact=True(下拉選定某表)則對 table_name 精準等值,避免子字串誤命中他表
         """
         conds: list[ColumnElement[bool]] = [
             RdsTableMeta.dataset == dataset,
@@ -138,17 +156,7 @@ class RdsTableMetaRepository:
             conds.append(RdsTableMeta.row_count == 0)
         keyword = keyword.strip()
         if keyword:
-            # 跳脫 LIKE 萬用字元,讓輸入以字面比對(escape 反斜線自身在前)
-            escaped = (
-                keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            )
-            pattern = f"%{escaped}%"
-            conds.append(
-                or_(
-                    RdsTableMeta.table_name.ilike(pattern, escape="\\"),
-                    RdsTableMeta.business_name.ilike(pattern, escape="\\"),
-                )
-            )
+            conds.append(_keyword_cond(keyword, exact))
         synced_present = {"synced": True, "unsynced": False}.get(synced)
         transformed_present = {"transformed": True, "untransformed": False}.get(
             transformed

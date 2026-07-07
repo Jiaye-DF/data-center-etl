@@ -69,6 +69,9 @@ async def list_tables(
     synced_before: Annotated[date | None, Query()] = None,
     transformed_before: Annotated[date | None, Query()] = None,
     keyword: Annotated[str, Query(max_length=128)] = "",
+    keyword_exact: Annotated[
+        bool, Query(description="true=keyword 為下拉選定表名,精準等值;false=子字串模糊")
+    ] = False,
 ) -> ApiResponse[TableListResponse]:
     filters = TableFilters(
         rows=rows,
@@ -77,6 +80,7 @@ async def list_tables(
         synced_before=_end_of_day(synced_before),
         transformed_before=_end_of_day(transformed_before),
         keyword=keyword,
+        exact=keyword_exact,
     )
     data = await SnapshotService(db).list_tables(
         dataset, schema, page=page, page_size=page_size, filters=filters

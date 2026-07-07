@@ -2,10 +2,11 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, Row, and_, func, or_, select, tuple_, update
+from sqlalchemy import ColumnElement, Row, and_, func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Dataset, EtlRun, EtlRunLog, EtlTable, RdsTableMeta, Schedule
+from app.repositories.rds_table_meta_repo import _keyword_cond
 from app.utils.datetime import db_now as _db_now
 
 # list_tables_view 每列欄位(label):
@@ -222,12 +223,14 @@ class ScheduleRepository:
         enabled: str = "all",
         last_result: str = "all",
         keyword: str = "",
+        exact: bool = False,
     ) -> tuple[list[TablesViewRow], int]:
         """分頁列出指定 schema 的來源表,LEFT JOIN 其排程與每表最新執行結果。
 
         - enabled: all / enabled(is_enabled=true)/ disabled(is_enabled 非 true,含無排程)
         - last_result: all / success / failed / never(無任何 log)/(其餘 status 亦以字面比對)
-        - keyword: 對 table_name 或 business_name 做 ILIKE 子字串比對(空字串不套)
+        - keyword: 空字串不套;exact=False 對 table_name / business_name ILIKE 子字串,
+          exact=True(下拉選定某表)則 table_name 精準等值
         """
         # 每表最新 log 的 status(DISTINCT ON (schema, table) ORDER BY … pid DESC)
         latest_log = (
@@ -272,17 +275,7 @@ class ScheduleRepository:
 
         keyword = keyword.strip()
         if keyword:
-            # 跳脫 LIKE 萬用字元,讓輸入以字面比對(escape 反斜線自身在前)
-            escaped = (
-                keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            )
-            pattern = f"%{escaped}%"
-            conds.append(
-                or_(
-                    RdsTableMeta.table_name.ilike(pattern, escape="\\"),
-                    RdsTableMeta.business_name.ilike(pattern, escape="\\"),
-                )
-            )
+            conds.append(_keyword_cond(keyword, exact))
 
         total = (
             await self._db.execute(
@@ -358,13 +351,15 @@ class ScheduleRepository:
         filter_enabled: str = "all",
         filter_last_result: str = "all",
         filter_keyword: str = "",
+        filter_keyword_exact: bool = False,
     ) -> int:
         """批次設 is_enabled,回實際變更筆數;可依逐表列表相同的篩選限縮命中表。
 
         - schema=None 為全部 schema;only_source_tables=True 僅限有 source_table 的排程。
         - filter_enabled: all / enabled / disabled(對排程當下 is_enabled)。
         - filter_last_result: all / success / failed / never(對每表最新 etl_run_logs)。
-        - filter_keyword: 對 table_name / business_name ILIKE(空字串不套)。
+        - filter_keyword: 空字串不套;exact=False 對 table_name / business_name ILIKE,
+          exact=True(下拉選定某表)則 table_name 精準等值。
           篩選皆 all / 空 時等同「(該 schema 或全部)全部來源表排程」。
         """
         conds: list[ColumnElement[bool]] = [
@@ -409,16 +404,7 @@ class ScheduleRepository:
             elif filter_last_result != "all":
                 meta_conds.append(latest_log.c.last_status == filter_last_result)
             if keyword:
-                escaped = (
-                    keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-                )
-                pattern = f"%{escaped}%"
-                meta_conds.append(
-                    or_(
-                        RdsTableMeta.table_name.ilike(pattern, escape="\\"),
-                        RdsTableMeta.business_name.ilike(pattern, escape="\\"),
-                    )
-                )
+                meta_conds.append(_keyword_cond(keyword, filter_keyword_exact))
             matching = (
                 select(RdsTableMeta.schema_name, RdsTableMeta.table_name)
                 .select_from(RdsTableMeta)

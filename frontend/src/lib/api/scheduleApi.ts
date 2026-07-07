@@ -33,6 +33,8 @@ export interface ScheduleTableListParams {
   enabled: EnabledFilter
   lastResult: LastResultFilter
   keyword: string
+  /** true=keyword 為下拉選定表名(精準等值);false=自由輸入(子字串模糊) */
+  keywordExact: boolean
 }
 
 /** 各 schema 摘要(來源表數 / 已啟用排程數) */
@@ -79,6 +81,8 @@ export interface ScheduleBatchEnabledPayload {
   filter_enabled?: EnabledFilter
   filter_last_result?: LastResultFilter
   filter_keyword?: string
+  /** true=filter_keyword 為下拉選定表名(精準等值);false=子字串模糊 */
+  filter_keyword_exact?: boolean
 }
 
 export interface ScheduleBatchEnabledResult {
@@ -93,7 +97,15 @@ export const scheduleApi = baseApi
         ScheduleTableListData,
         ScheduleTableListParams
       >({
-        query: ({ schema, page, pageSize, enabled, lastResult, keyword }) => ({
+        query: ({
+          schema,
+          page,
+          pageSize,
+          enabled,
+          lastResult,
+          keyword,
+          keywordExact,
+        }) => ({
           url: '/schedules',
           params: {
             schema,
@@ -101,8 +113,8 @@ export const scheduleApi = baseApi
             page_size: pageSize,
             enabled,
             last_result: lastResult,
-            // 關鍵字僅在有值時帶上,避免送空字串
-            ...(keyword !== '' ? { keyword } : {}),
+            // 關鍵字僅在有值時帶上,避免送空字串;精準等值一併帶 exact
+            ...(keyword !== '' ? { keyword, exact: keywordExact } : {}),
           },
         }),
         providesTags: [{ type: 'ScheduleTable', id: 'LIST' }],

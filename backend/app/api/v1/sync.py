@@ -80,6 +80,7 @@ async def sync_filtered(
         synced_before=_end_of_day(payload.synced_before),
         transformed_before=_end_of_day(payload.transformed_before),
         keyword=payload.keyword,
+        exact=payload.keyword_exact,
     )
     data = await SyncService(db).sync_filtered(
         payload.schema_name, filters, actor_uid=user.uid

@@ -46,6 +46,8 @@ export interface TableFilters {
   transformedBefore: string
   /** 對 table_name 或 business_name 做子字串比對(空字串不套) */
   keyword: string
+  /** true=keyword 為下拉選定表名(精準等值);false=自由輸入(子字串模糊) */
+  keywordExact: boolean
 }
 
 export interface ListTablesParams extends TableFilters {
@@ -80,6 +82,7 @@ export const datasetApi = baseApi
           syncedBefore,
           transformedBefore,
           keyword,
+          keywordExact,
         }) => ({
           url: `/datasets/${dataset}/tables`,
           params: {
@@ -89,12 +92,12 @@ export const datasetApi = baseApi
             rows,
             synced,
             transformed,
-            // 截止日 / 關鍵字僅在有值時帶上,避免送空字串
+            // 截止日 / 關鍵字僅在有值時帶上,避免送空字串;精準等值一併帶 keyword_exact
             ...(syncedBefore !== '' ? { synced_before: syncedBefore } : {}),
             ...(transformedBefore !== ''
               ? { transformed_before: transformedBefore }
               : {}),
-            ...(keyword !== '' ? { keyword } : {}),
+            ...(keyword !== '' ? { keyword, keyword_exact: keywordExact } : {}),
           },
         }),
         providesTags: (_result, _error, { dataset }) => [

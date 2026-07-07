@@ -36,6 +36,7 @@ const DEFAULT_FILTERS: TableFilters = {
   syncedBefore: '',
   transformedBefore: '',
   keyword: '',
+  keywordExact: false,
 }
 
 interface SegmentedOption<T extends string> {
@@ -231,7 +232,9 @@ function AdvancedFilters({
         <TableSearchCombobox
           value={filters.keyword}
           suggestions={suggestions}
-          onCommit={(keyword) => onChange({ keyword })}
+          onCommit={(keyword, exact) =>
+            onChange({ keyword, keywordExact: exact })
+          }
         />
       </div>
 

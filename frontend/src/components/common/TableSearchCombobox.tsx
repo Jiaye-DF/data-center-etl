@@ -18,6 +18,9 @@ export function suggestLabel(item: SuggestItem): string {
 /**
  * 資料表搜尋 combobox:輸入業務名稱 / 資料表名稱,自訂下拉建議,可輸入任一名稱;
  * 本地 debounce 300ms 後才 onCommit(避免逐字打 API)。原始資料管理與排程管理共用。
+ *
+ * onCommit 第二參數 exact:自下拉選定某表為 true(關鍵字為該表名,後端精準等值,
+ * 不會被子字串誤命中他表);自由打字為 false(後端對表名 / 業務名子字串模糊比對)。
  */
 export function TableSearchCombobox({
   value,
@@ -26,23 +29,33 @@ export function TableSearchCombobox({
 }: {
   value: string
   suggestions: readonly SuggestItem[]
-  onCommit: (value: string) => void
+  onCommit: (value: string, exact: boolean) => void
 }): React.ReactNode {
   const listboxId = useId()
   const [text, setText] = useState(value)
+  // 上次提交(打字送出 / 選取建議)當下的顯示文字;選取建議時顯示為 label 但關鍵字為 name,
+  // 故不能拿顯示文字直接比對外部 value,否則會把 label 誤當新輸入再次覆寫關鍵字
+  const [settledText, setSettledText] = useState(value)
   const [prevValue, setPrevValue] = useState(value)
   const [open, setOpen] = useState(false)
   // 外部清除篩選(keyword→'')時,於 render 期間清空本地輸入(不干擾選取後顯示的建議字樣)
   if (value !== prevValue) {
     setPrevValue(value)
-    if (value === '') setText('')
+    if (value === '') {
+      setText('')
+      setSettledText('')
+    }
   }
   // 停止輸入 300ms 後才送出,避免逐字打 API
   useEffect(() => {
-    if (text.trim() === value) return
-    const timer = setTimeout(() => onCommit(text.trim()), 300)
+    if (text.trim() === settledText.trim()) return
+    const timer = setTimeout(() => {
+      // 自由打字 → 模糊比對(exact=false)
+      onCommit(text.trim(), false)
+      setSettledText(text)
+    }, 300)
     return () => clearTimeout(timer)
-  }, [text, value, onCommit])
+  }, [text, settledText, onCommit])
 
   const query = text.trim().toLowerCase()
   const filtered = useMemo((): SuggestItem[] => {
@@ -59,8 +72,11 @@ export function TableSearchCombobox({
 
   const handleSelect = useCallback(
     (item: SuggestItem): void => {
-      setText(suggestLabel(item))
-      onCommit(item.name)
+      const label = suggestLabel(item)
+      setText(label)
+      setSettledText(label)
+      // 選定某表 → 精準等值(exact=true),只命中該表
+      onCommit(item.name, true)
       setOpen(false)
     },
     [onCommit],

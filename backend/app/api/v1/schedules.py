@@ -37,6 +37,9 @@ async def list_tables_view(
         str, Query(description="all / success / failed / never(其餘 status 亦以字面比對)")
     ] = "all",
     keyword: Annotated[str, Query(description="對表名 / 業務名 ILIKE 子字串過濾")] = "",
+    exact: Annotated[
+        bool, Query(description="true=keyword 為下拉選定表名,精準等值;false=子字串模糊")
+    ] = False,
 ) -> ApiResponse[ScheduleTableViewListResponse]:
     data = await ScheduleService(db).list_tables_view(
         schema=schema,
@@ -45,6 +48,7 @@ async def list_tables_view(
         enabled=enabled,
         last_result=last_result,
         keyword=keyword,
+        keyword_exact=exact,
     )
     return success(data=data)
 
@@ -121,5 +125,6 @@ async def batch_set_enabled(
         filter_enabled=payload.filter_enabled,
         filter_last_result=payload.filter_last_result,
         filter_keyword=payload.filter_keyword,
+        filter_keyword_exact=payload.filter_keyword_exact,
     )
     return success(data=data)
