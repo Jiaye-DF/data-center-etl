@@ -162,7 +162,7 @@ services:
 
   postgres:
     # 應用系統自有 DB(非 ETL / DMS 的 RDS);版本由 Coolify env 的 POSTGRES_VERSION 注入(.env.production.example 登記;18 = 01-versions.md 鎖定線)
-    image: postgres:${POSTGRES_VERSION}-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     # ⚠️ TCP 服務,不加 SERVICE_URL_*
     environment:
