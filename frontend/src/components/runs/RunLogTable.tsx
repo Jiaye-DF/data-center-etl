@@ -189,7 +189,7 @@ export function RunLogTable({ runUid }: RunLogTableProps): React.ReactNode {
                   <th className="df-th">耗時</th>
                   <th className="df-th">開始時間</th>
                   <th className="df-th">結束時間</th>
-                  <th className="df-th">錯誤明細</th>
+                  <th className="df-th">錯誤日誌</th>
                 </tr>
               </thead>
               <tbody>

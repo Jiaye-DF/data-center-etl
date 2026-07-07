@@ -18,6 +18,7 @@ from app.core.response import success
 from app.models.user import User
 from app.schemas.rawdata import (
     SchemaListResponse,
+    SchemaStatSummary,
     SnapshotRefreshResponse,
     TableListResponse,
 )
@@ -72,6 +73,12 @@ async def list_tables(
     keyword_exact: Annotated[
         bool, Query(description="true=keyword 為下拉選定表名,精準等值;false=子字串模糊")
     ] = False,
+    row_min: Annotated[
+        int | None, Query(ge=0, description="資料總筆數下限(含);row_count 探測上限 1001")
+    ] = None,
+    row_max: Annotated[
+        int | None, Query(ge=0, description="資料總筆數上限(含);>1000 一律視為 1000+")
+    ] = None,
 ) -> ApiResponse[TableListResponse]:
     filters = TableFilters(
         rows=rows,
@@ -81,10 +88,27 @@ async def list_tables(
         transformed_before=_end_of_day(transformed_before),
         keyword=keyword,
         exact=keyword_exact,
+        row_min=row_min,
+        row_max=row_max,
     )
     data = await SnapshotService(db).list_tables(
         dataset, schema, page=page, page_size=page_size, filters=filters
     )
+    return success(data=data)
+
+
+@router.get(
+    "/{dataset}/summary",
+    response_model=ApiResponse[SchemaStatSummary],
+    summary="指定 schema 的資料總筆數分布概覽(表數 / 有資料 / 空表 / 1000+;讀快照)",
+)
+async def schema_summary(
+    dataset: Dataset,
+    schema: Annotated[str, Query(min_length=1, max_length=128)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_login)],
+) -> ApiResponse[SchemaStatSummary]:
+    data = await SnapshotService(db).list_summary(dataset, schema)
     return success(data=data)
 
 

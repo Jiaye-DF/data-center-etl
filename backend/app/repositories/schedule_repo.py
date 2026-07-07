@@ -2,12 +2,73 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, Row, and_, func, select, tuple_, update
+from sqlalchemy import (
+    ColumnElement,
+    Integer,
+    Row,
+    and_,
+    case,
+    cast,
+    func,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Dataset, EtlRun, EtlRunLog, EtlTable, RdsTableMeta, Schedule
 from app.repositories.rds_table_meta_repo import _keyword_cond
 from app.utils.datetime import db_now as _db_now
+
+# cron 分/時欄位為純數字的正規式(僅 'M H * * *' 這類每日排程可換算 minute-of-day)
+_CRON_NUMERIC_RE = "^[0-9]+$"
+
+
+def _cron_minute_of_day() -> ColumnElement[int | None]:
+    """從 Schedule.cron_expr 取每日執行的 minute-of-day(時*60+分)。
+
+    僅「分、時」兩欄皆純數字者可算;其餘(NULL / 週期式 '*/5' / '*')回 NULL,
+    → 排程時段篩選時自動排除(用 CASE 保證非數字不進 int cast,避免 SQL 轉型錯誤)。
+    """
+    minute_field = func.split_part(Schedule.cron_expr, " ", 1)
+    hour_field = func.split_part(Schedule.cron_expr, " ", 2)
+    return case(
+        (
+            and_(
+                minute_field.op("~")(_CRON_NUMERIC_RE),
+                hour_field.op("~")(_CRON_NUMERIC_RE),
+            ),
+            cast(hour_field, Integer) * 60 + cast(minute_field, Integer),
+        ),
+        else_=None,
+    )
+
+
+def _cron_time_cond(
+    time_from: int | None, time_to: int | None
+) -> ColumnElement[bool] | None:
+    """排程時段條件(minute-of-day 上下界,含端點);皆 None 回 None 不加條件。
+
+    minute-of-day 為 NULL(非每日純數字 cron / 無排程)一律不符合 → 有時段篩選時排除。
+    """
+    if time_from is None and time_to is None:
+        return None
+    mod = _cron_minute_of_day()
+    parts: list[ColumnElement[bool]] = []
+    if time_from is not None:
+        parts.append(mod >= time_from)
+    if time_to is not None:
+        parts.append(mod <= time_to)
+    return and_(*parts)
+
+
+def _rows_cond(rows: str) -> ColumnElement[bool] | None:
+    """資料總筆數狀態條件(對 RdsTableMeta.row_count);all 回 None。"""
+    if rows == "nonempty":
+        return RdsTableMeta.row_count > 0
+    if rows == "empty":
+        return RdsTableMeta.row_count == 0
+    return None
 
 # list_tables_view 每列欄位(label):
 # table_name, business_name, last_synced_at, row_count,
@@ -224,6 +285,9 @@ class ScheduleRepository:
         last_result: str = "all",
         keyword: str = "",
         exact: bool = False,
+        rows: str = "all",
+        time_from: int | None = None,
+        time_to: int | None = None,
     ) -> tuple[list[TablesViewRow], int]:
         """分頁列出指定 schema 的來源表,LEFT JOIN 其排程與每表最新執行結果。
 
@@ -231,6 +295,8 @@ class ScheduleRepository:
         - last_result: all / success / failed / never(無任何 log)/(其餘 status 亦以字面比對)
         - keyword: 空字串不套;exact=False 對 table_name / business_name ILIKE 子字串,
           exact=True(下拉選定某表)則 table_name 精準等值
+        - rows: all / nonempty(row_count>0)/ empty(row_count=0)
+        - time_from / time_to: 排程時段(minute-of-day 上下界,含端點);非每日純數字 cron 排除
         """
         # 每表最新 log 的 status(DISTINCT ON (schema, table) ORDER BY … pid DESC)
         latest_log = (
@@ -276,6 +342,12 @@ class ScheduleRepository:
         keyword = keyword.strip()
         if keyword:
             conds.append(_keyword_cond(keyword, exact))
+        rows_cond = _rows_cond(rows)
+        if rows_cond is not None:
+            conds.append(rows_cond)
+        time_cond = _cron_time_cond(time_from, time_to)
+        if time_cond is not None:
+            conds.append(time_cond)
 
         total = (
             await self._db.execute(
@@ -307,8 +379,8 @@ class ScheduleRepository:
             .offset(offset)
             .limit(limit)
         )
-        rows = (await self._db.execute(stmt)).all()
-        return list(rows), int(total)
+        result_rows = (await self._db.execute(stmt)).all()
+        return list(result_rows), int(total)
 
     async def list_schema_summaries(self) -> list[tuple[str, int, int]]:
         """聚合來源表各 schema 的 (表數, 已啟用排程數),未刪除範圍,依 schema 名排序。"""
@@ -352,6 +424,9 @@ class ScheduleRepository:
         filter_last_result: str = "all",
         filter_keyword: str = "",
         filter_keyword_exact: bool = False,
+        filter_rows: str = "all",
+        filter_time_from: int | None = None,
+        filter_time_to: int | None = None,
     ) -> int:
         """批次設 is_enabled,回實際變更筆數;可依逐表列表相同的篩選限縮命中表。
 
@@ -360,6 +435,8 @@ class ScheduleRepository:
         - filter_last_result: all / success / failed / never(對每表最新 etl_run_logs)。
         - filter_keyword: 空字串不套;exact=False 對 table_name / business_name ILIKE,
           exact=True(下拉選定某表)則 table_name 精準等值。
+        - filter_rows: all / nonempty / empty(對 rds_table_meta.row_count)。
+        - filter_time_from / filter_time_to: 排程時段(minute-of-day 上下界,含端點)。
           篩選皆 all / 空 時等同「(該 schema 或全部)全部來源表排程」。
         """
         conds: list[ColumnElement[bool]] = [
@@ -375,10 +452,14 @@ class ScheduleRepository:
             conds.append(Schedule.is_enabled.is_(True))
         elif filter_enabled == "disabled":
             conds.append(Schedule.is_enabled.is_not(True))
+        # 排程時段直接作用於 Schedule.cron_expr(批次更新的對象即 Schedule)
+        time_cond = _cron_time_cond(filter_time_from, filter_time_to)
+        if time_cond is not None:
+            conds.append(time_cond)
 
         keyword = filter_keyword.strip()
-        if keyword or filter_last_result != "all":
-            # 關鍵字 / 上次結果篩選走 rds_table_meta × 每表最新 log → 取命中表 (schema, table)
+        if keyword or filter_last_result != "all" or filter_rows != "all":
+            # 關鍵字 / 上次結果 / 筆數篩選走 rds_table_meta × 每表最新 log → 取命中表
             latest_log = (
                 select(
                     EtlRunLog.source_schema.label("ls_schema"),
@@ -405,6 +486,9 @@ class ScheduleRepository:
                 meta_conds.append(latest_log.c.last_status == filter_last_result)
             if keyword:
                 meta_conds.append(_keyword_cond(keyword, filter_keyword_exact))
+            rows_cond = _rows_cond(filter_rows)
+            if rows_cond is not None:
+                meta_conds.append(rows_cond)
             matching = (
                 select(RdsTableMeta.schema_name, RdsTableMeta.table_name)
                 .select_from(RdsTableMeta)

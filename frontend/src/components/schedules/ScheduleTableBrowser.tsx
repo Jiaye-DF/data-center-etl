@@ -10,6 +10,7 @@ import {
   useUpdateScheduleMutation,
   type EnabledFilter,
   type LastResultFilter,
+  type RowsFilter,
   type ScheduleBatchEnabledPayload,
   type ScheduleTableView,
 } from '@/lib/api/scheduleApi'
@@ -40,6 +41,11 @@ interface ScheduleFilters {
   keyword: string
   /** true=keyword 自下拉選定(精準等值);false=自由輸入(子字串模糊) */
   keywordExact: boolean
+  rows: RowsFilter
+  /** 排程時段起(HH:MM,含);空字串=不限 */
+  timeFrom: string
+  /** 排程時段迄(HH:MM,含);空字串=不限 */
+  timeTo: string
 }
 
 const DEFAULT_FILTERS: ScheduleFilters = {
@@ -47,6 +53,9 @@ const DEFAULT_FILTERS: ScheduleFilters = {
   lastResult: 'all',
   keyword: '',
   keywordExact: false,
+  rows: 'all',
+  timeFrom: '',
+  timeTo: '',
 }
 
 interface SegmentedOption<T extends string> {
@@ -64,6 +73,11 @@ const LAST_RESULT_OPTIONS: ReadonlyArray<SegmentedOption<LastResultFilter>> = [
   { value: 'success', label: '成功' },
   { value: 'failed', label: '失敗' },
   { value: 'never', label: '未跑' },
+]
+const ROWS_OPTIONS: ReadonlyArray<SegmentedOption<RowsFilter>> = [
+  { value: 'all', label: '全部' },
+  { value: 'nonempty', label: '有資料' },
+  { value: 'empty', label: '空表' },
 ]
 
 /** DS(資料字典)恆置最前,其餘 schema 依名稱排序 */
@@ -248,6 +262,41 @@ function AdvancedFilters({
         />
       </div>
 
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="w-24 shrink-0 text-sm font-medium text-foreground md:text-base">
+          資料總筆數
+        </span>
+        <Segmented
+          options={ROWS_OPTIONS}
+          value={filters.rows}
+          onChange={(rows) => onChange({ rows })}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="w-24 shrink-0 text-sm font-medium text-foreground md:text-base">
+          排程時段
+        </span>
+        <input
+          type="time"
+          value={filters.timeFrom}
+          onChange={(e) => onChange({ timeFrom: e.target.value })}
+          aria-label="排程時段起"
+          className="df-input min-h-[40px] w-full py-1.5 sm:w-32"
+        />
+        <span className="text-sm text-muted-foreground">至</span>
+        <input
+          type="time"
+          value={filters.timeTo}
+          onChange={(e) => onChange({ timeTo: e.target.value })}
+          aria-label="排程時段迄"
+          className="df-input min-h-[40px] w-full py-1.5 sm:w-32"
+        />
+        <span className="text-sm text-muted-foreground">
+          (每日執行時刻;含端點)
+        </span>
+      </div>
+
       <div className="flex items-center justify-end">
         <button
           type="button"
@@ -384,6 +433,9 @@ function SchemaTables({
     lastResult: filters.lastResult,
     keyword: filters.keyword,
     keywordExact: filters.keywordExact,
+    rows: filters.rows,
+    timeFrom: filters.timeFrom,
+    timeTo: filters.timeTo,
   })
 
   if (isLoading) {
@@ -409,7 +461,7 @@ function SchemaTables({
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="df-th">資料表</th>
-              <th className="df-th">業務名</th>
+              <th className="df-th">業務資料表名稱</th>
               <th className="df-th">啟用</th>
               <th className="df-th">排程時間</th>
               <th className="df-th">上次同步</th>
@@ -492,6 +544,9 @@ export function ScheduleTableBrowser(): React.ReactNode {
           lastResult: filters.lastResult,
           keyword: '',
           keywordExact: false,
+          rows: filters.rows,
+          timeFrom: filters.timeFrom,
+          timeTo: filters.timeTo,
         }
       : skipToken,
   )
@@ -525,6 +580,8 @@ export function ScheduleTableBrowser(): React.ReactNode {
     if (filters.enabled !== 'all') count += 1
     if (filters.lastResult !== 'all') count += 1
     if (filters.keyword !== '') count += 1
+    if (filters.rows !== 'all') count += 1
+    if (filters.timeFrom !== '' || filters.timeTo !== '') count += 1
     return count
   }, [filters])
 
@@ -620,6 +677,11 @@ export function ScheduleTableBrowser(): React.ReactNode {
             filter_last_result: filters.lastResult,
             filter_keyword: filters.keyword,
             filter_keyword_exact: filters.keywordExact,
+            filter_rows: filters.rows,
+            ...(filters.timeFrom !== ''
+              ? { filter_time_from: filters.timeFrom }
+              : {}),
+            ...(filters.timeTo !== '' ? { filter_time_to: filters.timeTo } : {}),
           }
         : { enabled: batchTarget.enabled }
     const result = await batchSetEnabled(scoped)

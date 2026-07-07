@@ -40,6 +40,15 @@ async def list_tables_view(
     exact: Annotated[
         bool, Query(description="true=keyword 為下拉選定表名,精準等值;false=子字串模糊")
     ] = False,
+    rows: Annotated[
+        str, Query(description="資料總筆數:all / nonempty / empty")
+    ] = "all",
+    time_from: Annotated[
+        str | None, Query(description="排程時段起(HH:MM,含);空=不限")
+    ] = None,
+    time_to: Annotated[
+        str | None, Query(description="排程時段迄(HH:MM,含);空=不限")
+    ] = None,
 ) -> ApiResponse[ScheduleTableViewListResponse]:
     data = await ScheduleService(db).list_tables_view(
         schema=schema,
@@ -49,6 +58,9 @@ async def list_tables_view(
         last_result=last_result,
         keyword=keyword,
         keyword_exact=exact,
+        rows_filter=rows,
+        time_from=time_from,
+        time_to=time_to,
     )
     return success(data=data)
 
@@ -126,5 +138,8 @@ async def batch_set_enabled(
         filter_last_result=payload.filter_last_result,
         filter_keyword=payload.filter_keyword,
         filter_keyword_exact=payload.filter_keyword_exact,
+        filter_rows=payload.filter_rows,
+        filter_time_from=payload.filter_time_from,
+        filter_time_to=payload.filter_time_to,
     )
     return success(data=data)

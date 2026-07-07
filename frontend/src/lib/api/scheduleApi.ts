@@ -5,6 +5,8 @@ import { unwrap, type ApiEnvelope } from '@/types/api'
 export type EnabledFilter = 'all' | 'enabled' | 'disabled'
 /** 上次結果過濾:全部 / 成功 / 失敗 / 從未執行 */
 export type LastResultFilter = 'all' | 'success' | 'failed' | 'never'
+/** 資料總筆數過濾:全部 / 有資料(>0)/ 空表(=0) */
+export type RowsFilter = 'all' | 'nonempty' | 'empty'
 
 /** 逐表視角一列:來源表 meta × 其排程 × 最新執行結果(LEFT JOIN,尚無排程之欄位為 null) */
 export interface ScheduleTableView {
@@ -35,6 +37,12 @@ export interface ScheduleTableListParams {
   keyword: string
   /** true=keyword 為下拉選定表名(精準等值);false=自由輸入(子字串模糊) */
   keywordExact: boolean
+  /** 資料總筆數:全部 / 有資料 / 空表 */
+  rows: RowsFilter
+  /** 排程時段起(HH:MM,含);空字串=不限 */
+  timeFrom: string
+  /** 排程時段迄(HH:MM,含);空字串=不限 */
+  timeTo: string
 }
 
 /** 各 schema 摘要(來源表數 / 已啟用排程數) */
@@ -83,6 +91,12 @@ export interface ScheduleBatchEnabledPayload {
   filter_keyword?: string
   /** true=filter_keyword 為下拉選定表名(精準等值);false=子字串模糊 */
   filter_keyword_exact?: boolean
+  /** 資料總筆數:all / nonempty / empty */
+  filter_rows?: RowsFilter
+  /** 排程時段起(HH:MM,含);省略=不限 */
+  filter_time_from?: string
+  /** 排程時段迄(HH:MM,含);省略=不限 */
+  filter_time_to?: string
 }
 
 export interface ScheduleBatchEnabledResult {
@@ -105,6 +119,9 @@ export const scheduleApi = baseApi
           lastResult,
           keyword,
           keywordExact,
+          rows,
+          timeFrom,
+          timeTo,
         }) => ({
           url: '/schedules',
           params: {
@@ -113,8 +130,11 @@ export const scheduleApi = baseApi
             page_size: pageSize,
             enabled,
             last_result: lastResult,
-            // 關鍵字僅在有值時帶上,避免送空字串;精準等值一併帶 exact
+            rows,
+            // 關鍵字 / 時段僅在有值時帶上,避免送空字串;精準等值一併帶 exact
             ...(keyword !== '' ? { keyword, exact: keywordExact } : {}),
+            ...(timeFrom !== '' ? { time_from: timeFrom } : {}),
+            ...(timeTo !== '' ? { time_to: timeTo } : {}),
           },
         }),
         providesTags: [{ type: 'ScheduleTable', id: 'LIST' }],

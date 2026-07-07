@@ -22,6 +22,7 @@ from app.repositories.rds_table_meta_repo import RdsTableMetaRepository
 from app.repositories.schedule_repo import ScheduleRepository
 from app.schemas.rawdata import (
     SchemaListResponse,
+    SchemaStatSummary,
     SchemaSummary,
     SnapshotRefreshResponse,
     TableListResponse,
@@ -54,12 +55,18 @@ class TableFilters:
     keyword: str = ""
     # True=下拉選定某表(table_name 精準等值);False=自由輸入(table_name / business_name 子字串)
     exact: bool = False
+    # 資料總筆數區間(含端點);None 為該端不限(row_count 上限探測 1001,>1000 無法精確)
+    row_min: int | None = None
+    row_max: int | None = None
 
     def cache_fragment(self) -> tuple[str, ...]:
         """組 cache key 用的穩定片段(None 截止日以 '-' 佔位)。"""
 
         def ts(value: datetime | None) -> str:
             return value.isoformat() if value is not None else "-"
+
+        def num(value: int | None) -> str:
+            return str(value) if value is not None else "-"
 
         return (
             self.rows,
@@ -69,6 +76,8 @@ class TableFilters:
             ts(self.transformed_before),
             self.keyword,
             "exact" if self.exact else "fuzzy",
+            num(self.row_min),
+            num(self.row_max),
         )
 
 
@@ -210,6 +219,8 @@ class SnapshotService:
             transformed_before=filters.transformed_before,
             keyword=filters.keyword,
             exact=filters.exact,
+            row_min=filters.row_min,
+            row_max=filters.row_max,
         )
         response = TableListResponse(
             items=[self._to_summary(r) for r in rows],
@@ -222,6 +233,29 @@ class SnapshotService:
         )
         return response
 
+    async def list_summary(
+        self, dataset_value: str, schema: str
+    ) -> SchemaStatSummary:
+        """回指定 schema 的資料總筆數分布概覽(讀快照 + Redis cache)。"""
+        key = cache.cache_key("datasets", dataset_value, "summary", schema)
+        cached = await cache.cache_get(key)
+        if cached is not None:
+            return SchemaStatSummary.model_validate_json(cached)
+        total, nonempty, empty, capped = await self._repo.summary_by_schema(
+            Dataset(dataset_value), schema
+        )
+        response = SchemaStatSummary(
+            schema=schema,
+            table_count=total,
+            nonempty_count=nonempty,
+            empty_count=empty,
+            capped_count=capped,
+        )
+        await cache.cache_set(
+            key, response.model_dump_json(by_alias=True), ttl_seconds=_CACHE_TTL_SECONDS
+        )
+        return response
+
     @staticmethod
     def _to_summary(row: RdsTableMeta) -> TableSummary:
         return TableSummary(
@@ -229,6 +263,7 @@ class SnapshotService:
             business_name=row.business_name,
             column_count=row.column_count,
             row_count=row.row_count,
+            snapshot_at=row.snapshot_at,
             last_synced_at=row.last_synced_at,
             last_transformed_at=row.last_transformed_at,
         )

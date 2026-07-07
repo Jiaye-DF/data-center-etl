@@ -95,6 +95,18 @@ class ScheduleBatchEnabledRequest(BaseModel):
         default=False,
         description="true=關鍵字為下拉選定的表名,精準等值比對;false=子字串模糊比對",
     )
+    filter_rows: str = Field(
+        default="all",
+        description="僅作用於資料總筆數符合者:all / nonempty / empty",
+    )
+    filter_time_from: str | None = Field(
+        default=None,
+        description="僅作用於排程時段起(HH:MM,含)之後者;空=不限",
+    )
+    filter_time_to: str | None = Field(
+        default=None,
+        description="僅作用於排程時段迄(HH:MM,含)之前者;空=不限",
+    )
 
 
 class ScheduleBatchEnabledResponse(BaseModel):

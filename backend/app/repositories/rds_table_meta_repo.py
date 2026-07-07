@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, func, or_, select, update
+from sqlalchemy import ColumnElement, case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -101,6 +101,28 @@ class RdsTableMetaRepository:
         rows = (await self._db.execute(stmt)).all()
         return [(str(schema), int(count)) for schema, count in rows]
 
+    async def summary_by_schema(
+        self, dataset: Dataset, schema: str
+    ) -> tuple[int, int, int, int]:
+        """回指定 schema 的表數分布(未刪除範圍):
+        (總表數, 有資料表數 row_count>0, 空表數 row_count=0, 1000+ 表數 row_count>1000)。
+
+        不做 row_count 加總 — row_count 為 bounded 探測(>1000 存 1001),加總會失真;
+        改以「表數分布 + 1000+ 桶」提供可信概覽。
+        """
+        stmt = select(
+            func.count(),
+            func.count(case((RdsTableMeta.row_count > 0, 1))),
+            func.count(case((RdsTableMeta.row_count == 0, 1))),
+            func.count(case((RdsTableMeta.row_count > 1000, 1))),
+        ).where(
+            RdsTableMeta.dataset == dataset,
+            RdsTableMeta.schema_name == schema,
+            RdsTableMeta.is_deleted.is_(False),
+        )
+        total, nonempty, empty, capped = (await self._db.execute(stmt)).one()
+        return int(total), int(nonempty), int(empty), int(capped)
+
     @staticmethod
     def _presence_cutoff(
         column: InstrumentedAttribute[datetime | None],
@@ -136,10 +158,14 @@ class RdsTableMetaRepository:
         transformed_before: datetime | None = None,
         keyword: str = "",
         exact: bool = False,
+        row_min: int | None = None,
+        row_max: int | None = None,
     ) -> tuple[list[RdsTableMeta], int]:
-        """分頁列出指定 schema 的表,套進階篩選(狀態分段 + 截止日 + 關鍵字,AND 疊加)。
+        """分頁列出指定 schema 的表,套進階篩選(狀態分段 + 截止日 + 關鍵字 + 筆數區間,AND 疊加)。
 
         - rows: all / nonempty(row_count>0)/ empty(row_count=0)
+        - row_min / row_max: 資料總筆數區間(含端點);None 為該端不限
+          (注意 row_count 上限探測到 1001,>1000 一律存 1001,故 >1000 無法精確區分)
         - synced / transformed: all / 有值 / 無值(搭配截止日 → 「是否在該日前(含)同步/轉換」)
         - *_before: 截止日上界(含);state=all 時忽略
         - keyword: 空字串不套;exact=False 對 table_name 或 business_name ILIKE 子字串比對,
@@ -154,6 +180,10 @@ class RdsTableMetaRepository:
             conds.append(RdsTableMeta.row_count > 0)
         elif rows == "empty":
             conds.append(RdsTableMeta.row_count == 0)
+        if row_min is not None:
+            conds.append(RdsTableMeta.row_count >= row_min)
+        if row_max is not None:
+            conds.append(RdsTableMeta.row_count <= row_max)
         keyword = keyword.strip()
         if keyword:
             conds.append(_keyword_cond(keyword, exact))

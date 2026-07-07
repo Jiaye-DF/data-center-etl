@@ -7,6 +7,7 @@ import {
   type SuggestItem,
 } from '@/components/common/TableSearchCombobox'
 import {
+  useDatasetSchemaSummaryQuery,
   useListDatasetSchemasQuery,
   useListDatasetTablesQuery,
   useRefreshDatasetSnapshotMutation,
@@ -37,6 +38,8 @@ const DEFAULT_FILTERS: TableFilters = {
   transformedBefore: '',
   keyword: '',
   keywordExact: false,
+  rowMin: '',
+  rowMax: '',
 }
 
 interface SegmentedOption<T extends string> {
@@ -251,6 +254,36 @@ function AdvancedFilters({
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="w-32 shrink-0 text-sm font-medium text-foreground md:text-base">
+          筆數區間
+        </span>
+        <input
+          type="number"
+          min={0}
+          max={1000}
+          value={filters.rowMin}
+          onChange={(e) => onChange({ rowMin: e.target.value })}
+          aria-label="資料總筆數下限"
+          placeholder="下限"
+          className="df-input min-h-[40px] w-full py-1.5 sm:w-28"
+        />
+        <span className="text-sm text-muted-foreground">至</span>
+        <input
+          type="number"
+          min={0}
+          max={1000}
+          value={filters.rowMax}
+          onChange={(e) => onChange({ rowMax: e.target.value })}
+          aria-label="資料總筆數上限"
+          placeholder="上限"
+          className="df-input min-h-[40px] w-full py-1.5 sm:w-28"
+        />
+        <span className="text-sm text-muted-foreground">
+          (含端點;超過 1000 一律視為 1000+)
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="w-32 shrink-0 text-sm font-medium text-foreground md:text-base">
           RDS 同步時間
         </span>
         <Segmented
@@ -307,6 +340,39 @@ function AdvancedFilters({
           清除篩選
         </button>
       </div>
+    </div>
+  )
+}
+
+/** 資料總筆數分布概覽:總表數 / 有資料 / 空表 / 1000+(依當前 schema;不做筆數加總) */
+function SchemaSummaryBar({
+  dataset,
+  schema,
+}: {
+  dataset: Dataset
+  schema: string
+}): React.ReactNode {
+  const { data, isFetching } = useDatasetSchemaSummaryQuery({ dataset, schema })
+  const stats: ReadonlyArray<{ label: string; value: number | null }> = [
+    { label: '總表數', value: data?.table_count ?? null },
+    { label: '有資料', value: data?.nonempty_count ?? null },
+    { label: '空表', value: data?.empty_count ?? null },
+    { label: '1000+', value: data?.capped_count ?? null },
+  ]
+  return (
+    <div
+      className={`df-card flex flex-wrap gap-6 p-4 md:p-5 transition-opacity ${
+        isFetching ? 'opacity-60' : ''
+      }`}
+    >
+      {stats.map((s) => (
+        <div key={s.label} className="flex min-w-[80px] flex-col gap-1">
+          <span className="text-sm text-muted-foreground">{s.label}</span>
+          <span className="text-lg font-semibold text-foreground md:text-xl">
+            {s.value === null ? '—' : s.value.toLocaleString()}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -386,6 +452,7 @@ export function DatasetBrowser({
     if (filters.syncedBefore !== '') count += 1
     if (filters.transformedBefore !== '') count += 1
     if (filters.keyword !== '') count += 1
+    if (filters.rowMin !== '' || filters.rowMax !== '') count += 1
     return count
   }, [filters])
 
@@ -605,6 +672,10 @@ export function DatasetBrowser({
             </div>
           </CollapsibleSection>
 
+          {effectiveSchema !== null ? (
+            <SchemaSummaryBar dataset={dataset} schema={effectiveSchema} />
+          ) : null}
+
           <CollapsibleSection
             title="進階篩選"
             defaultOpen={false}
@@ -680,6 +751,8 @@ function SchemaTables({
     pageSize: PAGE_SIZE,
     ...filters,
   })
+  // target 已是 ETL 產物,不記同步/轉換生命週期(那兩欄恆空)→ 改顯示快照擷取時間
+  const isTarget = dataset === 'target'
   const [syncTable] = useSyncTableMutation()
   const [busyTable, setBusyTable] = useState<string | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
@@ -741,8 +814,14 @@ function SchemaTables({
               <th className="df-th">資料表</th>
               <th className="df-th">業務資料表名稱</th>
               <th className="df-th">資料總筆數</th>
-              <th className="df-th">RDS 同步時間</th>
-              <th className="df-th">ETL 轉換時間</th>
+              {isTarget ? (
+                <th className="df-th">快照時間</th>
+              ) : (
+                <>
+                  <th className="df-th">RDS 同步時間</th>
+                  <th className="df-th">ETL 轉換時間</th>
+                </>
+              )}
               {canSync ? <th className="df-th">操作</th> : null}
             </tr>
           </thead>
@@ -751,6 +830,7 @@ function SchemaTables({
               <TableRow
                 key={table.name}
                 table={table}
+                isTarget={isTarget}
                 canSync={canSync}
                 busy={busyTable === table.name}
                 onSync={handleSync}
@@ -778,6 +858,7 @@ function SchemaTables({
 
 interface TableRowProps {
   table: TableSummary
+  isTarget: boolean
   canSync: boolean
   busy: boolean
   onSync: (table: string) => void
@@ -785,6 +866,7 @@ interface TableRowProps {
 
 const TableRow = memo(function TableRow({
   table,
+  isTarget,
   canSync,
   busy,
   onSync,
@@ -804,12 +886,20 @@ const TableRow = memo(function TableRow({
       <td className="df-td text-muted-foreground">
         {formatRowCount(table.row_count)}
       </td>
-      <td className="df-td text-muted-foreground">
-        {formatNullableDateTime(table.last_synced_at)}
-      </td>
-      <td className="df-td text-muted-foreground">
-        {formatNullableDateTime(table.last_transformed_at)}
-      </td>
+      {isTarget ? (
+        <td className="df-td text-muted-foreground">
+          {formatNullableDateTime(table.snapshot_at)}
+        </td>
+      ) : (
+        <>
+          <td className="df-td text-muted-foreground">
+            {formatNullableDateTime(table.last_synced_at)}
+          </td>
+          <td className="df-td text-muted-foreground">
+            {formatNullableDateTime(table.last_transformed_at)}
+          </td>
+        </>
+      )}
       {canSync ? (
         <td className="px-3 py-3">
           <button

@@ -12,6 +12,7 @@ import {
 import { useAuth } from '@/lib/auth/useAuth'
 import { Pagination } from '@/components/common/Pagination'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import { Segmented, type SegmentedOption } from '@/components/common/Segmented'
 import { TRIGGER_TYPE_LABELS } from '@/constants/labels'
 import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatNullableDateTime } from '@/utils/datetime'
@@ -20,16 +21,16 @@ const PAGE_SIZE = 20
 // 佇列模式下 run 由 worker 非同步建立,輪詢讓觸發後的新 run / 進行中狀態自動更新
 const POLLING_INTERVAL_MS = 10_000
 
-const STATUS_OPTIONS: { value: '' | RunStatus; label: string }[] = [
-  { value: '', label: '全部狀態' },
+const STATUS_OPTIONS: ReadonlyArray<SegmentedOption<'' | RunStatus>> = [
+  { value: '', label: '全部' },
   { value: 'pending', label: '等待中' },
   { value: 'running', label: '執行中' },
   { value: 'success', label: '成功' },
   { value: 'failed', label: '失敗' },
 ]
 
-const TRIGGER_OPTIONS: { value: '' | TriggerType; label: string }[] = [
-  { value: '', label: '全部觸發方式' },
+const TRIGGER_OPTIONS: ReadonlyArray<SegmentedOption<'' | TriggerType>> = [
+  { value: '', label: '全部' },
   { value: 'schedule', label: '排程' },
   { value: 'manual', label: '手動' },
 ]
@@ -43,9 +44,6 @@ const RunRow = memo(function RunRow({ run }: RunRowProps): React.ReactNode {
     <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/50">
       <td className="df-td text-muted-foreground">
         {TRIGGER_TYPE_LABELS[run.trigger_type] ?? run.trigger_type}
-      </td>
-      <td className="df-td text-muted-foreground">
-        {run.schedule_name ?? '—'}
       </td>
       <td className="px-3 py-3">
         <StatusBadge status={run.status} />
@@ -68,7 +66,7 @@ const RunRow = memo(function RunRow({ run }: RunRowProps): React.ReactNode {
           href={`/runs/${run.uid}`}
           className="text-sm font-medium text-primary underline-offset-2 hover:underline md:text-base"
         >
-          查看明細
+          查看詳細資訊
         </Link>
       </td>
     </tr>
@@ -94,21 +92,15 @@ export default function RunsPage(): React.ReactNode {
   )
   const [triggerRun, { isLoading: isTriggering }] = useTriggerRunMutation()
 
-  const handleStatusChange = useCallback(
-    (event: React.ChangeEvent<HTMLSelectElement>): void => {
-      setStatusFilter(event.target.value as '' | RunStatus)
-      setPage(1)
-    },
-    [],
-  )
+  const handleStatusChange = useCallback((value: '' | RunStatus): void => {
+    setStatusFilter(value)
+    setPage(1)
+  }, [])
 
-  const handleTriggerFilterChange = useCallback(
-    (event: React.ChangeEvent<HTMLSelectElement>): void => {
-      setTriggerFilter(event.target.value as '' | TriggerType)
-      setPage(1)
-    },
-    [],
-  )
+  const handleTriggerFilterChange = useCallback((value: '' | TriggerType): void => {
+    setTriggerFilter(value)
+    setPage(1)
+  }, [])
 
   const handlePageChange = useCallback((nextPage: number): void => {
     setPage(nextPage)
@@ -164,46 +156,26 @@ export default function RunsPage(): React.ReactNode {
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="run-status-filter"
-            className="text-sm font-medium text-foreground md:text-base"
-          >
+      <div className="df-card flex flex-col gap-5 p-4 md:p-5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="w-20 shrink-0 text-sm font-medium text-foreground md:text-base">
             狀態
-          </label>
-          <select
-            id="run-status-filter"
+          </span>
+          <Segmented
+            options={STATUS_OPTIONS}
             value={statusFilter}
             onChange={handleStatusChange}
-            className="df-input w-auto min-w-[8rem]"
-          >
-            {STATUS_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          />
         </div>
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="run-trigger-filter"
-            className="text-sm font-medium text-foreground md:text-base"
-          >
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="w-20 shrink-0 text-sm font-medium text-foreground md:text-base">
             觸發方式
-          </label>
-          <select
-            id="run-trigger-filter"
+          </span>
+          <Segmented
+            options={TRIGGER_OPTIONS}
             value={triggerFilter}
             onChange={handleTriggerFilterChange}
-            className="df-input w-auto min-w-[8rem]"
-          >
-            {TRIGGER_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          />
         </div>
       </div>
 
@@ -226,12 +198,11 @@ export default function RunsPage(): React.ReactNode {
               <thead>
                 <tr className="border-b border-border bg-muted/50">
                   <th className="df-th">觸發方式</th>
-                  <th className="df-th">排程名稱</th>
                   <th className="df-th">狀態</th>
                   <th className="df-th">開始時間</th>
                   <th className="df-th">結束時間</th>
                   <th className="df-th">表數統計</th>
-                  <th className="df-th">明細</th>
+                  <th className="df-th">詳細資訊</th>
                 </tr>
               </thead>
               <tbody>

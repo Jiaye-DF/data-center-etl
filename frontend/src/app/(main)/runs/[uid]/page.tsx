@@ -48,7 +48,7 @@ export default function RunDetailPage(): React.ReactNode {
           role="alert"
           className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
-          {extractApiErrorDetail(error, '載入執行明細失敗,請稍後再試')}
+          {extractApiErrorDetail(error, '載入執行詳細資訊失敗,請稍後再試')}
         </p>
       ) : null}
 
@@ -57,16 +57,13 @@ export default function RunDetailPage(): React.ReactNode {
           <div className="df-card flex flex-col gap-4 p-5 md:p-6">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-xl font-bold text-foreground md:text-2xl">
-                執行明細
+                執行詳細資訊
               </h1>
               <StatusBadge status={data.status} />
             </div>
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <SummaryItem label="觸發方式">
                 {TRIGGER_TYPE_LABELS[data.trigger_type] ?? data.trigger_type}
-              </SummaryItem>
-              <SummaryItem label="排程名稱">
-                {data.schedule_name ?? '—'}
               </SummaryItem>
               <SummaryItem label="開始時間">
                 {formatNullableDateTime(data.started_at)}

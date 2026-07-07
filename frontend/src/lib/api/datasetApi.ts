@@ -16,6 +16,8 @@ export interface TableSummary {
   row_count: number
   /** 業務資料中文名(快照時 JOIN DS 字典 GAT_FILE 落地,非即時查 RDS);無對應則為 null */
   business_name: string | null
+  /** 此筆 metadata 擷取時間(ISO,naive UTC+8);尚未快照為 null */
+  snapshot_at: string | null
   /** 最近一次 RDS 同步時間(ISO,naive UTC+8);尚未同步為 null */
   last_synced_at: string | null
   /** 最近一次 ETL 轉換時間(ISO,naive UTC+8);尚未轉換為 null */
@@ -48,6 +50,20 @@ export interface TableFilters {
   keyword: string
   /** true=keyword 為下拉選定表名(精準等值);false=自由輸入(子字串模糊) */
   keywordExact: boolean
+  /** 資料總筆數下限(含);空字串=不限。row_count 探測上限 1001 */
+  rowMin: string
+  /** 資料總筆數上限(含);空字串=不限。>1000 一律視為 1000+ */
+  rowMax: string
+}
+
+/** 指定 schema 的資料總筆數分布概覽(不做筆數加總,避免 bounded 探測失真) */
+export interface SchemaStatSummary {
+  schema: string
+  table_count: number
+  nonempty_count: number
+  empty_count: number
+  /** row_count>1000(探測封頂)的表數 */
+  capped_count: number
 }
 
 export interface ListTablesParams extends TableFilters {
@@ -83,6 +99,8 @@ export const datasetApi = baseApi
           transformedBefore,
           keyword,
           keywordExact,
+          rowMin,
+          rowMax,
         }) => ({
           url: `/datasets/${dataset}/tables`,
           params: {
@@ -92,12 +110,14 @@ export const datasetApi = baseApi
             rows,
             synced,
             transformed,
-            // 截止日 / 關鍵字僅在有值時帶上,避免送空字串;精準等值一併帶 keyword_exact
+            // 截止日 / 關鍵字 / 筆數區間僅在有值時帶上;精準等值一併帶 keyword_exact
             ...(syncedBefore !== '' ? { synced_before: syncedBefore } : {}),
             ...(transformedBefore !== ''
               ? { transformed_before: transformedBefore }
               : {}),
             ...(keyword !== '' ? { keyword, keyword_exact: keywordExact } : {}),
+            ...(rowMin !== '' ? { row_min: rowMin } : {}),
+            ...(rowMax !== '' ? { row_max: rowMax } : {}),
           },
         }),
         providesTags: (_result, _error, { dataset }) => [
@@ -106,6 +126,21 @@ export const datasetApi = baseApi
         transformResponse: (
           response: ApiEnvelope<DatasetTableListData>,
         ): DatasetTableListData => unwrap(response),
+      }),
+      datasetSchemaSummary: build.query<
+        SchemaStatSummary,
+        { dataset: Dataset; schema: string }
+      >({
+        query: ({ dataset, schema }) => ({
+          url: `/datasets/${dataset}/summary`,
+          params: { schema },
+        }),
+        providesTags: (_result, _error, { dataset }) => [
+          { type: 'DatasetTable', id: dataset },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<SchemaStatSummary>,
+        ): SchemaStatSummary => unwrap(response),
       }),
       // 重整快照:對 RDS 重新內省 + JOIN 業務名稱寫回自有 DB,成功後兩個查詢皆需重抓
       refreshDatasetSnapshot: build.mutation<boolean, Dataset>({
@@ -126,5 +161,6 @@ export const datasetApi = baseApi
 export const {
   useListDatasetSchemasQuery,
   useListDatasetTablesQuery,
+  useDatasetSchemaSummaryQuery,
   useRefreshDatasetSnapshotMutation,
 } = datasetApi

@@ -39,6 +39,23 @@ from app.services.audit_service import AuditService
 _CRON_FIELD_RE = re.compile(r"^[\d*/,-]+$")
 _CRON_FIELD_COUNT = 5
 
+# 排程時段篩選輸入(HH:MM,24 小時制)
+_TIME_OF_DAY_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]?\d)$")
+
+
+def _parse_time_of_day(value: str | None) -> int | None:
+    """把 'HH:MM' 轉 minute-of-day(0–1439);空字串 / None 回 None;格式錯誤丟 400。"""
+    if value is None or value.strip() == "":
+        return None
+    match = _TIME_OF_DAY_RE.match(value.strip())
+    if match is None:
+        raise AppError(
+            "時段格式不合法(須為 HH:MM,24 小時制)",
+            response_code=400,
+            status_code=400,
+        )
+    return int(match.group(1)) * 60 + int(match.group(2))
+
 # v1.3:同步只有單一語意「增量同步全部來源表」,排程不再逐表選擇
 _JOB_DESC = "增量同步全部表"
 
@@ -70,6 +87,9 @@ class ScheduleService:
         last_result: str,
         keyword: str,
         keyword_exact: bool = False,
+        rows_filter: str = "all",
+        time_from: str | None = None,
+        time_to: str | None = None,
     ) -> ScheduleTableViewListResponse:
         offset = (page - 1) * page_size
         rows, total = await self._repo.list_tables_view(
@@ -80,6 +100,9 @@ class ScheduleService:
             last_result=last_result,
             keyword=keyword,
             exact=keyword_exact,
+            rows=rows_filter,
+            time_from=_parse_time_of_day(time_from),
+            time_to=_parse_time_of_day(time_to),
         )
         items = [
             ScheduleTableViewItem(
@@ -158,8 +181,11 @@ class ScheduleService:
         filter_last_result: str = "all",
         filter_keyword: str = "",
         filter_keyword_exact: bool = False,
+        filter_rows: str = "all",
+        filter_time_from: str | None = None,
+        filter_time_to: str | None = None,
     ) -> ScheduleBatchEnabledResponse:
-        """對「符合篩選(schema + 啟用狀態 + 上次結果 + 關鍵字)」的來源表排程批次啟停。
+        """對「符合篩選(schema + 啟用狀態 + 上次結果 + 關鍵字 + 筆數 + 時段)」的來源表排程批次啟停。
 
         篩選皆為 all / 空 時等同「全部來源表排程」;帶篩選時僅作用於逐表列表命中的表。
         """
@@ -172,11 +198,17 @@ class ScheduleService:
             filter_last_result=filter_last_result,
             filter_keyword=filter_keyword,
             filter_keyword_exact=filter_keyword_exact,
+            filter_rows=filter_rows,
+            filter_time_from=_parse_time_of_day(filter_time_from),
+            filter_time_to=_parse_time_of_day(filter_time_to),
         )
         has_filter = (
             filter_enabled != "all"
             or filter_last_result != "all"
             or filter_keyword.strip() != ""
+            or filter_rows != "all"
+            or filter_time_from is not None
+            or filter_time_to is not None
         )
         await self._audit.log(
             action="schedule_batch_enable" if enabled else "schedule_batch_disable",
