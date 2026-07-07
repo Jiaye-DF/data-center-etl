@@ -32,8 +32,8 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_schedule_api.py tests/test_runs_api.py -q` 全綠,涵蓋:排程 CRUD/啟停、run 清單分頁、單 run 逐表 log 欄位齊全(筆數/耗時/狀態/錯誤)、手動觸發 enqueue 成功、viewer 寫入 403
-- [ ] `cd backend && uv run ruff check . && uv run mypy .` 全綠
+- [x] `cd backend && uv run pytest tests/test_schedule_api.py tests/test_runs_api.py -q` 全綠,涵蓋:排程 CRUD/啟停、run 清單分頁、單 run 逐表 log 欄位齊全(筆數/耗時/狀態/錯誤)、手動觸發 enqueue 成功、viewer 寫入 403
+- [x] `cd backend && uv run ruff check . && uv run mypy .` 全綠
 
 ## 必讀檔(Just-in-time)
 

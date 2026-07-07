@@ -27,9 +27,9 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_sso.py -q` 全綠(callback 換 token(respx mock)/ 首次登入建 user(role=viewer)/ 重複登入不重建 / back-channel logout 使 session 失效)
-- [ ] `! grep -nE "(client_secret|CLIENT_SECRET)\s*[:=]\s*['\"]" backend/app` 成立(無硬編機密)
-- [ ] `cd backend && uv run ruff check . && uv run mypy .` 全綠
+- [x] `cd backend && uv run pytest tests/test_sso.py -q` 全綠(callback 換 token(respx mock)/ 首次登入建 user(role=viewer)/ 重複登入不重建 / back-channel logout 使 session 失效)
+- [x] `! grep -nE "(client_secret|CLIENT_SECRET)\s*[:=]\s*['\"]" backend/app` 成立(無硬編機密)
+- [x] `cd backend && uv run ruff check . && uv run mypy .` 全綠
 
 ## 必讀檔(Just-in-time)
 

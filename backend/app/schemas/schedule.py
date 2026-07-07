@@ -10,9 +10,6 @@ class ScheduleCreateRequest(BaseModel):
         min_length=1, max_length=100, description="cron 表達式(以 UTC+8 解讀)"
     )
     is_enabled: bool = Field(default=True, description="是否啟用(停用排程不派工)")
-    etl_table_uid: UUID | None = Field(
-        default=None, description="指定只跑該表;null 表示對全部啟用表執行"
-    )
     description: str | None = Field(default=None, description="排程用途描述")
 
 
@@ -24,9 +21,6 @@ class ScheduleUpdateRequest(BaseModel):
         default=None, min_length=1, max_length=100,
         description="cron 表達式(UTC+8;不改則省略)",
     )
-    etl_table_uid: UUID | None = Field(
-        default=None, description="指定只跑該表;null 表示對全部啟用表執行"
-    )
     description: str | None = Field(default=None, description="排程用途描述")
 
 
@@ -35,7 +29,13 @@ class ScheduleResponse(BaseModel):
     name: str = Field(description="排程名稱")
     cron_expr: str = Field(description="cron 表達式(UTC+8 解讀)")
     is_enabled: bool = Field(description="是否啟用(停用排程不派工)")
-    etl_table_uid: UUID | None = Field(description="指定表 uid;null 表示全部啟用表")
+    job_desc: str = Field(description="此排程做什麼(固定為增量同步全部表)")
+    last_run_status: str | None = Field(
+        description="上次執行狀態(pending/running/success/partial/failed;無執行為 null)"
+    )
+    last_run_finished_at: datetime | None = Field(
+        description="上次執行結束時間(無執行或尚未結束為 null)"
+    )
     description: str | None = Field(description="排程用途描述")
     created_at: datetime = Field(description="建立時間(Asia/Taipei wall-clock)")
     updated_at: datetime = Field(description="最後更新時間")

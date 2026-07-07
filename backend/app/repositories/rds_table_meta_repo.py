@@ -226,3 +226,68 @@ class RdsTableMetaRepository:
             .values(last_transformed_at=moment, updated_by=actor_uid, updated_at=_db_now())
         )
         await self._db.flush()
+
+    async def read_stat_baselines(
+        self, dataset: Dataset
+    ) -> dict[tuple[str, str], tuple[int, int, int] | None]:
+        """讀各表 signature 基準;三欄任一為 NULL(尚無基準)該表回 None(task-004 視為變動)。
+        僅未刪除範圍。回 {(schema, table): (ins, upd, del) 或 None}。"""
+        stmt = select(
+            RdsTableMeta.schema_name,
+            RdsTableMeta.table_name,
+            RdsTableMeta.last_stat_ins,
+            RdsTableMeta.last_stat_upd,
+            RdsTableMeta.last_stat_del,
+        ).where(
+            RdsTableMeta.dataset == dataset,
+            RdsTableMeta.is_deleted.is_(False),
+        )
+        rows = (await self._db.execute(stmt)).all()
+        baselines: dict[tuple[str, str], tuple[int, int, int] | None] = {}
+        for schema, table, ins, upd, dele in rows:
+            key = (str(schema), str(table))
+            if ins is None or upd is None or dele is None:
+                baselines[key] = None
+            else:
+                baselines[key] = (int(ins), int(upd), int(dele))
+        return baselines
+
+    async def update_stat_signature(
+        self,
+        dataset: Dataset,
+        schema_name: str,
+        table_name: str,
+        *,
+        n_tup_ins: int,
+        n_tup_upd: int,
+        n_tup_del: int,
+        actor_uid: UUID,
+    ) -> None:
+        """整批覆蓋成功後,把該表 signature 基準更新為當下來源計數器(供下輪比對)。"""
+        await self._db.execute(
+            update(RdsTableMeta)
+            .where(
+                RdsTableMeta.dataset == dataset,
+                RdsTableMeta.schema_name == schema_name,
+                RdsTableMeta.table_name == table_name,
+                RdsTableMeta.is_deleted.is_(False),
+            )
+            .values(
+                last_stat_ins=n_tup_ins,
+                last_stat_upd=n_tup_upd,
+                last_stat_del=n_tup_del,
+                updated_by=actor_uid,
+                updated_at=_db_now(),
+            )
+        )
+        await self._db.flush()
+
+    async def list_excluded(self, dataset: Dataset) -> set[tuple[str, str]]:
+        """回被逐表排除(sync_excluded=true)的表集合;未刪除範圍。"""
+        stmt = select(RdsTableMeta.schema_name, RdsTableMeta.table_name).where(
+            RdsTableMeta.dataset == dataset,
+            RdsTableMeta.is_deleted.is_(False),
+            RdsTableMeta.sync_excluded.is_(True),
+        )
+        rows = (await self._db.execute(stmt)).all()
+        return {(str(schema), str(table)) for schema, table in rows}

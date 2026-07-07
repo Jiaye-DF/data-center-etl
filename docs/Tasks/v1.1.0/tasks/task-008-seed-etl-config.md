@@ -22,9 +22,9 @@ estimated_hours: 2
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_seed_etl_config.py -q` 全綠(匯入筆數正確、冪等重跑不重複、繁中 comment 正確落庫)
-- [ ] `git diff --stat` 不含 `etl/` 路徑(來源唯讀)
-- [ ] `cd backend && uv run ruff check . && uv run mypy .` 全綠
+- [x] `cd backend && uv run pytest tests/test_seed_etl_config.py -q` 全綠(匯入筆數正確、冪等重跑不重複、繁中 comment 正確落庫)
+- [x] `git diff --stat` 不含 `etl/` 路徑(來源唯讀)
+- [x] `cd backend && uv run ruff check . && uv run mypy .` 全綠
 
 ## 必讀檔(Just-in-time)
 

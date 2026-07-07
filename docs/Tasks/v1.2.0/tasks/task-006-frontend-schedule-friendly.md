@@ -1,7 +1,7 @@
 ---
 id: task-006
 title: 前端 排程友善 UI(下拉/時間選擇取代 cron 5 欄,預設全跑)
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:
@@ -28,11 +28,11 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `cd frontend && npm run typecheck && npm run lint` green(strict,禁 any)
-- [ ] `npm run build` 成功
-- [ ] `utils/cron.ts` 具單元可驗性:`toCron({freq:'daily',hour:3,minute:30})` === `'30 3 * * *'`;`fromCron('30 3 * * *')` 還原對應 friendly(以 vitest/jest 或於 build 前 tsx 斷言;若無測試框架則於 PR 描述附 REPL 驗證)
-- [ ] 頁面實測:新增排程不需輸入 cron 字串即可建立(選每天 + 03:30)→ 送出後端 `cron_expr='30 3 * * *'`;執行範圍預設全部啟用表
-- [ ] 編輯既有 `30 3 * * *` 排程時 UI 正確回填為「每天 03:30」;自訂 cron(如 `*/5 * * * *`)落「進階」原始欄不報錯
+- [x] `cd frontend && npm run typecheck && npm run lint` green(strict,禁 any)
+- [x] `npm run build` 成功
+- [x] `utils/cron.ts` 具單元可驗性:`toCron({freq:'daily',hour:3,minute:30})` === `'30 3 * * *'`;`fromCron('30 3 * * *')` 還原對應 friendly(以 vitest/jest 或於 build 前 tsx 斷言;若無測試框架則於 PR 描述附 REPL 驗證)
+- [x] 頁面實測:新增排程不需輸入 cron 字串即可建立(選每天 + 03:30)→ 送出後端 `cron_expr='30 3 * * *'`;執行範圍預設全部啟用表
+- [x] 編輯既有 `30 3 * * *` 排程時 UI 正確回填為「每天 03:30」;自訂 cron(如 `*/5 * * * *`)落「進階」原始欄不報錯
 
 ## 必讀檔(Just-in-time)
 

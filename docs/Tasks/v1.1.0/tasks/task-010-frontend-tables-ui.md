@@ -27,10 +27,10 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd frontend && npm run lint && npx tsc --noEmit` 全綠
-- [ ] `cd frontend && npm run build` 成功
-- [ ] `! git diff --name-only | grep -q "app/(main)/layout.tsx"` 成立(未動 layout)
-- [ ] 手測 case(worker 截圖或文字記錄於 task 完成註記):清單顯示 seed 的表、停用切換成功、mapping 編輯儲存成功、viewer 登入看不到編輯控件
+- [x] `cd frontend && npm run lint && npx tsc --noEmit` 全綠
+- [x] `cd frontend && npm run build` 成功
+- [x] `! git diff --name-only | grep -q "app/(main)/layout.tsx"` 成立(未動 layout)
+- [x] 手測 case(worker 截圖或文字記錄於 task 完成註記):清單顯示 seed 的表、停用切換成功、mapping 編輯儲存成功、viewer 登入看不到編輯控件
 
 ## 必讀檔(Just-in-time)
 

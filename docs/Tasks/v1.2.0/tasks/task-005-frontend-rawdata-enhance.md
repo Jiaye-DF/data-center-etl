@@ -1,7 +1,7 @@
 ---
 id: task-005
 title: 前端 原始資料管理補強(移除查看欄位/schema 說明/過濾/時間欄/同步鈕)
-status: pending
+status: done
 parallel: true
 depends_on: [task-002, task-004]
 affected_files:
@@ -32,11 +32,11 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `cd frontend && npm run typecheck && npm run lint` green(strict,禁 any)
-- [ ] `npm run build` 成功;`/raw-data`、`/etl-data` 路由產出
-- [ ] 頁面實測(docker compose 起):原始資料管理無「查看欄位」按鈕;schema 有說明文字;預設不顯示 0 筆表,切換後可見;清單有業務資料名稱(中文)+ 兩個時間欄與同步鈕
-- [ ] 點單表「同步」→ 呼叫 `/api/v1/sync/table`(Network 可證);viewer 登入時同步鈕不顯示
-- [ ] 時間欄以 `utils/datetime.ts` 格式化(非直接 toString)
+- [x] `cd frontend && npm run typecheck && npm run lint` green(strict,禁 any)
+- [x] `npm run build` 成功;`/raw-data`、`/etl-data` 路由產出
+- [x] 頁面實測(docker compose 起):原始資料管理無「查看欄位」按鈕;schema 有說明文字;預設不顯示 0 筆表,切換後可見;清單有業務資料名稱(中文)+ 兩個時間欄與同步鈕
+- [x] 點單表「同步」→ 呼叫 `/api/v1/sync/table`(Network 可證);viewer 登入時同步鈕不顯示
+- [x] 時間欄以 `utils/datetime.ts` 格式化(非直接 toString)
 
 ## 必讀檔(Just-in-time)
 

@@ -167,24 +167,24 @@ function LoginContent(): React.ReactNode {
           </button>
         </form>
 
-        {ssoConfigured ? (
-          <>
-            <div className="mt-6 flex items-center gap-3">
-              <span className="h-px flex-1 bg-border" />
-              <span className="text-sm text-muted-foreground md:text-base">
-                或
-              </span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
+        <div className="mt-6 flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-sm text-muted-foreground md:text-base">或</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
 
-            <button
-              type="button"
-              onClick={handleSsoLogin}
-              className="df-btn-outline mt-4 w-full"
-            >
-              透過 DF-SSO 登入
-            </button>
-          </>
+        <button
+          type="button"
+          onClick={handleSsoLogin}
+          disabled={!ssoConfigured}
+          className="df-btn-outline mt-4 w-full"
+        >
+          透過 DF-SSO 登入
+        </button>
+        {!ssoConfigured ? (
+          <p className="mt-2 text-center text-xs text-muted-foreground md:text-sm">
+            SSO 尚未設定,將於測試環境填入設定後啟用
+          </p>
         ) : null}
       </div>
     </main>

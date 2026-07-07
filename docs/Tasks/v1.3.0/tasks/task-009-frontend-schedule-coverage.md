@@ -1,7 +1,7 @@
 ---
 id: task-009
 title: 前端 依表檢視頁(schema 分頁 + 表清單 + 排程/結果/下次執行 + 篩選)
-status: pending
+status: done
 parallel: true
 depends_on: [task-007]
 affected_files:
@@ -28,12 +28,12 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd frontend && npm run typecheck && npm run lint` green(strict,禁 any)
-- [ ] `npm run build` 成功
-- [ ] `utils/cron.ts` 可驗:`nextRunAt('0 3 * * *', new Date('2026-07-06T05:00:00+08:00'))` 回次日 03:00(UTC+8);無法解析的 cron(如 `*/5 * * * *`)回 `null`(vitest/jest 或 build 前 tsx 斷言;無框架則 PR 附 REPL)
-- [ ] 頁面實測:`/schedules/coverage` 顯示 schema 分頁 + 表清單;有啟用排程且無人排除時每張表「已納入」、缺口 0;套用排程顯示「每天 03:00」、下次執行有值
-- [ ] 逐表排除實測:點某表「排除」→ 該列變「已排除」、缺口 +1、下次執行「—」;點「納入」還原;「未涵蓋」篩選列出被排除表
-- [ ] Sidebar 出現「依表檢視」導覽項且可進入該頁
+- [x] `cd frontend && npm run typecheck && npm run lint` green(strict,禁 any)
+- [x] `npm run build` 成功
+- [x] `utils/cron.ts` 可驗:`nextRunAt('0 3 * * *', new Date('2026-07-06T05:00:00+08:00'))` 回次日 03:00(UTC+8);無法解析的 cron(如 `*/5 * * * *`)回 `null`(vitest/jest 或 build 前 tsx 斷言;無框架則 PR 附 REPL)
+- [x] 頁面實測:`/schedules/coverage` 顯示 schema 分頁 + 表清單;有啟用排程且無人排除時每張表「已納入」、缺口 0;套用排程顯示「每天 03:00」、下次執行有值
+- [x] 逐表排除實測:點某表「排除」→ 該列變「已排除」、缺口 +1、下次執行「—」;點「納入」還原;「未涵蓋」篩選列出被排除表
+- [x] Sidebar 出現「依表檢視」導覽項且可進入該頁
 
 ## 必讀檔(Just-in-time)
 

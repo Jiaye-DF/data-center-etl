@@ -1,10 +1,12 @@
-"""taskiq scheduler:以自有 DB `schedules` 表為排程來源,到點派工 `run_etl`。
+"""taskiq scheduler:以自有 DB `schedules` 表為排程來源,到點派工 `mirror_sync`(增量)。
 
 scheduler 啟動指令(與 worker 各自獨立啟動;供 task-012 容器 command 使用):
 
     uv run taskiq scheduler app.worker.scheduler:scheduler
 
 - 排程來源:`schedules` 表(啟用且未刪除者);停用排程不派工。
+- v1.3 排程單一化:所有啟用排程一律派 `mirror_sync` 增量(全表),不再派舊 `run_etl`,
+  也不再帶 `etl_table_pid`(sync 排程全表增量,逐表無意義)。
 - cron 一律以 UTC+8 解讀(00-overview/05-timezone.md)。
 """
 
@@ -16,7 +18,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from taskiq import ScheduledTask, ScheduleSource, TaskiqScheduler
 
-import app.worker.tasks  # noqa: F401 — 確保 run_etl 已註冊到 broker
+import app.worker.tasks  # noqa: F401 — 確保 mirror_sync 已註冊到 broker
 from app.core.db import AsyncSessionLocal
 from app.models import Schedule
 from app.worker.broker import broker
@@ -25,24 +27,24 @@ from app.worker.broker import broker
 # 且不依賴系統 tzdata(本機 Windows 缺 tzdata 時 ZoneInfo 會 raise,同 engine.TZ_TAIPEI 理由)
 CRON_OFFSET_TAIPEI = timedelta(hours=8)
 
-RUN_ETL_TASK_NAME = "run_etl"
+MIRROR_SYNC_TASK_NAME = "mirror_sync"
 
 
 def build_scheduled_tasks(schedules: Sequence[Schedule]) -> list[ScheduledTask]:
-    """把 DB 排程轉 taskiq ScheduledTask;停用 / 已刪除排程一律不派工。"""
+    """把 DB 排程轉 taskiq ScheduledTask;一律派 mirror_sync 增量,停用 / 已刪除排程不派工。"""
     tasks: list[ScheduledTask] = []
     for schedule in schedules:
         if not schedule.is_enabled or schedule.is_deleted:
             continue
         tasks.append(
             ScheduledTask(
-                task_name=RUN_ETL_TASK_NAME,
+                task_name=MIRROR_SYNC_TASK_NAME,
                 labels={},
                 args=[],
                 kwargs={
+                    "incremental": True,
                     "trigger_type": "schedule",
                     "schedule_pid": schedule.pid,
-                    "etl_table_pid": schedule.etl_table_pid,
                 },
                 schedule_id=f"schedule-{schedule.pid}",
                 cron=schedule.cron_expr,

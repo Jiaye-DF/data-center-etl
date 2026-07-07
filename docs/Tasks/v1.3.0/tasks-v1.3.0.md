@@ -1,6 +1,6 @@
 # Tasks v1.3.0
 
-> 狀態:待認領(已完成 0/9)
+> 狀態:全部完成(已完成 9/9)
 > 來源:`propose-v1.3.0.md`(scope 地板,禁動)
 > 範圍:增量同步 —— `pg_stat_user_tables` 寫入計數器變動偵測 + 只灌變動表整批覆蓋 + 修排程接線(排程單一化改派 `mirror_sync` 增量)+ 排程管理 Dialog 化 + 依表檢視(全表預設納入 + 可逐表排除)。
 > 起點:`dev-v1.3/incremental-sync`(v1.2.0 已落地:`mirror_sync` / `mirror.py` / `rds_table_meta` / 排程友善 UI)。既有 config-driven 引擎(`etl/{engine,reader,writer,comments}.py`)與 `run_etl` task 為 v1.1 遺留、**與同步無關,擺著不動**。
@@ -11,15 +11,15 @@
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
-| 001 | DB schema:`rds_table_meta` 計數器 signature 欄 + 排除旗標 + migration | pending | ✓ | — | `backend/app/models/rds_table_meta.py` / `alembic/versions/v4_add_v130_sync_signature.py` / `tests/test_models_v130.py` |
-| 002 | 變動偵測引擎(`pg_stat_user_tables` 讀取 + signature 比對) | pending | ✓ | — | `backend/app/etl/mirror.py` / `tests/test_change_detection.py` |
-| 003 | signature repo 讀寫方法(讀/更新基準 + 讀排除清單) | pending | ✓ | 001 | `backend/app/repositories/rds_table_meta_repo.py` / `tests/test_rds_table_meta_repo_v130.py` |
-| 004 | 增量同步整合(`mirror_sync` 偵測→略過排除表→只灌變動表→skip log→更新基準) | pending | ✓ | 002,003 | `backend/app/worker/tasks.py` / `tests/test_mirror_sync_incremental.py` |
-| 005 | 排程接線修正(`scheduler.py` 排程一律派 `mirror_sync` 增量) | pending | ✓ | 004 | `backend/app/worker/scheduler.py` / `tests/test_scheduler_v130.py` |
-| 006 | 排程列表加上次執行結果 + sync 語意(移除逐表選擇,`etl_table_pid` 強制 NULL) | pending | ✓ | — | `backend/app/schemas/schedule.py` / `services/schedule_service.py` / `repositories/schedule_repo.py` / `api/v1/schedules.py` / `tests/test_schedule_lastrun_api.py` |
-| 007 | 依表檢視 coverage API(全表 × 啟用排程 × 上次結果 + 逐表排除 toggle) | pending | ✓ | 001 | `backend/app/schemas/schedule_coverage.py` / `services/schedule_coverage_service.py` / `repositories/schedule_coverage_repo.py` / `api/v1/schedule_coverage.py` / `api/v1/__init__.py` / `tests/test_schedule_coverage_api.py` |
-| 008 | 前端 排程管理 Dialog 化 + 固定全表增量 + 列表顯示行為/上次結果 | pending | ✓ | 006 | `frontend/src/app/(main)/schedules/page.tsx` / `components/schedules/ScheduleFormDialog.tsx` / `lib/api/scheduleApi.ts` |
-| 009 | 前端 依表檢視頁(schema 分頁 + 表清單 + 排程/結果/下次執行 + 篩選) | pending | ✓ | 007 | `frontend/src/app/(main)/schedules/coverage/page.tsx` / `components/schedules/ScheduleCoverageBrowser.tsx` / `lib/api/scheduleCoverageApi.ts` / `utils/cron.ts` / `components/layout/Sidebar.tsx` |
+| 001 | DB schema:`rds_table_meta` 計數器 signature 欄 + 排除旗標 + migration | done | ✓ | — | `backend/app/models/rds_table_meta.py` / `alembic/versions/v4_add_v130_sync_signature.py` / `tests/test_models_v130.py` |
+| 002 | 變動偵測引擎(`pg_stat_user_tables` 讀取 + signature 比對) | done | ✓ | — | `backend/app/etl/mirror.py` / `tests/test_change_detection.py` |
+| 003 | signature repo 讀寫方法(讀/更新基準 + 讀排除清單) | done | ✓ | 001 | `backend/app/repositories/rds_table_meta_repo.py` / `tests/test_rds_table_meta_repo_v130.py` |
+| 004 | 增量同步整合(`mirror_sync` 偵測→略過排除表→只灌變動表→skip log→更新基準) | done | ✓ | 002,003 | `backend/app/worker/tasks.py` / `tests/test_mirror_sync_incremental.py` |
+| 005 | 排程接線修正(`scheduler.py` 排程一律派 `mirror_sync` 增量) | done | ✓ | 004 | `backend/app/worker/scheduler.py` / `tests/test_scheduler_v130.py` |
+| 006 | 排程列表加上次執行結果 + sync 語意(移除逐表選擇,`etl_table_pid` 強制 NULL) | done | ✓ | — | `backend/app/schemas/schedule.py` / `services/schedule_service.py` / `repositories/schedule_repo.py` / `api/v1/schedules.py` / `tests/test_schedule_lastrun_api.py` |
+| 007 | 依表檢視 coverage API(全表 × 啟用排程 × 上次結果 + 逐表排除 toggle) | done | ✓ | 001 | `backend/app/schemas/schedule_coverage.py` / `services/schedule_coverage_service.py` / `repositories/schedule_coverage_repo.py` / `api/v1/schedule_coverage.py` / `api/v1/__init__.py` / `tests/test_schedule_coverage_api.py` |
+| 008 | 前端 排程管理 Dialog 化 + 固定全表增量 + 列表顯示行為/上次結果 | done | ✓ | 006 | `frontend/src/app/(main)/schedules/page.tsx` / `components/schedules/ScheduleFormDialog.tsx` / `lib/api/scheduleApi.ts` |
+| 009 | 前端 依表檢視頁(schema 分頁 + 表清單 + 排程/結果/下次執行 + 篩選) | done | ✓ | 007 | `frontend/src/app/(main)/schedules/coverage/page.tsx` / `components/schedules/ScheduleCoverageBrowser.tsx` / `lib/api/scheduleCoverageApi.ts` / `utils/cron.ts` / `components/layout/Sidebar.tsx` |
 
 ## 拆解摘要
 

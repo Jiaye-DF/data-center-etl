@@ -1,7 +1,7 @@
 ---
 id: task-002
 title: 快照服務 + Redis cache + datasets API 改讀快照
-status: pending
+status: done
 parallel: true
 depends_on: [task-001]
 affected_files:
@@ -35,12 +35,12 @@ estimated_hours: 3.5
 
 ## Acceptance
 
-- [ ] `uv run pytest tests/test_snapshot_service.py` 全綠(fake introspect + 真/測 DB:refresh 後 repo 有對應筆數;list_tables hide_empty 過濾 row_count=0;cache 命中第二次不打 repo — 以 spy/計數驗證)
-- [ ] `curl -s -b <admin cookie> localhost:8000/api/v1/datasets/source/tables?schema=DS&hide_empty=true | jq -e '.data.items | length >= 0'`(回快照且無 0 筆表)
-- [ ] `curl -s -X POST -b <admin cookie> localhost:8000/api/v1/datasets/source/snapshot/refresh | jq -e '.success == true'`,且刷新後 `rds_table_meta` DS 筆數 == 來源實際表數;`AAA_FILE` 的 `business_name` == 「帳別參數檔」(GAT 繁中)
-- [ ] `list_tables` 回傳含 `business_name`:`curl ... /datasets/source/tables?schema=DS | jq -e '.data.items[0] | has("business_name")'`
-- [ ] 移除 columns 端點:`curl -s -o /dev/null -w '%{http_code}' localhost:8000/api/v1/datasets/source/tables/DS/GAT_FILE/columns` 回 404
-- [ ] `uv run ruff check . && uv run mypy app` green;response 殼為 ApiResponse
+- [x] `uv run pytest tests/test_snapshot_service.py` 全綠(fake introspect + 真/測 DB:refresh 後 repo 有對應筆數;list_tables hide_empty 過濾 row_count=0;cache 命中第二次不打 repo — 以 spy/計數驗證)
+- [x] `curl -s -b <admin cookie> localhost:8000/api/v1/datasets/source/tables?schema=DS&hide_empty=true | jq -e '.data.items | length >= 0'`(回快照且無 0 筆表)
+- [x] `curl -s -X POST -b <admin cookie> localhost:8000/api/v1/datasets/source/snapshot/refresh | jq -e '.success == true'`,且刷新後 `rds_table_meta` DS 筆數 == 來源實際表數;`AAA_FILE` 的 `business_name` == 「帳別參數檔」(GAT 繁中)
+- [x] `list_tables` 回傳含 `business_name`:`curl ... /datasets/source/tables?schema=DS | jq -e '.data.items[0] | has("business_name")'`
+- [x] 移除 columns 端點:`curl -s -o /dev/null -w '%{http_code}' localhost:8000/api/v1/datasets/source/tables/DS/GAT_FILE/columns` 回 404
+- [x] `uv run ruff check . && uv run mypy app` green;response 殼為 ApiResponse
 
 ## 必讀檔(Just-in-time)
 

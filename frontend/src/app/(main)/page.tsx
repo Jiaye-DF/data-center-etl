@@ -14,12 +14,12 @@ interface SectionItem {
 
 const SECTIONS: SectionItem[] = [
   {
-    href: '/raw-data',
+    href: '/sources',
     title: '原始資料管理',
     description: '瀏覽來源 ERP 原始資料庫的 schema 與資料表結構',
   },
   {
-    href: '/etl-data',
+    href: '/sources-hub',
     title: 'ETL 資料管理',
     description: '瀏覽 ETL 轉換後的資料中心庫',
   },

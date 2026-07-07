@@ -1,10 +1,11 @@
 from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import EtlTable, Schedule
+from app.models import EtlRun, EtlTable, Schedule
 from app.utils.datetime import db_now as _db_now
 
 
@@ -48,16 +49,16 @@ class ScheduleRepository:
         name: str,
         cron_expr: str,
         is_enabled: bool,
-        etl_table_pid: int | None,
         description: str | None,
         actor_uid: UUID,
     ) -> Schedule:
+        # v1.3:同步只有「增量同步全部表」單一語意,不再逐表選擇,etl_table_pid 恆為 NULL
         schedule = Schedule(
             uid=uuid4(),
             name=name,
             cron_expr=cron_expr,
             is_enabled=is_enabled,
-            etl_table_pid=etl_table_pid,
+            etl_table_pid=None,
             description=description,
             created_by=actor_uid,
             updated_by=actor_uid,
@@ -96,3 +97,24 @@ class ScheduleRepository:
         stmt = select(Schedule.pid, Schedule.uid, Schedule.name).where(Schedule.pid.in_(pids))
         rows = (await self._db.execute(stmt)).all()
         return {int(pid): (uid, str(name)) for pid, uid, name in rows}
+
+    async def last_run_by_schedule_pid(
+        self, pids: Sequence[int]
+    ) -> dict[int, tuple[str, datetime | None]]:
+        """schedule_pid →(最新 run 的 status, finished_at)對照(排程清單顯示上次執行結果)。
+
+        每個 schedule_pid 取「最新一筆未刪除 etl_runs」(以 pid 遞減判定最新)。
+        """
+        if not pids:
+            return {}
+        stmt = (
+            select(EtlRun.schedule_pid, EtlRun.status, EtlRun.finished_at)
+            .where(EtlRun.schedule_pid.in_(pids), EtlRun.is_deleted.is_(False))
+            .distinct(EtlRun.schedule_pid)
+            .order_by(EtlRun.schedule_pid, EtlRun.pid.desc())
+        )
+        rows = (await self._db.execute(stmt)).all()
+        return {
+            int(schedule_pid): (str(status), finished_at)
+            for schedule_pid, status, finished_at in rows
+        }

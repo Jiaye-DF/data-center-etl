@@ -38,11 +38,11 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `python -m py_compile etl/main.py etl/common/config.py etl/common/logger.py etl/common/utils.py etl/transforms/common.py` 全通過(exit 0)
-- [ ] `python -c "import yaml; yaml.safe_load(open('etl/config/job_config.yaml')); yaml.safe_load(open('etl/config/table_config.yaml'))"` 不拋錯
-- [ ] `python -c "import etl.common.config as c; print(hasattr(c,'load_config'))"` 印 `True`(config 載入器存在且可 import)
-- [ ] `[ -d etl/config/mapping ] && [ -f etl/requirements.txt ] && grep -q 'pyspark' etl/requirements.txt` 成立
-- [ ] `main.py` 內無以 if/elif 硬列 job 名稱的派工(以動態 import 實作;人工檢視 + `! grep -qE "elif .*job_name ==" etl/main.py`)
+- [x] `python -m py_compile etl/main.py etl/common/config.py etl/common/logger.py etl/common/utils.py etl/transforms/common.py` 全通過(exit 0)
+- [x] `python -c "import yaml; yaml.safe_load(open('etl/config/job_config.yaml')); yaml.safe_load(open('etl/config/table_config.yaml'))"` 不拋錯
+- [x] `python -c "import etl.common.config as c; print(hasattr(c,'load_config'))"` 印 `True`(config 載入器存在且可 import)
+- [x] `[ -d etl/config/mapping ] && [ -f etl/requirements.txt ] && grep -q 'pyspark' etl/requirements.txt` 成立
+- [x] `main.py` 內無以 if/elif 硬列 job 名稱的派工(以動態 import 實作;人工檢視 + `! grep -qE "elif .*job_name ==" etl/main.py`)
 
 ## 必讀檔(Just-in-time)
 

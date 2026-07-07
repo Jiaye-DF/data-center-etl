@@ -2,7 +2,7 @@
 
 import { DatasetBrowser } from '@/components/datasets/DatasetBrowser'
 
-export default function RawDataPage(): React.ReactNode {
+export default function SourcesPage(): React.ReactNode {
   return (
     <DatasetBrowser
       dataset="source"

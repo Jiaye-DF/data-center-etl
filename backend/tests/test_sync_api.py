@@ -45,6 +45,7 @@ from app.api.deps import get_db  # noqa: E402
 from app.core import db as core_db  # noqa: E402
 from app.core.db import Base  # noqa: E402
 from app.core.security import hash_password_async  # noqa: E402
+from app.etl.mirror import TableStat  # noqa: E402  FakeMirror.fetch_source_stats 型別
 from app.main import create_app  # noqa: E402
 from app.models.rds_table_meta import Dataset, RdsTableMeta  # noqa: E402
 from app.repositories.user_repo import UserRepository  # noqa: E402
@@ -148,6 +149,10 @@ class FakeMirror:
 
     async def list_source_tables(self) -> list[tuple[str, str]]:
         return list(self._tables)
+
+    async def fetch_source_stats(self) -> dict[tuple[str, str], TableStat]:
+        # 全量同步(incremental=False)忽略偵測,計數器內容不影響結果,回空即可
+        return {}
 
     async def mirror_table(
         self, schema: str, table: str, *, batch_size: int = 1000

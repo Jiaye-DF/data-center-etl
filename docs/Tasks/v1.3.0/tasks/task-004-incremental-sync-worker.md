@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: 增量同步整合(mirror_sync 加偵測→只灌變動表→skip log→更新基準)
-status: pending
+status: done
 parallel: true
 depends_on: [task-002, task-003]
 affected_files:
@@ -36,17 +36,17 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_mirror_sync_incremental.py -q` 全綠(fake MirrorEngine + monkeypatch repo,免連 RDS),涵蓋:
+- [x] `cd backend && uv run pytest tests/test_mirror_sync_incremental.py -q` 全綠(fake MirrorEngine + monkeypatch repo,免連 RDS),涵蓋:
   - 某表基準與當前 signature 相同 → 該表產生 `skipped` log、**未**呼叫 `mirror_table`、`last_synced_at` 未更新
   - 某表計數器增加 → 判定變動、呼叫 `mirror_table`、`update_signature` 被以當前 signature 呼叫
   - 某表無基準(prev=None)→ 判定變動並整灌(首次基準建立)
   - 計數器倒退 → 判定變動並整灌
   - `incremental=True` 且某表 `sync_excluded` → 該表**完全不處理**(無 mirror_table、無 log、不計入 total)
   - `incremental=False` → 全部 target 表都整灌(**忽略偵測與排除**),且成功表都寫基準
-- [ ] `uv run python -c "import inspect; from app.worker.tasks import mirror_sync; p=inspect.signature(mirror_sync).parameters; print('incremental' in p, 'trigger_type' in p)"` 印出 `True True`
-- [ ] 測試斷言 `trigger_type` 透傳:以 `trigger_type='schedule'` 呼叫 → 建立的 run `trigger_type=='schedule'`;預設呼叫 → `'manual'`
-- [ ] `git diff backend/app/worker/tasks.py` 未改動 `run_etl` task 內文(僅動 `mirror_sync` 相關)
-- [ ] `uv run ruff check . && uv run mypy app` green
+- [x] `uv run python -c "import inspect; from app.worker.tasks import mirror_sync; p=inspect.signature(mirror_sync).parameters; print('incremental' in p, 'trigger_type' in p)"` 印出 `True True`
+- [x] 測試斷言 `trigger_type` 透傳:以 `trigger_type='schedule'` 呼叫 → 建立的 run `trigger_type=='schedule'`;預設呼叫 → `'manual'`
+- [x] `git diff backend/app/worker/tasks.py` 未改動 `run_etl` task 內文(僅動 `mirror_sync` 相關)
+- [x] `uv run ruff check . && uv run mypy app` green
 
 ## 必讀檔(Just-in-time)
 

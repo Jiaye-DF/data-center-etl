@@ -66,7 +66,7 @@ async def create_schedule(
 @router.patch(
     "/{uid}",
     response_model=ApiResponse[ScheduleResponse],
-    summary="更新排程(名稱 / cron / 指定表 / 描述)",
+    summary="更新排程(名稱 / cron / 描述)",
 )
 async def update_schedule(
     uid: UUID,

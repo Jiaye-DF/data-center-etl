@@ -2,7 +2,7 @@
 
 import { DatasetBrowser } from '@/components/datasets/DatasetBrowser'
 
-export default function EtlDataPage(): React.ReactNode {
+export default function SourcesHubPage(): React.ReactNode {
   return (
     <DatasetBrowser
       dataset="target"

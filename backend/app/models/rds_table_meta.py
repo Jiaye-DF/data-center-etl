@@ -1,7 +1,16 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, DateTime, Index, Integer, String, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel
@@ -65,6 +74,40 @@ class RdsTableMeta(BaseModel):
         DateTime(timezone=False),
         nullable=True,
         comment="最近套字典 COMMENT 的時間(UTC+8)/ Last transformed (comment applied) at (UTC+8)",
+    )
+    last_stat_ins: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment=(
+            "上次同步時來源 n_tup_ins 基準(NULL=尚無基準,視為變動)"
+            "/ Baseline n_tup_ins at last sync"
+        ),
+    )
+    last_stat_upd: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment=(
+            "上次同步時來源 n_tup_upd 基準(NULL=尚無基準,視為變動)"
+            "/ Baseline n_tup_upd at last sync"
+        ),
+    )
+    last_stat_del: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+        comment=(
+            "上次同步時來源 n_tup_del 基準(NULL=尚無基準,視為變動)"
+            "/ Baseline n_tup_del at last sync"
+        ),
+    )
+    sync_excluded: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        comment=(
+            "逐表排除增量同步旗標(true=排除;false=納入,預設納入)"
+            "/ Exclude table from incremental sync"
+        ),
     )
 
     __table_args__ = (

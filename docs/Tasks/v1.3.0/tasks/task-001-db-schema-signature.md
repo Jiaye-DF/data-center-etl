@@ -1,7 +1,7 @@
 ---
 id: task-001
 title: DB schema:rds_table_meta 計數器 signature 欄 + migration
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:
@@ -30,11 +30,11 @@ estimated_hours: 2
 
 ## Acceptance
 
-- [ ] `cd backend && uv run alembic upgrade head` 成功;再次 `uv run alembic upgrade head` 冪等不報錯(可重入 guard)
-- [ ] `uv run python -c "from app.models import RdsTableMeta; print(RdsTableMeta.last_stat_ins, RdsTableMeta.last_stat_upd, RdsTableMeta.last_stat_del, RdsTableMeta.sync_excluded)"` 無 AttributeError
-- [ ] `uv run pytest tests/test_models_v130.py -q` 全綠(斷言四新欄存在;計數器欄可為 NULL、BigInteger;`sync_excluded` server_default=false、not null)
-- [ ] `grep -n "drop_column" backend/alembic/versions/v4_add_v130_sync_signature.py` 無輸出(遵守禁 DROP COLUMN)
-- [ ] `uv run ruff check . && uv run mypy app` green
+- [x] `cd backend && uv run alembic upgrade head` 成功;再次 `uv run alembic upgrade head` 冪等不報錯(可重入 guard)
+- [x] `uv run python -c "from app.models import RdsTableMeta; print(RdsTableMeta.last_stat_ins, RdsTableMeta.last_stat_upd, RdsTableMeta.last_stat_del, RdsTableMeta.sync_excluded)"` 無 AttributeError
+- [x] `uv run pytest tests/test_models_v130.py -q` 全綠(斷言四新欄存在;計數器欄可為 NULL、BigInteger;`sync_excluded` server_default=false、not null)
+- [x] `grep -n "drop_column" backend/alembic/versions/v4_add_v130_sync_signature.py` 無輸出(遵守禁 DROP COLUMN)
+- [x] `uv run ruff check . && uv run mypy app` green
 
 ## 必讀檔(Just-in-time)
 

@@ -30,10 +30,10 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd frontend && npm run lint && npx tsc --noEmit` 全綠(TS strict、禁 any)
-- [ ] `cd frontend && npm run build` 成功
-- [ ] `grep -q "tables" frontend/src/app/\(main\)/layout.tsx && grep -q "schedules" frontend/src/app/\(main\)/layout.tsx && grep -q "runs" frontend/src/app/\(main\)/layout.tsx` 成立(三 nav 項一次建好)
-- [ ] `! grep -rn "localStorage" frontend/src/lib/auth/` 成立(token 不落 localStorage)
+- [x] `cd frontend && npm run lint && npx tsc --noEmit` 全綠(TS strict、禁 any)
+- [x] `cd frontend && npm run build` 成功
+- [x] `grep -q "tables" frontend/src/app/\(main\)/layout.tsx && grep -q "schedules" frontend/src/app/\(main\)/layout.tsx && grep -q "runs" frontend/src/app/\(main\)/layout.tsx` 成立(三 nav 項一次建好)
+- [x] `! grep -rn "localStorage" frontend/src/lib/auth/` 成立(token 不落 localStorage)
 
 ## 必讀檔(Just-in-time)
 

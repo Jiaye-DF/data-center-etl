@@ -5,6 +5,7 @@
 """
 
 import re
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +40,9 @@ from app.worker.tasks import run_etl
 _CRON_FIELD_RE = re.compile(r"^[\d*/,-]+$")
 _CRON_FIELD_COUNT = 5
 
+# v1.3:同步只有單一語意「增量同步全部來源表」,排程不再逐表選擇
+_JOB_DESC = "增量同步全部表"
+
 
 def _validate_cron_expr(cron_expr: str) -> str:
     fields = cron_expr.split()
@@ -60,9 +64,8 @@ class ScheduleService:
     async def list_schedules(self, *, page: int, page_size: int) -> ScheduleListResponse:
         offset = (page - 1) * page_size
         schedules, total = await self._repo.list_schedules(offset=offset, limit=page_size)
-        table_pids = [s.etl_table_pid for s in schedules if s.etl_table_pid is not None]
-        uid_map = await self._repo.etl_table_uid_by_pid(table_pids)
-        items = [self._to_response(s, uid_map) for s in schedules]
+        last_run_map = await self._repo.last_run_by_schedule_pid([s.pid for s in schedules])
+        items = [self._to_response(s, last_run_map) for s in schedules]
         return ScheduleListResponse(items=items, total=total, page=page, page_size=page_size)
 
     async def get_schedule(self, uid: UUID) -> ScheduleResponse:
@@ -76,12 +79,10 @@ class ScheduleService:
         cron_expr = _validate_cron_expr(payload.cron_expr)
         if await self._repo.find_by_name(payload.name) is not None:
             raise AppError("排程名稱已存在", response_code=409, status_code=409)
-        etl_table_pid = await self._resolve_etl_table_pid(payload.etl_table_uid)
         schedule = await self._repo.create(
             name=payload.name,
             cron_expr=cron_expr,
             is_enabled=payload.is_enabled,
-            etl_table_pid=etl_table_pid,
             description=payload.description,
             actor_uid=actor_uid,
         )
@@ -106,8 +107,6 @@ class ScheduleService:
             schedule.name = payload.name
         if "cron_expr" in fields_set and payload.cron_expr is not None:
             schedule.cron_expr = _validate_cron_expr(payload.cron_expr)
-        if "etl_table_uid" in fields_set:
-            schedule.etl_table_pid = await self._resolve_etl_table_pid(payload.etl_table_uid)
         if "description" in fields_set:
             schedule.description = payload.description
         await self._repo.touch(schedule, actor_uid)
@@ -156,30 +155,24 @@ class ScheduleService:
             raise AppError("排程不存在", response_code=404, status_code=404)
         return schedule
 
-    async def _resolve_etl_table_pid(self, etl_table_uid: UUID | None) -> int | None:
-        if etl_table_uid is None:
-            return None
-        table = await self._repo.find_etl_table_by_uid(etl_table_uid)
-        if table is None:
-            raise AppError("指定的 ETL 表設定不存在", response_code=400, status_code=400)
-        return table.pid
-
     async def _to_response_single(self, schedule: Schedule) -> ScheduleResponse:
-        pids = [schedule.etl_table_pid] if schedule.etl_table_pid is not None else []
-        uid_map = await self._repo.etl_table_uid_by_pid(pids)
-        return self._to_response(schedule, uid_map)
+        last_run_map = await self._repo.last_run_by_schedule_pid([schedule.pid])
+        return self._to_response(schedule, last_run_map)
 
-    def _to_response(self, schedule: Schedule, uid_map: dict[int, UUID]) -> ScheduleResponse:
+    def _to_response(
+        self,
+        schedule: Schedule,
+        last_run_map: dict[int, tuple[str, datetime | None]],
+    ) -> ScheduleResponse:
+        last_run = last_run_map.get(schedule.pid)
         return ScheduleResponse(
             uid=schedule.uid,
             name=schedule.name,
             cron_expr=schedule.cron_expr,
             is_enabled=schedule.is_enabled,
-            etl_table_uid=(
-                uid_map.get(schedule.etl_table_pid)
-                if schedule.etl_table_pid is not None
-                else None
-            ),
+            job_desc=_JOB_DESC,
+            last_run_status=last_run[0] if last_run is not None else None,
+            last_run_finished_at=last_run[1] if last_run is not None else None,
             description=schedule.description,
             created_at=schedule.created_at,
             updated_at=schedule.updated_at,

@@ -23,10 +23,10 @@ estimated_hours: 2
 
 ## Acceptance
 
-- [ ] `python -m py_compile etl/common/reader.py` 通過(exit 0)
-- [ ] `cd etl && python -m pytest tests/test_reader.py -q` 全綠(對「識別字組裝 / JDBC URL 由 env 組成」等純函式做單元測試,不需真連 DB)
-- [ ] `python -c "import etl.common.reader as r; print(hasattr(r,'read_table'))"` 印 `True`
-- [ ] `! grep -nE "password\\s*=\\s*['\"]" etl/common/reader.py`(無硬編密碼)
+- [x] `python -m py_compile etl/common/reader.py` 通過(exit 0)
+- [x] `cd etl && python -m pytest tests/test_reader.py -q` 全綠(對「識別字組裝 / JDBC URL 由 env 組成」等純函式做單元測試,不需真連 DB)
+- [x] `python -c "import etl.common.reader as r; print(hasattr(r,'read_table'))"` 印 `True`
+- [x] `! grep -nE "password\\s*=\\s*['\"]" etl/common/reader.py`(無硬編密碼)
 
 ## 必讀檔(Just-in-time)
 

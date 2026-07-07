@@ -26,11 +26,11 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `python -m py_compile etl/common/writer.py etl/common/ddl.py` 通過(exit 0)
-- [ ] `cd etl && python -m pytest tests/test_ddl.py -q` 全綠;測試需涵蓋「N 欄位 → 產生 N 條 `COMMENT ON COLUMN`」與「缺 comment 欄位會 raise/標記」
-- [ ] `python -c "import etl.common.ddl as d; print(hasattr(d,'build_column_comments'))"` 印 `True`
-- [ ] `! grep -iE "drop (database|schema|table|column)" etl/scripts/bootstrap_target_db.sql`(bootstrap 無任何 DROP)
-- [ ] `grep -qi "create" etl/scripts/bootstrap_target_db.sql`(含建置語句)
+- [x] `python -m py_compile etl/common/writer.py etl/common/ddl.py` 通過(exit 0)
+- [x] `cd etl && python -m pytest tests/test_ddl.py -q` 全綠;測試需涵蓋「N 欄位 → 產生 N 條 `COMMENT ON COLUMN`」與「缺 comment 欄位會 raise/標記」
+- [x] `python -c "import etl.common.ddl as d; print(hasattr(d,'build_column_comments'))"` 印 `True`
+- [x] `! grep -iE "drop (database|schema|table|column)" etl/scripts/bootstrap_target_db.sql`(bootstrap 無任何 DROP)
+- [x] `grep -qi "create" etl/scripts/bootstrap_target_db.sql`(含建置語句)
 
 ## 必讀檔(Just-in-time)
 

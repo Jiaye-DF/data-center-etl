@@ -6,8 +6,11 @@ export interface Schedule {
   name: string
   cron_expr: string
   is_enabled: boolean
-  /** NULL 表示對全部啟用表執行(對齊 backend schedules.etl_table_pid 語意) */
-  etl_table_uid: string | null
+  /** 固定文案「增量同步全部表」(v1.3 起排程只有一種:全表增量) */
+  job_desc: string
+  /** 上次執行狀態:success/failed/partial/running/pending;null=未跑 */
+  last_run_status: string | null
+  last_run_finished_at: string | null
   description: string | null
   created_at: string
   updated_at: string
@@ -29,7 +32,6 @@ export interface ScheduleCreatePayload {
   name: string
   cron_expr: string
   is_enabled: boolean
-  etl_table_uid: string | null
   description: string | null
 }
 
@@ -37,7 +39,6 @@ export interface ScheduleUpdatePayload {
   uid: string
   name: string
   cron_expr: string
-  etl_table_uid: string | null
   description: string | null
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useState } from 'react'
 import Link from 'next/link'
 import {
   useCreateScheduleMutation,
@@ -12,174 +12,39 @@ import {
   type ScheduleCreatePayload,
 } from '@/lib/api/scheduleApi'
 import { useTriggerRunMutation } from '@/lib/api/runApi'
-import { useListEtlTablesQuery } from '@/lib/api/etlConfigApi'
 import { useAuth } from '@/lib/auth/useAuth'
 import { Pagination } from '@/components/common/Pagination'
-import { CronFriendlyPicker } from '@/components/schedules/CronFriendlyPicker'
+import { ScheduleFormDialog } from '@/components/schedules/ScheduleFormDialog'
 import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatDateTime } from '@/utils/datetime'
-import { DEFAULT_CRON_EXPR } from '@/utils/cron'
 
 const PAGE_SIZE = 20
-// 指定表下拉選單來源(page_size 上限 100;超出者顯示 fallback 字樣)
-const TABLE_OPTIONS_PAGE_SIZE = 100
 
-interface TableOption {
-  uid: string
+/** 上次執行結果 status → 中文標籤 + badge 樣式(null / 未知 = 未跑) */
+interface LastRunPresentation {
   label: string
+  className: string
 }
 
-interface ScheduleFormProps {
-  /** null = 新增模式 */
-  initial: Schedule | null
-  tableOptions: TableOption[]
-  submitting: boolean
-  submitError: string | null
-  onSubmit: (payload: ScheduleCreatePayload) => void
-  onCancel: () => void
-}
-
-function ScheduleForm({
-  initial,
-  tableOptions,
-  submitting,
-  submitError,
-  onSubmit,
-  onCancel,
-}: ScheduleFormProps): React.ReactNode {
-  const [name, setName] = useState(initial?.name ?? '')
-  const [cronExpr, setCronExpr] = useState(initial?.cron_expr ?? DEFAULT_CRON_EXPR)
-  const [etlTableUid, setEtlTableUid] = useState(initial?.etl_table_uid ?? '')
-  const [description, setDescription] = useState(initial?.description ?? '')
-  const [isEnabled, setIsEnabled] = useState(initial?.is_enabled ?? true)
-
-  const handleNameChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>): void => {
-      setName(event.target.value)
-    },
-    [],
-  )
-  const handleTableChange = useCallback(
-    (event: React.ChangeEvent<HTMLSelectElement>): void => {
-      setEtlTableUid(event.target.value)
-    },
-    [],
-  )
-  const handleDescriptionChange = useCallback(
-    (event: React.ChangeEvent<HTMLTextAreaElement>): void => {
-      setDescription(event.target.value)
-    },
-    [],
-  )
-  const handleEnabledChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>): void => {
-      setIsEnabled(event.target.checked)
-    },
-    [],
-  )
-
-  const handleSubmit = useCallback(
-    (event: React.FormEvent<HTMLFormElement>): void => {
-      event.preventDefault()
-      onSubmit({
-        name: name.trim(),
-        cron_expr: cronExpr.trim(),
-        is_enabled: isEnabled,
-        etl_table_uid: etlTableUid === '' ? null : etlTableUid,
-        description: description.trim() === '' ? null : description.trim(),
-      })
-    },
-    [onSubmit, name, cronExpr, isEnabled, etlTableUid, description],
-  )
-
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="df-card flex flex-col gap-4 p-5 md:p-6"
-    >
-      <h2 className="text-lg font-bold text-foreground md:text-xl">
-        {initial === null ? '新增排程' : `編輯排程:${initial.name}`}
-      </h2>
-
-      {submitError !== null ? (
-        <p
-          role="alert"
-          className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
-        >
-          {submitError}
-        </p>
-      ) : null}
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-          名稱
-          <input
-            type="text"
-            required
-            maxLength={200}
-            value={name}
-            onChange={handleNameChange}
-            className="df-input"
-          />
-        </label>
-        <div className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:col-span-2 md:text-base">
-          執行時間(UTC+8)
-          <CronFriendlyPicker value={cronExpr} onChange={setCronExpr} />
-        </div>
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-          執行範圍
-          <select
-            value={etlTableUid}
-            onChange={handleTableChange}
-            className="df-input"
-          >
-            <option value="">全部啟用表</option>
-            {tableOptions.map((option) => (
-              <option key={option.uid} value={option.uid}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-          描述
-          <textarea
-            value={description}
-            onChange={handleDescriptionChange}
-            rows={2}
-            className="df-input min-h-[44px] py-2"
-          />
-        </label>
-      </div>
-
-      {initial === null ? (
-        <label className="flex items-center gap-2 text-sm font-medium text-foreground md:text-base">
-          <input
-            type="checkbox"
-            checked={isEnabled}
-            onChange={handleEnabledChange}
-            className="h-5 w-5 accent-[rgb(var(--primary))]"
-          />
-          建立後立即啟用
-        </label>
-      ) : null}
-
-      <div className="flex gap-2">
-        <button type="submit" disabled={submitting} className="df-btn-primary">
-          {initial === null ? '建立' : '儲存'}
-        </button>
-        <button type="button" onClick={onCancel} className="df-btn-outline">
-          取消
-        </button>
-      </div>
-    </form>
-  )
+function resolveLastRun(status: string | null): LastRunPresentation {
+  switch (status) {
+    case 'success':
+      return { label: '成功', className: 'bg-success/15 text-success' }
+    case 'failed':
+      return { label: '失敗', className: 'bg-danger/10 text-danger' }
+    case 'partial':
+      return { label: '部分成功', className: 'bg-warning/15 text-warning' }
+    case 'running':
+      return { label: '執行中', className: 'bg-info/15 text-info' }
+    case 'pending':
+      return { label: '等待中', className: 'bg-muted text-muted-foreground' }
+    default:
+      return { label: '未跑', className: 'bg-muted text-muted-foreground' }
+  }
 }
 
 interface ScheduleRowProps {
   schedule: Schedule
-  /** 執行範圍顯示字樣(全部啟用表 / 表名) */
-  scopeLabel: string
   canEdit: boolean
   busy: boolean
   confirmingDelete: boolean
@@ -193,7 +58,6 @@ interface ScheduleRowProps {
 
 const ScheduleRow = memo(function ScheduleRow({
   schedule,
-  scopeLabel,
   canEdit,
   busy,
   confirmingDelete,
@@ -223,6 +87,7 @@ const ScheduleRow = memo(function ScheduleRow({
   const enabledClass = schedule.is_enabled
     ? 'bg-success/15 text-success'
     : 'bg-muted text-muted-foreground'
+  const lastRun = resolveLastRun(schedule.last_run_status)
   const actionSize = 'min-h-[36px] px-3'
 
   return (
@@ -240,7 +105,15 @@ const ScheduleRow = memo(function ScheduleRow({
       <td className="df-td font-mono text-muted-foreground">
         {schedule.cron_expr}
       </td>
-      <td className="df-td text-muted-foreground">{scopeLabel}</td>
+      <td className="df-td text-muted-foreground">{schedule.job_desc}</td>
+      <td className="px-3 py-3">
+        <span className={`df-badge ${lastRun.className}`}>{lastRun.label}</span>
+        {schedule.last_run_finished_at !== null ? (
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {formatDateTime(schedule.last_run_finished_at)}
+          </p>
+        ) : null}
+      </td>
       <td className="px-3 py-3">
         <span className={`df-badge ${enabledClass}`}>
           {schedule.is_enabled ? '啟用' : '停用'}
@@ -331,10 +204,6 @@ export default function SchedulesPage(): React.ReactNode {
     page,
     pageSize: PAGE_SIZE,
   })
-  const { data: tablesData } = useListEtlTablesQuery({
-    page: 1,
-    pageSize: TABLE_OPTIONS_PAGE_SIZE,
-  })
 
   const [createSchedule, { isLoading: isCreating }] =
     useCreateScheduleMutation()
@@ -343,29 +212,6 @@ export default function SchedulesPage(): React.ReactNode {
   const [deleteSchedule] = useDeleteScheduleMutation()
   const [setEnabled] = useSetScheduleEnabledMutation()
   const [triggerRun] = useTriggerRunMutation()
-
-  const tableOptions = useMemo(
-    (): TableOption[] =>
-      (tablesData?.items ?? []).map((item) => ({
-        uid: item.uid,
-        label: `${item.source_schema}.${item.source_table}`,
-      })),
-    [tablesData],
-  )
-
-  const tableLabelMap = useMemo((): ReadonlyMap<string, string> => {
-    return new Map(tableOptions.map((option) => [option.uid, option.label]))
-  }, [tableOptions])
-
-  const resolveScopeLabel = useCallback(
-    (etlTableUid: string | null): string => {
-      if (etlTableUid === null) {
-        return '全部啟用表'
-      }
-      return tableLabelMap.get(etlTableUid) ?? '指定單表'
-    },
-    [tableLabelMap],
-  )
 
   const handlePageChange = useCallback((nextPage: number): void => {
     setPage(nextPage)
@@ -395,7 +241,6 @@ export default function SchedulesPage(): React.ReactNode {
               uid: formState.schedule.uid,
               name: payload.name,
               cron_expr: payload.cron_expr,
-              etl_table_uid: payload.etl_table_uid,
               description: payload.description,
             })
           : await createSchedule(payload)
@@ -433,19 +278,17 @@ export default function SchedulesPage(): React.ReactNode {
       setActionError(null)
       setTriggerNotice(null)
       setBusyUid(schedule.uid)
-      const result = await triggerRun({ etlTableUid: schedule.etl_table_uid })
+      const result = await triggerRun({ etlTableUid: null })
       if ('error' in result) {
         setActionError(
           extractApiErrorDetail(result.error, '手動觸發失敗,請稍後再試'),
         )
       } else {
-        setTriggerNotice(
-          `已送出手動觸發(${schedule.name},範圍:${resolveScopeLabel(schedule.etl_table_uid)})`,
-        )
+        setTriggerNotice(`已送出手動觸發(${schedule.name})`)
       }
       setBusyUid(null)
     },
-    [triggerRun, resolveScopeLabel],
+    [triggerRun],
   )
 
   const handleRequestDelete = useCallback((uid: string): void => {
@@ -483,7 +326,7 @@ export default function SchedulesPage(): React.ReactNode {
             cron 排程 CRUD、啟停與手動觸發(時間一律 UTC+8)
           </p>
         </div>
-        {isAdmin && formState.mode === 'closed' ? (
+        {isAdmin ? (
           <button
             type="button"
             onClick={openCreate}
@@ -494,11 +337,11 @@ export default function SchedulesPage(): React.ReactNode {
         ) : null}
       </div>
 
-      {isAdmin && formState.mode !== 'closed' ? (
-        <ScheduleForm
+      {isAdmin ? (
+        <ScheduleFormDialog
           key={formState.mode === 'edit' ? formState.schedule.uid : 'create'}
+          open={formState.mode !== 'closed'}
           initial={formState.mode === 'edit' ? formState.schedule : null}
-          tableOptions={tableOptions}
           submitting={isCreating || isUpdating}
           submitError={submitError}
           onSubmit={handleSubmit}
@@ -546,7 +389,8 @@ export default function SchedulesPage(): React.ReactNode {
                 <tr className="border-b border-border bg-muted/50">
                   <th className="df-th">名稱</th>
                   <th className="df-th">cron</th>
-                  <th className="df-th">執行範圍</th>
+                  <th className="df-th">做什麼</th>
+                  <th className="df-th">上次結果</th>
                   <th className="df-th">狀態</th>
                   <th className="df-th">更新時間</th>
                   {isAdmin ? <th className="df-th">操作</th> : null}
@@ -557,7 +401,6 @@ export default function SchedulesPage(): React.ReactNode {
                   <ScheduleRow
                     key={schedule.uid}
                     schedule={schedule}
-                    scopeLabel={resolveScopeLabel(schedule.etl_table_uid)}
                     canEdit={isAdmin}
                     busy={busyUid === schedule.uid}
                     confirmingDelete={confirmDeleteUid === schedule.uid}

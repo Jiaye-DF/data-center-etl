@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: 同步觸發端點 + worker task + sync_states 更新
-status: pending
+status: done
 parallel: true
 depends_on: [task-001, task-002, task-003]
 affected_files:
@@ -30,11 +30,11 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `uv run pytest tests/test_sync_api.py` 全綠(mock enqueue:`/sync/table`、`/sync/all` 回 202/200 且 ApiResponse;viewer 呼叫回 403)
-- [ ] `curl -s -X POST -b <admin cookie> -H 'content-type: application/json' -d '{"schema":"DS","table":"AAA_FILE"}' localhost:8000/api/v1/sync/table | jq -e '.success == true'`
-- [ ] 單表同步實跑後:`etl_runs` 新增一筆且 status=success;`erp_etl_hub_test` 有 `DS.AAA_FILE` 資料 + 中文 COMMENT;`rds_table_meta` 該表 `last_synced_at` 非空
-- [ ] `uv run ruff check . && uv run mypy app` green
-- [ ] 既有 `run_etl` task 未動:`git diff app/worker/tasks.py` 僅為新增(不改既有 task 邏輯)
+- [x] `uv run pytest tests/test_sync_api.py` 全綠(mock enqueue:`/sync/table`、`/sync/all` 回 202/200 且 ApiResponse;viewer 呼叫回 403)
+- [x] `curl -s -X POST -b <admin cookie> -H 'content-type: application/json' -d '{"schema":"DS","table":"AAA_FILE"}' localhost:8000/api/v1/sync/table | jq -e '.success == true'`
+- [x] 單表同步實跑後:`etl_runs` 新增一筆且 status=success;`erp_etl_hub_test` 有 `DS.AAA_FILE` 資料 + 中文 COMMENT;`rds_table_meta` 該表 `last_synced_at` 非空
+- [x] `uv run ruff check . && uv run mypy app` green
+- [x] 既有 `run_etl` task 未動:`git diff app/worker/tasks.py` 僅為新增(不改既有 task 邏輯)
 
 ## 必讀檔(Just-in-time)
 

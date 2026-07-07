@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: 自動鏡像 + DS 字典 COMMENT 轉換引擎(保留型別/comment 放寬)
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:
@@ -34,11 +34,11 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `uv run pytest tests/test_dictionary.py` 全綠(fake/真連:GAT/GAQ 繁優先缺退简;字典缺失回空不 raise)
-- [ ] `uv run pytest tests/test_mirror.py` 全綠(以 fake reader/writer 或測 DB:DS 排序最前;無 comment 欄不 raise;TRUNCATE 重灌不 DROP;分批不整表物化)
-- [ ] 小規模真跑(worker 或 script,單一小表如 `DS.AAA_FILE`):目標 `erp_etl_hub_test` 出現 `DS.AAA_FILE`,型別與來源一致,`COMMENT ON TABLE` = 「帳別參數檔」、`AAA01` COMMENT = 「帳別編號」(以 psql `\d+` 或 `col_description` 驗)
-- [ ] `uv run ruff check . && uv run mypy app` green
-- [ ] 既有引擎未動:`git diff --stat` 不含 `app/etl/{engine,reader,writer,comments}.py` 修改
+- [x] `uv run pytest tests/test_dictionary.py` 全綠(fake/真連:GAT/GAQ 繁優先缺退简;字典缺失回空不 raise)
+- [x] `uv run pytest tests/test_mirror.py` 全綠(以 fake reader/writer 或測 DB:DS 排序最前;無 comment 欄不 raise;TRUNCATE 重灌不 DROP;分批不整表物化)
+- [x] 小規模真跑(worker 或 script,單一小表如 `DS.AAA_FILE`):目標 `erp_etl_hub_test` 出現 `DS.AAA_FILE`,型別與來源一致,`COMMENT ON TABLE` = 「帳別參數檔」、`AAA01` COMMENT = 「帳別編號」(以 psql `\d+` 或 `col_description` 驗)
+- [x] `uv run ruff check . && uv run mypy app` green
+- [x] 既有引擎未動:`git diff --stat` 不含 `app/etl/{engine,reader,writer,comments}.py` 修改
 
 ## 必讀檔(Just-in-time)
 

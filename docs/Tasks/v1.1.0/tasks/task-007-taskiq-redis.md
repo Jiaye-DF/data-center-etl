@@ -26,9 +26,9 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_worker.py -q` 全綠(InMemoryBroker),涵蓋:enqueue → run 建立且完成後狀態正確、engine 拋例外 run 標 failed、停用排程不產生派工
-- [ ] `! grep -nE "redis://[^$'\"]*['\"]" backend/app/worker/` 成立(無硬編 redis URL)
-- [ ] `cd backend && uv run ruff check . && uv run mypy .` 全綠
+- [x] `cd backend && uv run pytest tests/test_worker.py -q` 全綠(InMemoryBroker),涵蓋:enqueue → run 建立且完成後狀態正確、engine 拋例外 run 標 failed、停用排程不產生派工
+- [x] `! grep -nE "redis://[^$'\"]*['\"]" backend/app/worker/` 成立(無硬編 redis URL)
+- [x] `cd backend && uv run ruff check . && uv run mypy .` 全綠
 
 ## 必讀檔(Just-in-time)
 

@@ -313,18 +313,20 @@ def test_disabled_or_deleted_schedule_not_dispatched() -> None:
 
 
 def test_scheduled_task_carries_cron_utc8_and_trigger_kwargs() -> None:
+    # v1.3:排程單一化為 mirror_sync 增量;既有 etl_table_pid 保留但不派給 sync 排程
     scheduled = build_scheduled_tasks([_schedule(pid=9, is_enabled=True, etl_table_pid=3)])
 
     task = scheduled[0]
-    assert task.task_name == "run_etl"
+    assert task.task_name == "mirror_sync"
     assert task.cron == "0 2 * * *"
     # cron 以 UTC+8 解讀(00-overview/05-timezone.md;台灣無 DST,固定 +8 等價 Asia/Taipei)
     assert task.cron_offset == timedelta(hours=8)
     assert CRON_OFFSET_TAIPEI == timedelta(hours=8)
+    # sync 排程一律全表增量,不帶 etl_table_pid
     assert task.kwargs == {
+        "incremental": True,
         "trigger_type": "schedule",
         "schedule_pid": 9,
-        "etl_table_pid": 3,
     }
 
 

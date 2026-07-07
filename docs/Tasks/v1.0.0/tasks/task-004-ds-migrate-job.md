@@ -25,11 +25,11 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `python -m py_compile etl/jobs/ds_migrate_job.py etl/transforms/ds.py` 通過(exit 0)
-- [ ] `python -c "import yaml,sys; d=yaml.safe_load(open('etl/config/mapping/ds.yaml')); sys.exit(0 if d else 1)"` 成立(yaml 有效且非空)
-- [ ] `cd etl && python -m pytest tests/test_transform_ds.py -q` 全綠(對 `transforms/ds.py` 純轉換函式做單元測試)
-- [ ] `python -c "import etl.jobs.ds_migrate_job as j; print(hasattr(j,'run'))"` 印 `True`
-- [ ] 人工/grep 檢查:`ds.yaml` 中每個 mapping 欄位皆有 `comment` 欄(`! grep -nE '^\\s*-\\s' etl/config/mapping/ds.yaml` 之對照,或以測試斷言 mapping 每欄具 comment)
+- [x] `python -m py_compile etl/jobs/ds_migrate_job.py etl/transforms/ds.py` 通過(exit 0)
+- [x] `python -c "import yaml,sys; d=yaml.safe_load(open('etl/config/mapping/ds.yaml')); sys.exit(0 if d else 1)"` 成立(yaml 有效且非空)
+- [x] `cd etl && python -m pytest tests/test_transform_ds.py -q` 全綠(對 `transforms/ds.py` 純轉換函式做單元測試)
+- [x] `python -c "import etl.jobs.ds_migrate_job as j; print(hasattr(j,'run'))"` 印 `True`
+- [x] 人工/grep 檢查:`ds.yaml` 中每個 mapping 欄位皆有 `comment` 欄(`! grep -nE '^\\s*-\\s' etl/config/mapping/ds.yaml` 之對照,或以測試斷言 mapping 每欄具 comment)
 
 ## 必讀檔(Just-in-time)
 

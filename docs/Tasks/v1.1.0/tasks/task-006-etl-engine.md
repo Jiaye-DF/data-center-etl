@@ -31,10 +31,10 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_etl_engine.py tests/test_etl_transforms.py -q` 全綠,涵蓋:DS/M2201 欄位對映與 v1.0.0 mapping 行為一致、停用表 skipped、單表失敗續跑且 log 含 stack trace、每欄位 comment 缺值 fail
-- [ ] `! grep -inE "drop (table|column|schema|database)" backend/app/etl/` 成立(無 DROP)
-- [ ] `! grep -nE "password\s*=\s*['\"]" backend/app/etl/` 成立(無硬編密碼)
-- [ ] `cd backend && uv run ruff check . && uv run mypy .` 全綠
+- [x] `cd backend && uv run pytest tests/test_etl_engine.py tests/test_etl_transforms.py -q` 全綠,涵蓋:DS/M2201 欄位對映與 v1.0.0 mapping 行為一致、停用表 skipped、單表失敗續跑且 log 含 stack trace、每欄位 comment 缺值 fail
+- [x] `! grep -inE "drop (table|column|schema|database)" backend/app/etl/` 成立(無 DROP)
+- [x] `! grep -nE "password\s*=\s*['\"]" backend/app/etl/` 成立(無硬編密碼)
+- [x] `cd backend && uv run ruff check . && uv run mypy .` 全綠
 
 ## 必讀檔(Just-in-time)
 

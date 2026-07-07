@@ -1,7 +1,7 @@
 ---
 id: task-006
 title: 排程列表加上次執行結果 + sync 語意(移除逐表選擇)
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:
@@ -31,14 +31,14 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_schedule_lastrun_api.py -q` 全綠,涵蓋:
+- [x] `cd backend && uv run pytest tests/test_schedule_lastrun_api.py -q` 全綠,涵蓋:
   - `POST /schedules`(admin)即使帶 `etl_table_uid` → 建立後 `etl_table_uid == null`(逐表被忽略)
   - `GET /schedules`:某排程有對應 `etl_runs`(success/failed)→ 回應 `last_run_status` / `last_run_at` 正確;無 run → 皆 null
   - 多排程列表批次查上次 run 無 N+1(單次聚合 query;測試以 query 計數或結果正確性驗)
   - viewer 呼叫 create/patch → 403
-- [ ] `curl -s -b <admin cookie> 'localhost:8000/api/v1/schedules?page=1&page_size=20' | jq -e '.data.items[0] | has("last_run_status") and has("last_run_at")'`
-- [ ] `uv run ruff check . && uv run mypy app` green
-- [ ] `git diff backend/app/api/v1/__init__.py` 無輸出(本 task 不動 router 註冊)
+- [x] `curl -s -b <admin cookie> 'localhost:8000/api/v1/schedules?page=1&page_size=20' | jq -e '.data.items[0] | has("last_run_status") and has("last_run_at")'`
+- [x] `uv run ruff check . && uv run mypy app` green
+- [x] `git diff backend/app/api/v1/__init__.py` 無輸出(本 task 不動 router 註冊)
 
 ## 必讀檔(Just-in-time)
 

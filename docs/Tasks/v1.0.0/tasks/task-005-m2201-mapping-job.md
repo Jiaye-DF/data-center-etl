@@ -25,11 +25,11 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `python -m py_compile etl/jobs/m2201_job.py etl/transforms/m2201.py` 通過(exit 0)
-- [ ] `python -c "import yaml,sys; d=yaml.safe_load(open('etl/config/mapping/m2201.yaml')); sys.exit(0 if d else 1)"` 成立(yaml 有效且非空)
-- [ ] `cd etl && python -m pytest tests/test_transform_m2201.py -q` 全綠;測試需涵蓋「GAT/GAQ 欄位→M2201 欄位對映正確」與「每個目標欄位皆帶 comment」
-- [ ] `python -c "import etl.jobs.m2201_job as j; print(hasattr(j,'run'))"` 印 `True`
-- [ ] `! grep -nE "^\\s*(GAT_FILE|GAQ_FILE|M2201)\\s*=" etl/transforms/m2201.py`(對照表不硬編於 py,走 yaml)
+- [x] `python -m py_compile etl/jobs/m2201_job.py etl/transforms/m2201.py` 通過(exit 0)
+- [x] `python -c "import yaml,sys; d=yaml.safe_load(open('etl/config/mapping/m2201.yaml')); sys.exit(0 if d else 1)"` 成立(yaml 有效且非空)
+- [x] `cd etl && python -m pytest tests/test_transform_m2201.py -q` 全綠;測試需涵蓋「GAT/GAQ 欄位→M2201 欄位對映正確」與「每個目標欄位皆帶 comment」
+- [x] `python -c "import etl.jobs.m2201_job as j; print(hasattr(j,'run'))"` 印 `True`
+- [x] `! grep -nE "^\\s*(GAT_FILE|GAQ_FILE|M2201)\\s*=" etl/transforms/m2201.py`(對照表不硬編於 py,走 yaml)
 
 ## 必讀檔(Just-in-time)
 

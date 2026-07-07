@@ -39,6 +39,15 @@ class MirrorColumn:
     type_sql: str
 
 
+@dataclass(frozen=True)
+class TableStat:
+    """來源表寫入計數器 signature(pg_stat_user_tables 累計值)。"""
+
+    n_tup_ins: int
+    n_tup_upd: int
+    n_tup_del: int
+
+
 _SOURCE_TABLES_SQL = text(
     """
     SELECT table_schema AS schema, table_name AS name
@@ -66,6 +75,11 @@ _TARGET_TABLE_EXISTS_SQL = text(
     " WHERE table_schema = :schema AND table_name = :table"
 )
 
+_SOURCE_STATS_SQL = text(
+    "SELECT schemaname AS schema, relname AS name,"
+    " n_tup_ins, n_tup_upd, n_tup_del FROM pg_stat_user_tables"
+)
+
 
 def _as_int(value: object) -> int | None:
     """information_schema 的長度 / 精度欄位取整;非整數(含 None)回 None。"""
@@ -78,6 +92,31 @@ def sort_source_tables(rows: Sequence[Mapping[str, Any]]) -> list[tuple[str, str
         ((str(r["schema"]), str(r["name"])) for r in rows),
         key=lambda st: (0 if st[0] == DS_SCHEMA else 1, st[0], st[1]),
     )
+
+
+def stat_changed(current: TableStat, baseline: TableStat | None) -> bool:
+    """判斷來源表自上次同步後是否變動。
+
+    - baseline 為 None(首次上線 / 來源新表,尚無基準)→ 視為變動(需整灌建基準)。
+    - current != baseline → 變動:計數器任一「增加」代表有增/改/刪;任一「倒退」
+      (來源重啟 / crash / pg_stat_reset 歸零)保守亦視為變動(寧可多做不可漏做)。
+    - 三者皆相等 → 未變動,本輪跳過。
+    """
+    return baseline is None or current != baseline
+
+
+def rows_to_stats(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[tuple[str, str], TableStat]:
+    """pg_stat_user_tables 查詢結果 → `{(schema, name): TableStat}`;counter 為 None 落 0。"""
+    return {
+        (str(r["schema"]), str(r["name"])): TableStat(
+            n_tup_ins=int(r["n_tup_ins"] or 0),
+            n_tup_upd=int(r["n_tup_upd"] or 0),
+            n_tup_del=int(r["n_tup_del"] or 0),
+        )
+        for r in rows
+    }
 
 
 def source_type_to_ddl(row: Mapping[str, Any]) -> str:
@@ -243,6 +282,14 @@ class MirrorEngine:
                 dict(r) for r in (await conn.execute(_SOURCE_TABLES_SQL)).mappings().all()
             ]
         return sort_source_tables(rows)
+
+    async def fetch_source_stats(self) -> dict[tuple[str, str], TableStat]:
+        """一次 query 取來源所有表的累計寫入計數器(零掃表);key 為 (schema, table)。"""
+        async with self._source_engine().connect() as conn:
+            rows = [
+                dict(r) for r in (await conn.execute(_SOURCE_STATS_SQL)).mappings().all()
+            ]
+        return rows_to_stats(rows)
 
     async def _introspect_columns(
         self, conn: AsyncConnection, schema: str, table: str

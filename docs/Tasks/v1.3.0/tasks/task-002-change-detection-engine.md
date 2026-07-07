@@ -1,7 +1,7 @@
 ---
 id: task-002
 title: 變動偵測引擎(pg_stat_user_tables 讀取 + signature 比對)
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:
@@ -32,13 +32,13 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_change_detection.py -q` 全綠,涵蓋:
+- [x] `cd backend && uv run pytest tests/test_change_detection.py -q` 全綠,涵蓋:
   - `is_table_changed(None, sig)` → True(無基準)
   - 任一計數器增加 → True;三者相等 → False
   - 任一計數器倒退(current < prev)→ True
-- [ ] `uv run python -c "from app.etl.mirror import is_table_changed, StatSignature; print(is_table_changed(None, StatSignature(0,0,0)), is_table_changed(StatSignature(5,5,5), StatSignature(5,5,5)), is_table_changed(StatSignature(5,5,5), StatSignature(4,5,5)))"` 印出 `True False True`
-- [ ] `grep -n "def mirror_table" backend/app/etl/mirror.py` 仍存在且 `git diff` 不改動其內文(僅新增偵測相關)
-- [ ] `uv run ruff check . && uv run mypy app` green
+- [x] `uv run python -c "from app.etl.mirror import is_table_changed, StatSignature; print(is_table_changed(None, StatSignature(0,0,0)), is_table_changed(StatSignature(5,5,5), StatSignature(5,5,5)), is_table_changed(StatSignature(5,5,5), StatSignature(4,5,5)))"` 印出 `True False True`
+- [x] `grep -n "def mirror_table" backend/app/etl/mirror.py` 仍存在且 `git diff` 不改動其內文(僅新增偵測相關)
+- [x] `uv run ruff check . && uv run mypy app` green
 
 ## 必讀檔(Just-in-time)
 

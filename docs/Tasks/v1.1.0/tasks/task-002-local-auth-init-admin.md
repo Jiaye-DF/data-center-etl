@@ -32,10 +32,10 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_auth.py -q` 全綠(登入成功/密碼錯 401/viewer 打 admin-only 假端點 403/me)
-- [ ] 測試涵蓋:缺 `INIT_ADMIN_*` env 時 Settings 驗證失敗(fail-fast);init_admin 冪等(重複啟動不重建)
-- [ ] `! grep -nE "INIT_ADMIN_PASSWORD\s*[:=]\s*['\"]" backend/app` 成立(無硬編預設密碼)
-- [ ] `cd backend && uv run ruff check . && uv run mypy .` 全綠
+- [x] `cd backend && uv run pytest tests/test_auth.py -q` 全綠(登入成功/密碼錯 401/viewer 打 admin-only 假端點 403/me)
+- [x] 測試涵蓋:缺 `INIT_ADMIN_*` env 時 Settings 驗證失敗(fail-fast);init_admin 冪等(重複啟動不重建)
+- [x] `! grep -nE "INIT_ADMIN_PASSWORD\s*[:=]\s*['\"]" backend/app` 成立(無硬編預設密碼)
+- [x] `cd backend && uv run ruff check . && uv run mypy .` 全綠
 
 ## 必讀檔(Just-in-time)
 

@@ -1,7 +1,7 @@
 ---
 id: task-007
 title: 依表檢視 coverage API(全表 × 啟用排程 × 上次結果 + 逐表排除)
-status: pending
+status: done
 parallel: true
 depends_on: [task-001]
 affected_files:
@@ -38,16 +38,16 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_schedule_coverage_api.py -q` 全綠,涵蓋(seed rds_table_meta source + schedules + etl_run_logs):
+- [x] `cd backend && uv run pytest tests/test_schedule_coverage_api.py -q` 全綠,涵蓋(seed rds_table_meta source + schedules + etl_run_logs):
   - 有 1 筆啟用排程且無人排除時,`GET /schedule-coverage/tables?schema=DS` 每筆 `included==true`、`excluded==false`,`covered_summary.uncovered==0`
   - 無啟用排程時,全部 `included==false`,`uncovered==總表數`
   - `PATCH /schedule-coverage/exclusion {excluded:true}`(admin)後,該表 `excluded==true`、`included==false`、`covered_summary.excluded>=1`;`{excluded:false}` 還原為已納入
   - 某表最新 `etl_run_logs` 為 success/failed/skipped → `last_result` 對應;無 log → `null`(未跑)
   - `included=uncovered` 篩選(含被排除表)、`last_result=failed`、`keyword` 皆生效
   - `GET` viewer 可讀;`PATCH` viewer → 403
-- [ ] `curl -s -X PATCH -b <admin cookie> -H 'content-type: application/json' -d '{"schema":"DS","table":"AAA_FILE","excluded":true}' localhost:8000/api/v1/schedule-coverage/exclusion | jq -e '.success == true'`
-- [ ] `uv run ruff check . && uv run mypy app` green
-- [ ] `git diff backend/app/services/schedule_service.py backend/app/api/v1/schedules.py backend/app/repositories/rds_table_meta_repo.py` 無輸出(coverage 走新檔,不動 task-003/006 檔)
+- [x] `curl -s -X PATCH -b <admin cookie> -H 'content-type: application/json' -d '{"schema":"DS","table":"AAA_FILE","excluded":true}' localhost:8000/api/v1/schedule-coverage/exclusion | jq -e '.success == true'`
+- [x] `uv run ruff check . && uv run mypy app` green
+- [x] `git diff backend/app/services/schedule_service.py backend/app/api/v1/schedules.py backend/app/repositories/rds_table_meta_repo.py` 無輸出(coverage 走新檔,不動 task-003/006 檔)
 
 ## 必讀檔(Just-in-time)
 

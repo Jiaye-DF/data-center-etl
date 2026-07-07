@@ -1,7 +1,7 @@
 ---
 id: task-005
 title: 排程接線修正(scheduler.py 排程一律派 mirror_sync 增量)
-status: pending
+status: done
 parallel: true
 depends_on: [task-004]
 affected_files:
@@ -27,13 +27,13 @@ estimated_hours: 2
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_scheduler_v130.py -q` 全綠(以假 `Schedule` 物件呼叫 `build_scheduled_tasks`,純函式不連 DB):
+- [x] `cd backend && uv run pytest tests/test_scheduler_v130.py -q` 全綠(以假 `Schedule` 物件呼叫 `build_scheduled_tasks`,純函式不連 DB):
   - 啟用排程 → 產出 `task_name == "mirror_sync"`、kwargs `incremental=True` 且 `trigger_type="schedule"`、**不含** `etl_table_pid`/`schedule_pid`
   - cron / cron_offset(UTC+8)沿用來源排程;`schedule_id == f"schedule-{pid}"`
   - 停用 / 已刪除排程 → 不產出 task
   - 產出中無任何 `task_name == "run_etl"`(排程不再派 run_etl)
-- [ ] `uv run python -c "from app.worker.scheduler import build_scheduled_tasks, MIRROR_SYNC_TASK_NAME; print(MIRROR_SYNC_TASK_NAME)"` 印出 `mirror_sync`
-- [ ] `uv run ruff check . && uv run mypy app` green
+- [x] `uv run python -c "from app.worker.scheduler import build_scheduled_tasks, MIRROR_SYNC_TASK_NAME; print(MIRROR_SYNC_TASK_NAME)"` 印出 `mirror_sync`
+- [x] `uv run ruff check . && uv run mypy app` green
 
 ## 必讀檔(Just-in-time)
 

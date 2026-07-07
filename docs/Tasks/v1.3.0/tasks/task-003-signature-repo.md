@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: signature repo 讀寫方法(讀基準 / 更新基準)
-status: pending
+status: done
 parallel: true
 depends_on: [task-001]
 affected_files:
@@ -28,14 +28,14 @@ estimated_hours: 2
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_rds_table_meta_repo_v130.py -q` 全綠,涵蓋:
+- [x] `cd backend && uv run pytest tests/test_rds_table_meta_repo_v130.py -q` 全綠,涵蓋:
   - 對已存在快照 `update_signature` 後,`get_signatures` 回該表 `(ins, upd, del_)` 正確值
   - 未曾設定基準的表 → `get_signatures` 回 `(None, None, None)`
   - 已軟刪除的快照不出現在 `get_signatures`
   - `sync_excluded=True` 的表出現在 `get_excluded_tables`,`False` / 已刪除者不出現
-- [ ] `uv run python -c "import app.repositories.rds_table_meta_repo as m; d=dir(m.RdsTableMetaRepository); print('get_signatures' in d, 'update_signature' in d, 'get_excluded_tables' in d)"` 印出 `True True True`
-- [ ] `git diff backend/app/repositories/rds_table_meta_repo.py` 僅新增方法(既有方法未改)
-- [ ] `uv run ruff check . && uv run mypy app` green
+- [x] `uv run python -c "import app.repositories.rds_table_meta_repo as m; d=dir(m.RdsTableMetaRepository); print('get_signatures' in d, 'update_signature' in d, 'get_excluded_tables' in d)"` 印出 `True True True`
+- [x] `git diff backend/app/repositories/rds_table_meta_repo.py` 僅新增方法(既有方法未改)
+- [x] `uv run ruff check . && uv run mypy app` green
 
 ## 必讀檔(Just-in-time)
 

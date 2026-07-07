@@ -101,3 +101,77 @@ export function describeFriendly(friendly: FriendlySchedule): string {
       return `每月 ${friendly.dayOfMonth} 號 ${time}`
   }
 }
+
+/** 排程摘要:可解析 → describeFriendly;自訂 cron → 回原始字串 */
+export function describeCron(cronExpr: string): string {
+  const friendly = fromCron(cronExpr)
+  return friendly === null ? cronExpr : describeFriendly(friendly)
+}
+
+/** 該年月(0-based month)的天數 */
+function daysInMonth(year: number, monthIndex: number): number {
+  return new Date(year, monthIndex + 1, 0).getDate()
+}
+
+/**
+ * 推算 from 之後最近一次執行(使用者本地時間近似;UTC+8 語意由後端 cron 定義)。
+ * 無法解析的自訂 cron 回 null。
+ */
+export function nextRunFromCron(
+  cronExpr: string,
+  from: Date = new Date(),
+): Date | null {
+  const friendly = fromCron(cronExpr)
+  if (friendly === null) return null
+  const { hour, minute } = friendly
+
+  switch (friendly.freq) {
+    case 'daily': {
+      const candidate = new Date(
+        from.getFullYear(),
+        from.getMonth(),
+        from.getDate(),
+        hour,
+        minute,
+        0,
+        0,
+      )
+      if (candidate.getTime() <= from.getTime()) {
+        candidate.setDate(candidate.getDate() + 1)
+      }
+      return candidate
+    }
+    case 'weekly': {
+      const diff = (friendly.weekday - from.getDay() + 7) % 7
+      const candidate = new Date(
+        from.getFullYear(),
+        from.getMonth(),
+        from.getDate() + diff,
+        hour,
+        minute,
+        0,
+        0,
+      )
+      if (candidate.getTime() <= from.getTime()) {
+        candidate.setDate(candidate.getDate() + 7)
+      }
+      return candidate
+    }
+    case 'monthly': {
+      // 本月起最多找兩個月:超出當月天數 clamp 到最後一天,已過則跳下月
+      let year = from.getFullYear()
+      let month = from.getMonth()
+      for (let i = 0; i < 2; i += 1) {
+        const day = Math.min(friendly.dayOfMonth, daysInMonth(year, month))
+        const candidate = new Date(year, month, day, hour, minute, 0, 0)
+        if (candidate.getTime() > from.getTime()) return candidate
+        month += 1
+        if (month > 11) {
+          month = 0
+          year += 1
+        }
+      }
+      return null
+    }
+  }
+}

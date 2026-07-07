@@ -1,7 +1,7 @@
 ---
 id: task-008
 title: 前端 排程管理 Dialog 化 + 固定全表增量 + 列表顯示行為/上次結果
-status: pending
+status: done
 parallel: true
 depends_on: [task-006]
 affected_files:
@@ -35,12 +35,12 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd frontend && npm run typecheck && npm run lint` green(strict,禁 any)
-- [ ] `npm run build` 成功
-- [ ] 頁面實測:點「新增排程」開**彈窗**(頁面不再內嵌展開表單);表單**無逐表選擇**,送出後 `etl_table_uid` 為 null;預設 cron 為半夜 `0 3 * * *`
-- [ ] 編輯既有排程於 **Dialog** 進行;列表「做什麼」欄顯示「增量同步全部表」,「上次結果」欄顯示 success/failed/未跑 + 時間
-- [ ] 「手動觸發」按鈕觸發的是**同步**(mirror_sync)而非 `run_etl`(檢視 network 呼叫 `/sync/*` 而非 `/runs` trigger)
-- [ ] `grep -n "ScheduleFormDialog" frontend/src/app/\(main\)/schedules/page.tsx` 有輸出且頁面不再內嵌 `<form>` 展開(以 Dialog 承載)
+- [x] `cd frontend && npm run typecheck && npm run lint` green(strict,禁 any)
+- [x] `npm run build` 成功
+- [x] 頁面實測:點「新增排程」開**彈窗**(頁面不再內嵌展開表單);表單**無逐表選擇**,送出後 `etl_table_uid` 為 null;預設 cron 為半夜 `0 3 * * *`
+- [x] 編輯既有排程於 **Dialog** 進行;列表「做什麼」欄顯示「增量同步全部表」,「上次結果」欄顯示 success/failed/未跑 + 時間
+- [x] 「手動觸發」按鈕觸發的是**同步**(mirror_sync)而非 `run_etl`(檢視 network 呼叫 `/sync/*` 而非 `/runs` trigger)
+- [x] `grep -n "ScheduleFormDialog" frontend/src/app/\(main\)/schedules/page.tsx` 有輸出且頁面不再內嵌 `<form>` 展開(以 Dialog 承載)
 
 ## 必讀檔(Just-in-time)
 

@@ -1,7 +1,9 @@
 """task-005 排程管理 API 測試(真實 PostgreSQL 測試 DB)。
 
-涵蓋:排程 CRUD / 啟停、cron 格式驗證 400、名稱重複 409、指定表參照解析、
+涵蓋:排程 CRUD / 啟停、cron 格式驗證 400、名稱重複 409、
 分頁、軟刪除(資料仍在 DB,is_deleted=true)、viewer 寫入 403、ApiResponse 外殼。
+
+v1.3:同步統一為「增量同步全部表」單一語意,排程不再逐表選擇,已移除 etl_table_uid 相關測試。
 """
 
 import asyncio
@@ -160,7 +162,6 @@ def _schedule_payload(suffix: str = "a", **overrides: object) -> dict[str, objec
         "name": f"每日排程 {suffix}",
         "cron_expr": "0 2 * * *",
         "is_enabled": True,
-        "etl_table_uid": None,
         "description": f"測試排程 {suffix}",
     }
     payload.update(overrides)
@@ -169,31 +170,6 @@ def _schedule_payload(suffix: str = "a", **overrides: object) -> dict[str, objec
 
 async def _create_schedule(client: AsyncClient, suffix: str = "a") -> str:
     resp = await client.post("/api/v1/schedules", json=_schedule_payload(suffix))
-    assert resp.status_code == 201, resp.text
-    uid = resp.json()["data"]["uid"]
-    assert isinstance(uid, str)
-    return uid
-
-
-async def _create_etl_table(client: AsyncClient, suffix: str = "t") -> str:
-    resp = await client.post(
-        "/api/v1/etl-tables",
-        json={
-            "source_schema": "DS",
-            "source_table": f"SRC_{suffix}",
-            "target_schema": "public",
-            "target_table": f"tgt_{suffix}",
-            "is_enabled": True,
-            "mappings": [
-                {
-                    "source_column": "COL_A",
-                    "target_column": "col_a",
-                    "comment": "欄位 A",
-                    "sort_order": 1,
-                }
-            ],
-        },
-    )
     assert resp.status_code == 201, resp.text
     uid = resp.json()["data"]["uid"]
     assert isinstance(uid, str)
@@ -249,22 +225,12 @@ async def test_create_schedule_201(
     assert data["name"] == "每日排程 a"
     assert data["cron_expr"] == "0 2 * * *"
     assert data["is_enabled"] is True
-    assert data["etl_table_uid"] is None
+    assert data["job_desc"] == "增量同步全部表"
+    assert data["last_run_status"] is None
+    assert data["last_run_finished_at"] is None
+    assert "etl_table_uid" not in data
     assert data["description"] == "測試排程 a"
     assert data["created_at"] is not None and data["updated_at"] is not None
-
-
-async def test_create_schedule_with_etl_table(
-    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    await _login_as(client, session_factory, "admin")
-    table_uid = await _create_etl_table(client)
-    resp = await client.post(
-        "/api/v1/schedules",
-        json=_schedule_payload("single", etl_table_uid=table_uid),
-    )
-    assert resp.status_code == 201
-    assert resp.json()["data"]["etl_table_uid"] == table_uid
 
 
 async def test_create_invalid_cron_400(
@@ -277,17 +243,6 @@ async def test_create_invalid_cron_400(
         )
         assert resp.status_code == 400, bad_cron
         _assert_shell(resp.json(), success=False, response_code=400)
-
-
-async def test_create_unknown_etl_table_400(
-    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    await _login_as(client, session_factory, "admin")
-    resp = await client.post(
-        "/api/v1/schedules", json=_schedule_payload(etl_table_uid=str(uuid4()))
-    )
-    assert resp.status_code == 400
-    _assert_shell(resp.json(), success=False, response_code=400)
 
 
 async def test_create_duplicate_name_409(
@@ -341,11 +296,7 @@ async def test_patch_updates_fields(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _login_as(client, session_factory, "admin")
-    table_uid = await _create_etl_table(client)
-    resp = await client.post(
-        "/api/v1/schedules", json=_schedule_payload("patch", etl_table_uid=table_uid)
-    )
-    uid = resp.json()["data"]["uid"]
+    uid = await _create_schedule(client, "patch")
     resp = await client.patch(
         f"/api/v1/schedules/{uid}",
         json={"name": "改名排程", "cron_expr": "30 4 * * 1-5", "description": "改過"},
@@ -355,12 +306,9 @@ async def test_patch_updates_fields(
     assert data["name"] == "改名排程"
     assert data["cron_expr"] == "30 4 * * 1-5"
     assert data["description"] == "改過"
-    # 未帶欄位不變
-    assert data["etl_table_uid"] == table_uid
-    # 明確帶 null → 清空指定表(改為全部啟用表)
-    resp = await client.patch(f"/api/v1/schedules/{uid}", json={"etl_table_uid": None})
-    assert resp.status_code == 200
-    assert resp.json()["data"]["etl_table_uid"] is None
+    # v1.3:回應不再含 etl_table_uid,固定 job_desc
+    assert "etl_table_uid" not in data
+    assert data["job_desc"] == "增量同步全部表"
 
 
 async def test_patch_invalid_cron_400(

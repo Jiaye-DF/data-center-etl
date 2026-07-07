@@ -1,6 +1,6 @@
 # Tasks v1.2.0
 
-> 狀態:待認領(已完成 0/6)
+> 狀態:全部完成(已完成 6/6)
 > 變更:2026-07-06 propose 加「業務資料名稱(GAT JOIN 快照落地)」→ 影響 task-001(model 加 `business_name`)/ task-002(refresh 做 GAT JOIN 寫入 + list 回傳)/ task-005(前端加業務資料名稱欄);無新增檔案、依賴鏈不變。
 > 來源:`propose-v1.2.0.md`(scope 地板,禁動)
 > 範圍:自動偵測同步平台 —— DB metadata 快照(+Redis)、自動鏡像 + DS 字典中文 COMMENT 引擎、雙瀏覽頁補強、排程友善 UI。既有 `app/etl/{engine,reader,writer,comments}.py`(config-driven 路徑)**保留不動**,自動鏡像為新路徑。
@@ -11,12 +11,12 @@
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
-| 001 | metadata 快照資料模型 + migration + 依賴鎖版(redis) | pending | ✓ | — | `backend/app/models/rds_table_meta.py` / `models/__init__.py` / `alembic/versions/v2_add_rds_table_meta.py` / `pyproject.toml` / `uv.lock` / `tests/test_models_v120.py` |
-| 002 | 快照服務 + Redis cache + datasets API 改讀快照(過濾/時間欄/重整) | pending | ✓ | 001 | `backend/app/services/snapshot_service.py` / `repositories/rds_table_meta_repo.py` / `core/redis.py` / `api/v1/datasets.py` / `schemas/rawdata.py` / `etl/introspect.py` / `tests/test_snapshot_service.py` |
-| 003 | 自動鏡像 + DS 字典 COMMENT 轉換引擎(保留型別/comment 放寬) | pending | ✓ | — | `backend/app/etl/mirror.py` / `etl/dictionary.py` / `tests/test_mirror.py` / `tests/test_dictionary.py` |
-| 004 | 同步觸發端點 + worker task + sync_states 更新 | pending | ✓ | 001,002,003 | `backend/app/api/v1/sync.py` / `api/v1/__init__.py` / `worker/tasks.py` / `services/sync_service.py` / `schemas/sync.py` / `tests/test_sync_api.py` |
-| 005 | 前端 原始資料管理補強(移除查看欄位/schema 說明/過濾/時間欄/同步鈕) | pending | ✓ | 002,004 | `frontend/src/components/datasets/DatasetBrowser.tsx` / `app/(main)/raw-data/page.tsx` / `app/(main)/etl-data/page.tsx` / `lib/api/datasetApi.ts` / `lib/api/syncApi.ts` / `constants/schemaDescriptions.ts` |
-| 006 | 前端 排程友善 UI(下拉/時間選擇取代 cron 5 欄,預設全跑) | pending | ✓ | — | `frontend/src/app/(main)/schedules/page.tsx` / `components/schedules/CronFriendlyPicker.tsx` / `utils/cron.ts` / `lib/api/scheduleApi.ts` |
+| 001 | metadata 快照資料模型 + migration + 依賴鎖版(redis) | done | ✓ | — | `backend/app/models/rds_table_meta.py` / `models/__init__.py` / `alembic/versions/v2_add_rds_table_meta.py` / `pyproject.toml` / `uv.lock` / `tests/test_models_v120.py` |
+| 002 | 快照服務 + Redis cache + datasets API 改讀快照(過濾/時間欄/重整) | done | ✓ | 001 | `backend/app/services/snapshot_service.py` / `repositories/rds_table_meta_repo.py` / `core/redis.py` / `api/v1/datasets.py` / `schemas/rawdata.py` / `etl/introspect.py` / `tests/test_snapshot_service.py` |
+| 003 | 自動鏡像 + DS 字典 COMMENT 轉換引擎(保留型別/comment 放寬) | done | ✓ | — | `backend/app/etl/mirror.py` / `etl/dictionary.py` / `tests/test_mirror.py` / `tests/test_dictionary.py` |
+| 004 | 同步觸發端點 + worker task + sync_states 更新 | done | ✓ | 001,002,003 | `backend/app/api/v1/sync.py` / `api/v1/__init__.py` / `worker/tasks.py` / `services/sync_service.py` / `schemas/sync.py` / `tests/test_sync_api.py` |
+| 005 | 前端 原始資料管理補強(移除查看欄位/schema 說明/過濾/時間欄/同步鈕) | done | ✓ | 002,004 | `frontend/src/components/datasets/DatasetBrowser.tsx` / `app/(main)/raw-data/page.tsx` / `app/(main)/etl-data/page.tsx` / `lib/api/datasetApi.ts` / `lib/api/syncApi.ts` / `constants/schemaDescriptions.ts` |
+| 006 | 前端 排程友善 UI(下拉/時間選擇取代 cron 5 欄,預設全跑) | done | ✓ | — | `frontend/src/app/(main)/schedules/page.tsx` / `components/schedules/CronFriendlyPicker.tsx` / `utils/cron.ts` / `lib/api/scheduleApi.ts` |
 
 ## 拆解摘要
 

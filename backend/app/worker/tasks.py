@@ -33,7 +33,7 @@ from app.etl.engine import (
     mask_secrets,
 )
 from app.etl.engine import run_etl as run_etl_pipeline
-from app.etl.mirror import MirrorEngine
+from app.etl.mirror import MirrorEngine, TableStat, stat_changed
 from app.etl.reader import PostgresSourceReader
 from app.etl.writer import PostgresTargetWriter
 from app.models.rds_table_meta import Dataset, RdsTableMeta
@@ -267,10 +267,17 @@ async def mirror_sync(
     schema: str | None = None,
     table: str | None = None,
     tables: list[str] | None = None,
+    incremental: bool = False,
+    trigger_type: str = "manual",
+    schedule_pid: int | None = None,
 ) -> dict[str, object]:
     """執行一輪自動鏡像同步:建 run → 逐表鏡像(來源 → hub,套字典 COMMENT)→ 更新快照 → 收尾 run。
 
     - 篩選:schema + tables 清單;單表:schema + table 皆給;全量:皆空(worker 端 DS 優先)。
+    - incremental=True(增量同步):先讀來源計數器 signature 與基準,未變動表跳過(skip log,
+      不重灌、last_synced_at 不更新);逐表排除(sync_excluded)表一律跳過(即使有變動)。
+    - incremental=False(人工全量同步):忽略偵測與排除,整批覆蓋全部表(對齊既有語意);
+      但仍更新 signature 基準,供後續增量比對。
     - 單表失敗不中斷整輪:錯誤明細(含 stack trace,機密遮罩)寫入該表 log,續跑下一表;
       任一表失敗 → run 總狀態 failed(對齊既有 run_etl 慣例)。
     - 同步後失效 datasets:source:* 快取(對齊 snapshot_service 失效用法)。
@@ -283,22 +290,50 @@ async def mirror_sync(
         try:
             targets = await _resolve_sync_targets(mirror, schema, table, tables)
             configs = [_mirror_config(s, t) for s, t in targets]
-            run_pid = await store.create_run(trigger_type="manual", schedule_pid=None)
-            success = failed = 0
+            # 一次取來源全表累計計數器(零掃表);增量模式再讀基準與排除清單
+            stats = await mirror.fetch_source_stats()
+            baselines: dict[tuple[str, str], tuple[int, int, int] | None] = {}
+            excluded: set[tuple[str, str]] = set()
+            if incremental:
+                baselines = await repo.read_stat_baselines(Dataset.SOURCE)
+                excluded = await repo.list_excluded(Dataset.SOURCE)
+            run_pid = await store.create_run(
+                trigger_type=trigger_type, schedule_pid=schedule_pid
+            )
+            success = failed = skipped = 0
             for config in configs:
+                s, t = config.source_schema, config.source_table
+                key = (s, t)
+                current = stats.get(key)
+                # 來源 pg_stat 無此表計數 → 保守以 (0,0,0) 為 signature 基準值
+                current_stat = current or TableStat(0, 0, 0)
+
+                # 增量:逐表排除表一律略過(即使有變動,不灌;log 顯示 skip)
+                if incremental and key in excluded:
+                    await store.add_skipped_log(run_pid=run_pid, config=config)
+                    skipped += 1
+                    continue
+
+                # 增量:未變動表跳過(不重灌、last_synced_at 不更新);
+                # current 為 None(來源無計數)保守視為變動,避免漏灌
+                if incremental:
+                    baseline_tuple = baselines.get(key)
+                    baseline = (
+                        None if baseline_tuple is None else TableStat(*baseline_tuple)
+                    )
+                    changed = current is None or stat_changed(current_stat, baseline)
+                    if not changed:
+                        await store.add_skipped_log(run_pid=run_pid, config=config)
+                        skipped += 1
+                        continue
+
                 started = now_tw()
                 log_pid = await store.start_table_log(run_pid=run_pid, config=config)
                 try:
-                    written = await mirror.mirror_table(
-                        config.source_schema, config.source_table
-                    )
+                    written = await mirror.mirror_table(s, t)
                 except Exception as exc:
                     failed += 1
-                    logger.exception(
-                        "同步單表失敗:%s.%s",
-                        config.source_schema,
-                        config.source_table,
-                    )
+                    logger.exception("同步單表失敗:%s.%s", s, t)
                     await store.finish_table_log(
                         log_pid,
                         status="failed",
@@ -309,8 +344,16 @@ async def mirror_sync(
                     )
                     continue
                 success += 1
-                await _mark_meta_synced(
-                    session, repo, config.source_schema, config.source_table, written
+                await _mark_meta_synced(session, repo, s, t, written)
+                # 覆蓋成功 → 更新 signature 基準(全量模式亦更新,建立/刷新基準)
+                await repo.update_stat_signature(
+                    Dataset.SOURCE,
+                    s,
+                    t,
+                    n_tup_ins=current_stat.n_tup_ins,
+                    n_tup_upd=current_stat.n_tup_upd,
+                    n_tup_del=current_stat.n_tup_del,
+                    actor_uid=SYSTEM_ACTOR_UID,
                 )
                 await store.finish_table_log(
                     log_pid,
@@ -320,12 +363,7 @@ async def mirror_sync(
                     error_message=None,
                     error_stack=None,
                 )
-                logger.info(
-                    "同步單表完成:%s.%s(%d 筆)",
-                    config.source_schema,
-                    config.source_table,
-                    written,
-                )
+                logger.info("同步單表完成:%s.%s(%d 筆)", s, t, written)
             status = "failed" if failed else "success"
             await store.finish_run(
                 run_pid,
@@ -343,6 +381,7 @@ async def mirror_sync(
                 "total_tables": len(configs),
                 "success_tables": success,
                 "failed_tables": failed,
+                "skipped_tables": skipped,
             }
         except Exception as exc:
             logger.exception("同步執行失敗(引擎外例外):schema=%s table=%s", schema, table)
