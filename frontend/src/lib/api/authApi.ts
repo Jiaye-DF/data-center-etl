@@ -9,6 +9,8 @@ export type AuthProvider = 'local' | 'sso'
 export interface AuthUser {
   uid: string
   username: string
+  /** 顯示名稱(SSO 姓名);無則 fallback username */
+  display_name: string | null
   role: UserRole
   provider: AuthProvider
 }

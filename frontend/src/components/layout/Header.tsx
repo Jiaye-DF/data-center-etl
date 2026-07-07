@@ -41,6 +41,8 @@ export function Header(): React.ReactNode {
 
   const roleLabel =
     user !== null ? (ROLE_LABELS[user.role] ?? user.role) : ''
+  const displayName =
+    user !== null ? (user.display_name ?? user.username) : ''
 
   return (
     <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-border bg-card px-4 md:px-6">
@@ -82,16 +84,21 @@ export function Header(): React.ReactNode {
               className="flex min-h-[40px] items-center gap-2 rounded-lg px-2 text-sm text-foreground transition-colors hover:bg-muted"
             >
               <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary">
-                {user.username.slice(0, 1).toUpperCase()}
+                {displayName.slice(0, 1).toUpperCase()}
               </span>
-              <span className="hidden md:inline">{user.username}</span>
+              <span className="hidden md:inline">{displayName}</span>
             </button>
             {menuOpen ? (
               <div className="absolute right-0 z-50 mt-2 w-60 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
                 <div className="px-4 py-3">
                   <p className="font-semibold text-foreground">
-                    {user.username}
+                    {displayName}
                   </p>
+                  {user.display_name !== null ? (
+                    <p className="text-xs text-muted-foreground">
+                      {user.username}
+                    </p>
+                  ) : null}
                   <span className="df-badge mt-1 bg-muted text-muted-foreground">
                     {roleLabel}
                   </span>

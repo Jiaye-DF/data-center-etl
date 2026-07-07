@@ -12,6 +12,10 @@ class User(BaseModel):
     username: Mapped[str] = mapped_column(
         String(100), nullable=False, comment="登入帳號 / Login username"
     )
+    # 顯示名稱:SSO 使用者取中央回傳之 name(僅供顯示,非授權依據);本地帳號可為 NULL
+    display_name: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="顯示名稱(SSO 姓名)/ Display name"
+    )
     # 只存不可逆雜湊(bcrypt),禁明文;SSO-only 使用者可為 NULL(登入邏輯屬 task-002)
     password_hash: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="密碼雜湊(bcrypt,禁明文)/ Password hash (bcrypt only)"

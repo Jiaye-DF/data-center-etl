@@ -26,6 +26,7 @@ class UserRepository:
         username: str,
         password_hash: str | None,
         role: str,
+        display_name: str | None = None,
         actor_uid: UUID | None = None,
     ) -> User:
         uid = uuid4()
@@ -36,6 +37,7 @@ class UserRepository:
             username=username,
             password_hash=password_hash,
             role=role,
+            display_name=display_name,
             created_by=actor,
             updated_by=actor,
         )

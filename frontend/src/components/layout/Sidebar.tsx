@@ -13,14 +13,14 @@ interface NavItem {
 }
 
 interface NavGroup {
-  /** 分組標題;省略代表無標題的頂層項目(如總覽) */
+  /** 分組標題;省略代表無標題的頂層項目(如儀表板) */
   title?: string
   items: NavItem[]
 }
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    items: [{ href: '/', label: '總覽', icon: <OverviewIcon /> }],
+    items: [{ href: '/', label: '儀表板', icon: <OverviewIcon /> }],
   },
   {
     title: 'ETL 作業',

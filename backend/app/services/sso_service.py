@@ -70,17 +70,23 @@ class SsoService:
     async def _get_or_create_user(self, sso_user: DfSsoUser) -> User:
         existing = await self.get_user_by_sso_subject(sso_user.user_id)
         if existing is not None:
-            # 重複登入:不重建、不動角色
+            # 重複登入:不重建、不動角色;回填最新顯示姓名(中央為準)
+            existing.display_name = sso_user.name
+            await self._db.flush()
             return existing
         by_username = await self._users.get_by_username(sso_user.email)
         if by_username is not None:
             # 同帳號已有本地使用者 → 綁定 sso_subject(避免 username 唯一索引衝突),保留原角色
             by_username.sso_subject = sso_user.user_id
+            by_username.display_name = sso_user.name
             await self._db.flush()
             return by_username
         # 首次登入:自動建 viewer,無本地密碼(SSO-only)
         user = await self._users.create(
-            username=sso_user.email, password_hash=None, role="viewer"
+            username=sso_user.email,
+            password_hash=None,
+            role="viewer",
+            display_name=sso_user.name,
         )
         user.sso_subject = sso_user.user_id
         await self._db.flush()

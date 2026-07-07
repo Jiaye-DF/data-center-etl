@@ -13,6 +13,9 @@ class UserResponse(BaseModel):
 
     uid: UUID = Field(description="使用者公開識別碼")
     username: str = Field(description="帳號")
+    display_name: str | None = Field(
+        default=None, description="顯示名稱(SSO 姓名;無則前端 fallback 帳號)"
+    )
     role: str = Field(description="角色:admin(可寫)/ viewer(唯讀)")
     provider: str = Field(
         default="local",

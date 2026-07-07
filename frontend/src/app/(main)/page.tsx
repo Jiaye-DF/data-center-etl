@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useEffect, useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth/useAuth'
@@ -14,35 +14,6 @@ import {
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { formatNullableDateTime } from '@/utils/datetime'
 import { nextRunFromCron } from '@/utils/cron'
-
-interface SectionItem {
-  href: string
-  title: string
-  description: string
-}
-
-const SECTIONS: SectionItem[] = [
-  {
-    href: '/sources',
-    title: '原始資料管理',
-    description: '瀏覽來源 ERP 原始資料庫的 schema 與資料表結構',
-  },
-  {
-    href: '/sources-hub',
-    title: 'ETL 資料管理',
-    description: '瀏覽 ETL 轉換後的資料中心庫',
-  },
-  {
-    href: '/schedules',
-    title: '排程管理',
-    description: '排程設定與手動觸發',
-  },
-  {
-    href: '/runs',
-    title: '執行紀錄',
-    description: '執行紀錄與逐表詳細 log',
-  },
-]
 
 const DATASET_LABELS: Record<string, string> = {
   source: '原始資料',
@@ -250,31 +221,6 @@ function DatasetScaleCard({
   )
 }
 
-interface SectionCardProps {
-  item: SectionItem
-}
-
-const SectionCard = memo(function SectionCard({
-  item,
-}: SectionCardProps): React.ReactNode {
-  return (
-    <Link
-      href={item.href}
-      className="df-card group flex min-h-[44px] flex-col gap-1.5 p-5 transition-all hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
-    >
-      <span className="flex items-center gap-2 text-base font-semibold text-foreground md:text-lg">
-        {item.title}
-        <span className="text-muted-foreground transition-transform group-hover:translate-x-0.5">
-          →
-        </span>
-      </span>
-      <span className="text-sm text-muted-foreground md:text-base">
-        {item.description}
-      </span>
-    </Link>
-  )
-})
-
 export default function DashboardPage(): React.ReactNode {
   const router = useRouter()
   const { user } = useAuth()
@@ -299,10 +245,10 @@ export default function DashboardPage(): React.ReactNode {
   return (
     <section className="mx-auto flex max-w-7xl flex-col gap-6">
       <div>
-        <h1 className="text-xl font-bold text-foreground md:text-2xl">總覽</h1>
+        <h1 className="text-xl font-bold text-foreground md:text-2xl">儀表板</h1>
         {user !== null ? (
           <p className="mt-1 text-sm text-muted-foreground md:text-base">
-            歡迎,{user.username}
+            歡迎,{user.display_name ?? user.username}
           </p>
         ) : null}
       </div>
@@ -312,7 +258,7 @@ export default function DashboardPage(): React.ReactNode {
           role="alert"
           className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
-          載入總覽資料失敗,請稍後再試
+          載入儀表板資料失敗,請稍後再試
         </p>
       ) : null}
       {isLoading ? (
@@ -366,11 +312,6 @@ export default function DashboardPage(): React.ReactNode {
         </>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {SECTIONS.map((item) => (
-          <SectionCard key={item.href} item={item} />
-        ))}
-      </div>
     </section>
   )
 }

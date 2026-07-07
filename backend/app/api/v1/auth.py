@@ -91,6 +91,10 @@ async def me(
     provider = str(getattr(request.state, "auth_provider", "local"))
     return success(
         data=UserResponse(
-            uid=user.uid, username=user.username, role=user.role, provider=provider
+            uid=user.uid,
+            username=user.username,
+            display_name=user.display_name,
+            role=user.role,
+            provider=provider,
         )
     )
