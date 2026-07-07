@@ -28,7 +28,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/sources', label: '原始資料管理', icon: <DatabaseIcon /> },
       { href: '/sources-hub', label: 'ETL 資料管理', icon: <LayersIcon /> },
       { href: '/schedules', label: 'ETL 排程管理', icon: <ClockIcon /> },
-      { href: '/schedules/coverage', label: '排程涵蓋', icon: <CoverageIcon /> },
       { href: '/runs', label: 'ETL 執行紀錄', icon: <HistoryIcon /> },
     ],
   },
@@ -178,17 +177,6 @@ function ClockIcon(): React.ReactNode {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 2" />
-    </svg>
-  )
-}
-
-function CoverageIcon(): React.ReactNode {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M3 6h11" />
-      <path d="M3 12h11" />
-      <path d="M3 18h7" />
-      <path d="m15 16 2 2 4-4" />
     </svg>
   )
 }

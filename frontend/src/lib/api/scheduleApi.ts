@@ -1,14 +1,54 @@
 import { baseApi } from '@/lib/api/baseApi'
 import { unwrap, type ApiEnvelope } from '@/types/api'
 
-export interface Schedule {
+/** 啟停過濾:全部 / 已啟用 / 已停用 */
+export type EnabledFilter = 'all' | 'enabled' | 'disabled'
+/** 上次結果過濾:全部 / 成功 / 失敗 / 從未執行 */
+export type LastResultFilter = 'all' | 'success' | 'failed' | 'never'
+
+/** 逐表視角一列:來源表 meta × 其排程 × 最新執行結果(LEFT JOIN,尚無排程之欄位為 null) */
+export interface ScheduleTableView {
+  table_name: string
+  business_name: string | null
+  schedule_uid: string | null
+  cron_expr: string | null
+  is_enabled: boolean | null
+  description: string | null
+  last_synced_at: string | null
+  last_run_status: string | null
+}
+
+export interface ScheduleTableListData {
+  items: ScheduleTableView[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ScheduleTableListParams {
+  /** 來源表 schema(必填) */
+  schema: string
+  page: number
+  pageSize: number
+  enabled: EnabledFilter
+  lastResult: LastResultFilter
+  keyword: string
+}
+
+/** 各 schema 摘要(來源表數 / 已啟用排程數) */
+export interface ScheduleSchemaSummary {
+  schema_name: string
+  table_count: number
+  enabled_count: number
+}
+
+/** 單一排程完整回應(PATCH / enable / disable 回傳) */
+export interface ScheduleResponse {
   uid: string
   name: string
   cron_expr: string
   is_enabled: boolean
-  /** 固定文案「增量同步全部表」(v1.3 起排程只有一種:全表增量) */
   job_desc: string
-  /** 上次執行狀態:success/failed/partial/running/pending;null=未跑 */
   last_run_status: string | null
   last_run_finished_at: string | null
   description: string | null
@@ -16,30 +56,12 @@ export interface Schedule {
   updated_at: string
 }
 
-export interface ScheduleListData {
-  items: Schedule[]
-  total: number
-  page: number
-  page_size: number
-}
-
-export interface ScheduleListParams {
-  page: number
-  pageSize: number
-}
-
-export interface ScheduleCreatePayload {
-  name: string
-  cron_expr: string
-  is_enabled: boolean
-  description: string | null
-}
-
+/** 更新排程:僅 cron / 啟停 / 描述(不改則省略對應欄) */
 export interface ScheduleUpdatePayload {
   uid: string
-  name: string
-  cron_expr: string
-  description: string | null
+  cron_expr?: string
+  is_enabled?: boolean
+  description?: string | null
 }
 
 export interface ScheduleSetEnabledPayload {
@@ -47,70 +69,102 @@ export interface ScheduleSetEnabledPayload {
   enabled: boolean
 }
 
-interface ScheduleDeleteData {
-  message: string
+/** 批次啟停:省略 schema 代表全部來源表排程 */
+export interface ScheduleBatchEnabledPayload {
+  enabled: boolean
+  schema?: string
+}
+
+export interface ScheduleBatchEnabledResult {
+  affected: number
 }
 
 export const scheduleApi = baseApi
-  .enhanceEndpoints({ addTagTypes: ['Schedule'] })
+  .enhanceEndpoints({ addTagTypes: ['ScheduleTable', 'ScheduleSchema'] })
   .injectEndpoints({
     endpoints: (build) => ({
-      listSchedules: build.query<ScheduleListData, ScheduleListParams>({
-        query: ({ page, pageSize }) => ({
+      listScheduleTables: build.query<
+        ScheduleTableListData,
+        ScheduleTableListParams
+      >({
+        query: ({ schema, page, pageSize, enabled, lastResult, keyword }) => ({
           url: '/schedules',
-          params: { page, page_size: pageSize },
+          params: {
+            schema,
+            page,
+            page_size: pageSize,
+            enabled,
+            last_result: lastResult,
+            // 關鍵字僅在有值時帶上,避免送空字串
+            ...(keyword !== '' ? { keyword } : {}),
+          },
         }),
-        providesTags: [{ type: 'Schedule', id: 'LIST' }],
+        providesTags: [{ type: 'ScheduleTable', id: 'LIST' }],
         transformResponse: (
-          response: ApiEnvelope<ScheduleListData>,
-        ): ScheduleListData => unwrap(response),
+          response: ApiEnvelope<ScheduleTableListData>,
+        ): ScheduleTableListData => unwrap(response),
       }),
-      createSchedule: build.mutation<Schedule, ScheduleCreatePayload>({
-        query: (payload) => ({
-          url: '/schedules',
-          method: 'POST',
-          body: payload,
-        }),
-        invalidatesTags: [{ type: 'Schedule', id: 'LIST' }],
-        transformResponse: (response: ApiEnvelope<Schedule>): Schedule =>
-          unwrap(response),
+      getScheduleSchemas: build.query<ScheduleSchemaSummary[], void>({
+        query: () => '/schedules/schemas',
+        providesTags: [{ type: 'ScheduleSchema', id: 'LIST' }],
+        transformResponse: (
+          response: ApiEnvelope<{ items: ScheduleSchemaSummary[] }>,
+        ): ScheduleSchemaSummary[] => unwrap(response).items,
       }),
-      updateSchedule: build.mutation<Schedule, ScheduleUpdatePayload>({
+      updateSchedule: build.mutation<ScheduleResponse, ScheduleUpdatePayload>({
         query: ({ uid, ...body }) => ({
           url: `/schedules/${uid}`,
           method: 'PATCH',
           body,
         }),
-        invalidatesTags: [{ type: 'Schedule', id: 'LIST' }],
-        transformResponse: (response: ApiEnvelope<Schedule>): Schedule =>
-          unwrap(response),
-      }),
-      deleteSchedule: build.mutation<ScheduleDeleteData, string>({
-        query: (uid) => ({
-          url: `/schedules/${uid}`,
-          method: 'DELETE',
-        }),
-        invalidatesTags: [{ type: 'Schedule', id: 'LIST' }],
+        invalidatesTags: [
+          { type: 'ScheduleTable', id: 'LIST' },
+          { type: 'ScheduleSchema', id: 'LIST' },
+        ],
         transformResponse: (
-          response: ApiEnvelope<ScheduleDeleteData>,
-        ): ScheduleDeleteData => unwrap(response),
+          response: ApiEnvelope<ScheduleResponse>,
+        ): ScheduleResponse => unwrap(response),
       }),
-      setScheduleEnabled: build.mutation<Schedule, ScheduleSetEnabledPayload>({
+      setScheduleEnabled: build.mutation<
+        ScheduleResponse,
+        ScheduleSetEnabledPayload
+      >({
         query: ({ uid, enabled }) => ({
           url: `/schedules/${uid}/${enabled ? 'enable' : 'disable'}`,
           method: 'POST',
         }),
-        invalidatesTags: [{ type: 'Schedule', id: 'LIST' }],
-        transformResponse: (response: ApiEnvelope<Schedule>): Schedule =>
-          unwrap(response),
+        invalidatesTags: [
+          { type: 'ScheduleTable', id: 'LIST' },
+          { type: 'ScheduleSchema', id: 'LIST' },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<ScheduleResponse>,
+        ): ScheduleResponse => unwrap(response),
+      }),
+      batchSetEnabled: build.mutation<
+        ScheduleBatchEnabledResult,
+        ScheduleBatchEnabledPayload
+      >({
+        query: (body) => ({
+          url: '/schedules/batch-enabled',
+          method: 'POST',
+          body,
+        }),
+        invalidatesTags: [
+          { type: 'ScheduleTable', id: 'LIST' },
+          { type: 'ScheduleSchema', id: 'LIST' },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<ScheduleBatchEnabledResult>,
+        ): ScheduleBatchEnabledResult => unwrap(response),
       }),
     }),
   })
 
 export const {
-  useListSchedulesQuery,
-  useCreateScheduleMutation,
+  useListScheduleTablesQuery,
+  useGetScheduleSchemasQuery,
   useUpdateScheduleMutation,
-  useDeleteScheduleMutation,
   useSetScheduleEnabledMutation,
+  useBatchSetEnabledMutation,
 } = scheduleApi

@@ -28,7 +28,26 @@ class Schedule(BaseModel):
         BigInteger,
         ForeignKey("etl_tables.pid", name="fk_schedules_etl_table"),
         nullable=True,
-        comment="指定單表(NULL 為全部啟用表)/ Target ETL table (NULL = all enabled tables)",
+        comment=(
+            "指定單表(NULL 為全部啟用表)/ Target ETL table (NULL = all enabled tables)"
+            "(deprecated:v1.3.1 起不使用,保留欄位待人工移除)"
+        ),
+    )
+    source_schema: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment=(
+            "來源表 schema(對應 rds_table_meta.schema_name)"
+            "/ Source table schema (maps to rds_table_meta)"
+        ),
+    )
+    source_table: Mapped[str | None] = mapped_column(
+        String(200),
+        nullable=True,
+        comment=(
+            "來源表名稱(對應 rds_table_meta.table_name)"
+            "/ Source table name (maps to rds_table_meta)"
+        ),
     )
     description: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="排程描述 / Schedule description"
@@ -39,6 +58,14 @@ class Schedule(BaseModel):
         Index(
             "uq_schedules_name",
             "name",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+        ),
+        # v1.3.1 一表一排程:未刪除範圍內來源表唯一 → partial unique index
+        Index(
+            "uq_schedules_source_table",
+            "source_schema",
+            "source_table",
             unique=True,
             postgresql_where=text("is_deleted = false"),
         ),

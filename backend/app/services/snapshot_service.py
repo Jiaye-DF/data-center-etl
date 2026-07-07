@@ -19,6 +19,7 @@ from app.etl import introspect
 from app.etl.dictionary import fetch_table_comments
 from app.models.rds_table_meta import Dataset, RdsTableMeta
 from app.repositories.rds_table_meta_repo import RdsTableMetaRepository
+from app.repositories.schedule_repo import ScheduleRepository
 from app.schemas.rawdata import (
     SchemaListResponse,
     SchemaSummary,
@@ -30,6 +31,11 @@ from app.utils.datetime import db_now
 
 # cache TTL:快照為手動 refresh 觸發,短 TTL 防髒讀無限存活即可
 _CACHE_TTL_SECONDS = 300
+
+# 自動建排程為系統動作,無登入使用者 → 全零 UUID 系統帳號(同 worker / audit_service 約定)
+_SYSTEM_ACTOR_UID = UUID("00000000-0000-0000-0000-000000000000")
+# 逐表排程預設:每天 00:00(Asia/Taipei)、停用(避免快照納入即自動排程執行)
+_AUTO_SCHEDULE_CRON = "0 0 * * *"
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,7 @@ class SnapshotService:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
         self._repo = RdsTableMetaRepository(db)
+        self._schedule_repo = ScheduleRepository(db)
 
     # ── refresh(唯一打 RDS 的路徑)──────────────────────────────────────
     async def refresh(self, dataset_value: str, actor_uid: UUID) -> SnapshotRefreshResponse:
@@ -96,6 +103,9 @@ class SnapshotService:
                 snapshot_at=snapshot_at,
                 actor_uid=actor_uid,
             )
+        # 僅 source:同交易維護逐表排程(避免「表有快照、無排程」中間態)
+        if dataset is Dataset.SOURCE:
+            await self._sync_source_schedules(collected)
         await cache.delete_pattern(cache.cache_key("datasets", dataset_value, "*"))
         return SnapshotRefreshResponse(
             dataset=dataset_value,
@@ -122,6 +132,29 @@ class SnapshotService:
                 for t in tables
             ]
         return collected
+
+    async def _sync_source_schedules(self, collected: list[_CollectedTable]) -> None:
+        """本輪來源表逐表建/留排程 + 收斂:缺表軟刪、v1.3.0 全表舊排程一次性軟刪。
+
+        冪等可重入:既有排程不覆蓋啟停 / cron;與 metadata upsert 同交易提交。
+        """
+        present: set[tuple[str, str]] = set()
+        for item in collected:
+            present.add((item.schema_name, item.table_name))
+            await self._schedule_repo.upsert_for_source_table(
+                schema=item.schema_name,
+                table=item.table_name,
+                name=f"{item.schema_name}.{item.table_name}",
+                cron_expr=_AUTO_SCHEDULE_CRON,
+                is_enabled=False,
+                actor_uid=_SYSTEM_ACTOR_UID,
+            )
+        await self._schedule_repo.soft_delete_by_source_tables_absent(
+            present=present, actor_uid=_SYSTEM_ACTOR_UID
+        )
+        await self._schedule_repo.soft_delete_legacy_all_table(
+            actor_uid=_SYSTEM_ACTOR_UID
+        )
 
     # ── 讀快照(cache 命中免打 repo)─────────────────────────────────────
     async def list_schemas(self, dataset_value: str) -> SchemaListResponse:

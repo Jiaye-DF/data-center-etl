@@ -9,10 +9,11 @@ from app.core.response import success
 from app.models.user import User
 from app.schemas.response import ApiResponse
 from app.schemas.schedule import (
-    ScheduleCreateRequest,
-    ScheduleDeleteResponse,
-    ScheduleListResponse,
+    ScheduleBatchEnabledRequest,
+    ScheduleBatchEnabledResponse,
     ScheduleResponse,
+    ScheduleSchemaSummaryListResponse,
+    ScheduleTableViewListResponse,
     ScheduleUpdateRequest,
 )
 from app.services.schedule_service import ScheduleService
@@ -22,51 +23,48 @@ router = APIRouter()
 
 @router.get(
     "",
-    response_model=ApiResponse[ScheduleListResponse],
-    summary="排程清單(分頁)",
+    response_model=ApiResponse[ScheduleTableViewListResponse],
+    summary="逐表視角清單(指定 schema;分頁 + 啟停 / 上次結果 / 關鍵字過濾)",
 )
-async def list_schedules(
+async def list_tables_view(
     db: Annotated[AsyncSession, Depends(get_db)],
     _user: Annotated[User, Depends(require_login)],
+    schema: Annotated[str, Query(min_length=1, description="來源表 schema(必填)")],
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-) -> ApiResponse[ScheduleListResponse]:
-    data = await ScheduleService(db).list_schedules(page=page, page_size=page_size)
+    enabled: Annotated[str, Query(description="all / enabled / disabled")] = "all",
+    last_result: Annotated[
+        str, Query(description="all / success / failed / never(其餘 status 亦以字面比對)")
+    ] = "all",
+    keyword: Annotated[str, Query(description="對表名 / 業務名 ILIKE 子字串過濾")] = "",
+) -> ApiResponse[ScheduleTableViewListResponse]:
+    data = await ScheduleService(db).list_tables_view(
+        schema=schema,
+        page=page,
+        page_size=page_size,
+        enabled=enabled,
+        last_result=last_result,
+        keyword=keyword,
+    )
     return success(data=data)
 
 
 @router.get(
-    "/{uid}",
-    response_model=ApiResponse[ScheduleResponse],
-    summary="單一排程明細",
+    "/schemas",
+    response_model=ApiResponse[ScheduleSchemaSummaryListResponse],
+    summary="各 schema 摘要(表數 / 已啟用排程數)",
 )
-async def get_schedule(
-    uid: UUID,
+async def list_schema_summaries(
     db: Annotated[AsyncSession, Depends(get_db)],
     _user: Annotated[User, Depends(require_login)],
-) -> ApiResponse[ScheduleResponse]:
-    return success(data=await ScheduleService(db).get_schedule(uid))
-
-
-@router.post(
-    "",
-    response_model=ApiResponse[ScheduleResponse],
-    status_code=201,
-    summary="建立排程(cron 式定義,時間一律 UTC+8)",
-)
-async def create_schedule(
-    payload: ScheduleCreateRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(require_admin)],
-) -> ApiResponse[ScheduleResponse]:
-    data = await ScheduleService(db).create_schedule(payload, actor_uid=user.uid)
-    return success(data=data, response_code=201)
+) -> ApiResponse[ScheduleSchemaSummaryListResponse]:
+    return success(data=await ScheduleService(db).list_schema_summaries())
 
 
 @router.patch(
     "/{uid}",
     response_model=ApiResponse[ScheduleResponse],
-    summary="更新排程(名稱 / cron / 描述)",
+    summary="更新排程(cron / 啟停 / 描述;禁改綁定來源表)",
 )
 async def update_schedule(
     uid: UUID,
@@ -76,20 +74,6 @@ async def update_schedule(
 ) -> ApiResponse[ScheduleResponse]:
     data = await ScheduleService(db).update_schedule(uid, payload, actor_uid=user.uid)
     return success(data=data)
-
-
-@router.delete(
-    "/{uid}",
-    response_model=ApiResponse[ScheduleDeleteResponse],
-    summary="刪除排程(軟刪除;scheduler 即不再派工)",
-)
-async def delete_schedule(
-    uid: UUID,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(require_admin)],
-) -> ApiResponse[ScheduleDeleteResponse]:
-    await ScheduleService(db).delete_schedule(uid, actor_uid=user.uid)
-    return success(data=ScheduleDeleteResponse(message="排程已刪除"))
 
 
 @router.post(
@@ -117,4 +101,20 @@ async def disable_schedule(
     user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[ScheduleResponse]:
     data = await ScheduleService(db).set_enabled(uid, enabled=False, actor_uid=user.uid)
+    return success(data=data)
+
+
+@router.post(
+    "/batch-enabled",
+    response_model=ApiResponse[ScheduleBatchEnabledResponse],
+    summary="批次啟停(指定 schema 或全部來源表排程)",
+)
+async def batch_set_enabled(
+    payload: ScheduleBatchEnabledRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ScheduleBatchEnabledResponse]:
+    data = await ScheduleService(db).batch_set_enabled(
+        schema=payload.schema_name, enabled=payload.enabled, actor_uid=user.uid
+    )
     return success(data=data)

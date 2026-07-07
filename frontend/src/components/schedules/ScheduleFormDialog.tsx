@@ -2,20 +2,34 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { CronFriendlyPicker } from '@/components/schedules/CronFriendlyPicker'
-import { DEFAULT_CRON_EXPR } from '@/utils/cron'
-import type { Schedule, ScheduleCreatePayload } from '@/lib/api/scheduleApi'
+
+/** 編輯排程對話框的初始值(對應某張來源表既有排程) */
+export interface ScheduleEditInitial {
+  uid: string
+  tableName: string
+  cronExpr: string
+  isEnabled: boolean
+  description: string | null
+}
+
+/** 送出的更新內容(cron / 啟停 / 描述) */
+export interface ScheduleEditPayload {
+  cron_expr: string
+  is_enabled: boolean
+  description: string | null
+}
 
 interface ScheduleFormDialogProps {
   open: boolean
-  /** null = 新增模式 */
-  initial: Schedule | null
+  /** 目前編輯中的排程;關閉時為 null */
+  initial: ScheduleEditInitial | null
   submitting: boolean
   submitError: string | null
-  onSubmit: (payload: ScheduleCreatePayload) => void
+  onSubmit: (payload: ScheduleEditPayload) => void
   onCancel: () => void
 }
 
-/** 排程新增 / 編輯彈窗:遮罩 + 置中卡片;Esc / 點遮罩 / 取消皆關閉。 */
+/** 排程編輯彈窗(edit-only):改 cron / 啟停 / 描述;遮罩 + 置中卡片,Esc / 點遮罩 / 取消皆關閉。 */
 export function ScheduleFormDialog({
   open,
   initial,
@@ -24,10 +38,9 @@ export function ScheduleFormDialog({
   onSubmit,
   onCancel,
 }: ScheduleFormDialogProps): React.ReactNode {
-  const [name, setName] = useState(initial?.name ?? '')
-  const [cronExpr, setCronExpr] = useState(initial?.cron_expr ?? DEFAULT_CRON_EXPR)
+  const [cronExpr, setCronExpr] = useState(initial?.cronExpr ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
-  const [isEnabled, setIsEnabled] = useState(initial?.is_enabled ?? true)
+  const [isEnabled, setIsEnabled] = useState(initial?.isEnabled ?? true)
 
   useEffect(() => {
     if (!open) return
@@ -38,12 +51,6 @@ export function ScheduleFormDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onCancel])
 
-  const handleNameChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>): void => {
-      setName(event.target.value)
-    },
-    [],
-  )
   const handleDescriptionChange = useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>): void => {
       setDescription(event.target.value)
@@ -61,16 +68,15 @@ export function ScheduleFormDialog({
     (event: React.FormEvent<HTMLFormElement>): void => {
       event.preventDefault()
       onSubmit({
-        name: name.trim(),
         cron_expr: cronExpr.trim(),
         is_enabled: isEnabled,
         description: description.trim() === '' ? null : description.trim(),
       })
     },
-    [onSubmit, name, cronExpr, isEnabled, description],
+    [onSubmit, cronExpr, isEnabled, description],
   )
 
-  if (!open) return null
+  if (!open || initial === null) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -91,7 +97,7 @@ export function ScheduleFormDialog({
           id="schedule-form-dialog-title"
           className="text-lg font-bold text-foreground md:text-xl"
         >
-          {initial === null ? '新增排程' : `編輯排程:${initial.name}`}
+          編輯排程:{initial.tableName}
         </h2>
 
         {submitError !== null ? (
@@ -102,18 +108,6 @@ export function ScheduleFormDialog({
             {submitError}
           </p>
         ) : null}
-
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-          名稱
-          <input
-            type="text"
-            required
-            maxLength={200}
-            value={name}
-            onChange={handleNameChange}
-            className="df-input"
-          />
-        </label>
 
         <div className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
           執行時間(UTC+8)
@@ -130,25 +124,23 @@ export function ScheduleFormDialog({
           />
         </label>
 
-        <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground md:text-base">
-          此排程將對全部來源表執行增量同步(半夜到點自動)。
-        </p>
+        <label className="flex items-center gap-2 text-sm font-medium text-foreground md:text-base">
+          <input
+            type="checkbox"
+            checked={isEnabled}
+            onChange={handleEnabledChange}
+            className="h-5 w-5 accent-[rgb(var(--primary))]"
+          />
+          啟用此排程(停用則不派工)
+        </label>
 
-        {initial === null ? (
-          <label className="flex items-center gap-2 text-sm font-medium text-foreground md:text-base">
-            <input
-              type="checkbox"
-              checked={isEnabled}
-              onChange={handleEnabledChange}
-              className="h-5 w-5 accent-[rgb(var(--primary))]"
-            />
-            建立後立即啟用
-          </label>
-        ) : null}
+        <p className="rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground md:text-base">
+          此排程對該來源表執行增量同步(到點自動)。
+        </p>
 
         <div className="mt-1 flex gap-2">
           <button type="submit" disabled={submitting} className="df-btn-primary">
-            {initial === null ? '建立' : '儲存'}
+            儲存
           </button>
           <button type="button" onClick={onCancel} className="df-btn-outline">
             取消

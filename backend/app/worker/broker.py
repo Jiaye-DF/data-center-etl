@@ -1,6 +1,6 @@
 """taskiq broker:redis 佇列(URL 由 env `REDIS_URL` 注入,缺值 fail-fast)。
 
-worker 啟動指令(消費佇列、執行 run_etl;供 task-012 容器 command 使用):
+worker 啟動指令(消費佇列、執行 mirror_sync;供 task-012 容器 command 使用):
 
     uv run taskiq worker app.worker.tasks:broker
 """

@@ -1,8 +1,8 @@
 """R-PII-003 audit_logs 稽核測試(真實 PostgreSQL 測試 DB)。
 
 涵蓋:登入成功寫 login_success、登入失敗寫 login_failed(獨立 session,
-不因 401 rollback 消失)、ETL 表停用寫 etl_table_disable、手動觸發寫 run_trigger、
-viewer 打 GET /audit-logs 403、admin 讀到分頁結果(最新在前 + action 過濾)。
+不因 401 rollback 消失)、viewer 打 GET /audit-logs 403、
+admin 讀到分頁結果(最新在前 + action 過濾)。
 """
 
 import asyncio
@@ -25,7 +25,6 @@ os.environ.setdefault("INIT_ADMIN_USERNAME", "init-admin")
 os.environ.setdefault("INIT_ADMIN_PASSWORD", "init-admin-password-for-test")
 
 from collections.abc import AsyncIterator  # noqa: E402
-from uuid import UUID  # noqa: E402
 
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
@@ -176,31 +175,6 @@ async def _audit_rows(
         return list((await session.execute(stmt)).scalars().all())
 
 
-async def _create_etl_table(client: AsyncClient, suffix: str = "t") -> str:
-    resp = await client.post(
-        "/api/v1/etl-tables",
-        json={
-            "source_schema": "DS",
-            "source_table": f"SRC_{suffix}",
-            "target_schema": "public",
-            "target_table": f"tgt_{suffix}",
-            "is_enabled": True,
-            "mappings": [
-                {
-                    "source_column": "COL_A",
-                    "target_column": "col_a",
-                    "comment": "欄位 A",
-                    "sort_order": 1,
-                }
-            ],
-        },
-    )
-    assert resp.status_code == 201, resp.text
-    uid = resp.json()["data"]["uid"]
-    assert isinstance(uid, str)
-    return uid
-
-
 def _assert_shell(body: dict[str, object], *, success: bool, response_code: int) -> None:
     """斷言 ApiResponse 外殼:success / data / detail / response_code。"""
     assert set(body.keys()) == {"success", "data", "detail", "response_code"}
@@ -250,41 +224,6 @@ async def test_login_failed_audit_survives_rollback(
     assert await _audit_rows(session_factory, "login_success") == []
 
 
-# ── 設定變更 / 手動觸發稽核 ─────────────────────────────────────────────
-async def test_etl_table_disable_writes_audit(
-    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    await _login_as(client, session_factory, "admin")
-    table_uid = await _create_etl_table(client)
-    resp = await client.post(f"/api/v1/etl-tables/{table_uid}/disable")
-    assert resp.status_code == 200
-    rows = await _audit_rows(session_factory, "etl_table_disable")
-    assert len(rows) == 1
-    row = rows[0]
-    assert row.actor_username == "admin-user"
-    assert row.target_type == "etl_table"
-    assert row.target_uid == UUID(table_uid)
-    # 建立事件也有留痕
-    creates = await _audit_rows(session_factory, "etl_table_create")
-    assert len(creates) == 1 and creates[0].target_uid == UUID(table_uid)
-
-
-async def test_run_trigger_writes_audit(
-    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    await _login_as(client, session_factory, "admin")
-    resp = await client.post("/api/v1/runs/trigger", json={"etl_table_uid": None})
-    assert resp.status_code == 200
-    run_uid = resp.json()["data"]["run_uid"]
-    assert run_uid is not None
-    rows = await _audit_rows(session_factory, "run_trigger")
-    assert len(rows) == 1
-    row = rows[0]
-    assert row.target_type == "etl_run"
-    assert row.target_uid == UUID(run_uid)
-    assert row.detail is not None and "手動觸發" in row.detail
-
-
 # ── 查詢 API:權限與分頁 ────────────────────────────────────────────────
 async def test_viewer_get_audit_logs_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
@@ -298,11 +237,14 @@ async def test_viewer_get_audit_logs_403(
 async def test_admin_list_audit_logs_pagination_and_filter(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    await _login_as(client, session_factory, "admin")  # 產生 1 筆 login_success
-    table_uid = await _create_etl_table(client)  # etl_table_create
-    assert (
-        await client.post(f"/api/v1/etl-tables/{table_uid}/disable")
-    ).status_code == 200  # etl_table_disable
+    # admin 登入成功(1 筆 login_success)+ 兩次密碼錯誤(2 筆 login_failed)
+    await _login_as(client, session_factory, "admin")
+    for _ in range(2):
+        resp = await client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin-user", "password": "definitely-wrong-pw"},
+        )
+        assert resp.status_code == 401
     resp = await client.get("/api/v1/audit-logs", params={"page": 1, "page_size": 2})
     assert resp.status_code == 200
     body = resp.json()
@@ -311,10 +253,10 @@ async def test_admin_list_audit_logs_pagination_and_filter(
     assert isinstance(data, dict)
     assert data["total"] == 3
     assert data["page"] == 1 and data["page_size"] == 2
-    # 最新在前
+    # 最新在前:兩筆 login_failed
     assert [item["action"] for item in data["items"]] == [
-        "etl_table_disable",
-        "etl_table_create",
+        "login_failed",
+        "login_failed",
     ]
     # 回應排除內部欄(pid / is_deleted / created_by / updated_by)
     item = data["items"][0]
@@ -332,7 +274,9 @@ async def test_admin_list_audit_logs_pagination_and_filter(
     resp2 = await client.get("/api/v1/audit-logs", params={"page": 2, "page_size": 2})
     assert [item["action"] for item in resp2.json()["data"]["items"]] == ["login_success"]
     # action 過濾
-    resp3 = await client.get("/api/v1/audit-logs", params={"action": "etl_table_disable"})
+    resp3 = await client.get("/api/v1/audit-logs", params={"action": "login_failed"})
     body3 = resp3.json()
-    assert body3["data"]["total"] == 1
-    assert body3["data"]["items"][0]["target_uid"] == table_uid
+    assert body3["data"]["total"] == 2
+    assert all(
+        item["action"] == "login_failed" for item in body3["data"]["items"]
+    )

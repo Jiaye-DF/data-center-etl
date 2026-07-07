@@ -1,13 +1,13 @@
 """task-004 增量同步整合測試(真實 PostgreSQL 測試 DB;mirror 以 fake 注入,不打 RDS)。
 
-涵蓋 mirror_sync 的增量偵測 / 排除 / 全量分支:
+涵蓋 mirror_sync 的增量偵測 / 全量分支(v1.3.1 起排除語意改由排程 is_enabled 決定,
+不再由 mirror_sync 讀 sync_excluded;逐表 tables 派工另見 test_mirror_sync_tables_v131):
 1. 首次(baseline None)→ 全部被灌 + signature 寫入。
 2. 第二次無異動(baseline == current)→ 全部 skip,last_synced_at 不更新。
 3. 某表計數器增加 → 該表被灌、其餘 skip。
 4. 計數器倒退 / 重置(current < baseline)→ 該表被判定變動、被灌。
-5. 排除表(incremental,sync_excluded=true)→ 一律 skip(即使有變動)。
-6. incremental=False 全量 → 忽略偵測與排除,全部被灌(含排除表),signature 仍更新。
-7. trigger_type="schedule" + schedule_pid → 建立的 run 帶正確觸發資訊。
+5. incremental=False 全量 → 忽略偵測,全部被灌,signature 仍更新。
+6. trigger_type="schedule" + schedule_pid → 建立的 run 帶正確觸發資訊。
 """
 
 import asyncio
@@ -321,32 +321,7 @@ async def test_counter_reset_treated_as_changed(
     assert (meta.last_stat_ins, meta.last_stat_upd, meta.last_stat_del) == (3, 0, 0)
 
 
-# ── 5. 排除表(incremental)→ 一律 skip,即使有變動 ───────────────────────
-async def test_excluded_table_skipped_even_if_changed(
-    session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    await _seed_meta(
-        session_factory, "DS", "AAA_FILE", baseline=(10, 0, 0), sync_excluded=True
-    )
-    # 明顯有變動(baseline != current),但因排除仍應 skip
-    stats = {("DS", "AAA_FILE"): TableStat(999, 0, 0)}
-    fake = FakeMirror(stats)
-
-    ret = await _invoke(monkeypatch, fake, incremental=True)
-
-    assert fake.mirrored == []
-    assert ret["skipped_tables"] == 1
-    assert ret["success_tables"] == 0
-    assert await _run_log_statuses(session_factory, ret["run_pid"]) == [
-        ("AAA_FILE", "skipped")
-    ]
-    # 排除表未灌 → signature 不更新(仍為原基準)
-    meta = await _get_meta(session_factory, "DS", "AAA_FILE")
-    assert meta.last_stat_ins == 10
-
-
-# ── 6. incremental=False 全量 → 忽略偵測與排除,全部被灌,signature 仍更新 ──
+# ── 5. incremental=False 全量 → 忽略偵測,全部被灌,signature 仍更新 ──
 async def test_full_sync_ignores_detection_and_exclusion(
     session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,

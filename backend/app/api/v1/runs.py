@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_admin, require_login
+from app.api.deps import get_db, require_login
 from app.core.response import success
 from app.models.user import User
 from app.schemas.response import ApiResponse
@@ -16,8 +16,6 @@ from app.schemas.run import (
     RunLogStatus,
     RunStatus,
     RunSummaryResponse,
-    RunTriggerRequest,
-    RunTriggerResponse,
     TriggerType,
 )
 from app.services.schedule_service import RunService
@@ -42,20 +40,6 @@ async def list_runs(
         page=page, page_size=page_size, status=status, trigger_type=trigger_type
     )
     return success(data=data)
-
-
-@router.post(
-    "/trigger",
-    response_model=ApiResponse[RunTriggerResponse],
-    summary="手動觸發一次 ETL 執行(enqueue 至 taskiq)",
-)
-async def trigger_run(
-    payload: RunTriggerRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(require_admin)],
-) -> ApiResponse[RunTriggerResponse]:
-    # actor_uid 供稽核紀錄 run_trigger 操作者(scan R-PII-003)
-    return success(data=await RunService(db).trigger_manual(payload, actor_uid=user.uid))
 
 
 @router.get(

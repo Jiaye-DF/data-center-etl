@@ -1,10 +1,10 @@
-"""worker task:`run_etl` — 排程 / 手動觸發的 ETL 執行入口。
+"""worker task:`mirror_sync` — 排程 / 手動觸發的自動鏡像同步執行入口。
 
 worker 啟動指令(供 task-012 容器 command 使用):
 
     uv run taskiq worker app.worker.tasks:broker
 
-流程:建立 `etl_runs` 紀錄(engine 內 store.create_run)→ 執行逐表管線 →
+流程:建立 `etl_runs` 紀錄(store.create_run)→ 逐表鏡像同步 →
 任何引擎外例外都把 run 補標 failed + log 錯誤明細,不留 running 殭屍狀態。
 """
 
@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 import traceback
 from collections.abc import Sequence
-from dataclasses import asdict
 from datetime import datetime
 from uuid import UUID
 
@@ -27,15 +26,9 @@ from app.etl.engine import (
     DbRunStore,
     EtlTableConfig,
     RunStore,
-    SourceReader,
-    TargetWriter,
-    load_table_configs,
     mask_secrets,
 )
-from app.etl.engine import run_etl as run_etl_pipeline
 from app.etl.mirror import MirrorEngine, TableStat, stat_changed
-from app.etl.reader import PostgresSourceReader
-from app.etl.writer import PostgresTargetWriter
 from app.models.rds_table_meta import Dataset, RdsTableMeta
 from app.repositories.rds_table_meta_repo import RdsTableMetaRepository
 from app.utils.datetime import db_now, now_tw
@@ -120,26 +113,6 @@ def make_store(session: AsyncSession) -> RunStore:
     return DbRunStore(session, actor_uid=SYSTEM_ACTOR_UID)
 
 
-def make_reader() -> SourceReader:
-    """建立來源讀取器(AWS_RDS_* + AWS_RDS_SOURCE_DB env,lazy 連線)。"""
-    return PostgresSourceReader()
-
-
-def make_writer() -> TargetWriter:
-    """建立目標寫入器(AWS_RDS_* + AWS_RDS_TARGET_DB env,lazy 連線)。"""
-    return PostgresTargetWriter()
-
-
-async def load_configs(
-    session: AsyncSession, etl_table_pid: int | None
-) -> list[EtlTableConfig]:
-    """載入表設定;排程指定單表(etl_table_pid 非 NULL)時只取該表。"""
-    configs = await load_table_configs(session)
-    if etl_table_pid is None:
-        return configs
-    return [c for c in configs if c.etl_table_pid == etl_table_pid]
-
-
 async def _mark_failed_if_dangling(
     store: RunStateTracker, configs: Sequence[EtlTableConfig], exc: Exception
 ) -> None:
@@ -158,38 +131,6 @@ async def _mark_failed_if_dangling(
     except Exception:
         # 補標 failed 本身失敗只記 log,原始例外仍向外拋
         logger.exception("run 補標 failed 失敗:run_pid=%s", store.created_run_pid)
-
-
-@broker.task(task_name="run_etl")
-async def run_etl(
-    trigger_type: str = "manual",
-    schedule_pid: int | None = None,
-    etl_table_pid: int | None = None,
-) -> dict[str, object]:
-    """執行一輪 ETL:建 run 紀錄 → 逐表管線;引擎外例外把 run 補標 failed 後再拋。"""
-    async with AsyncSessionLocal() as session:
-        store = RunStateTracker(make_store(session))
-        configs = await load_configs(session, etl_table_pid)
-        try:
-            result = await run_etl_pipeline(
-                configs,
-                reader=make_reader(),
-                writer=make_writer(),
-                store=store,
-                trigger_type=trigger_type,
-                schedule_pid=schedule_pid,
-            )
-        except Exception as exc:
-            logger.exception(
-                "ETL run 執行失敗(引擎外例外):trigger_type=%s schedule_pid=%s",
-                trigger_type,
-                schedule_pid,
-            )
-            # 先清掉 session 內可能殘留的失敗交易,補標 failed 才能落 DB
-            await session.rollback()
-            await _mark_failed_if_dangling(store, configs, exc)
-            raise
-        return asdict(result)
 
 
 # ── task-004:自動鏡像同步(mirror_sync)───────────────────────────────────
@@ -275,11 +216,12 @@ async def mirror_sync(
 
     - 篩選:schema + tables 清單;單表:schema + table 皆給;全量:皆空(worker 端 DS 優先)。
     - incremental=True(增量同步):先讀來源計數器 signature 與基準,未變動表跳過(skip log,
-      不重灌、last_synced_at 不更新);逐表排除(sync_excluded)表一律跳過(即使有變動)。
-    - incremental=False(人工全量同步):忽略偵測與排除,整批覆蓋全部表(對齊既有語意);
-      但仍更新 signature 基準,供後續增量比對。
+      不重灌、last_synced_at 不更新)。排除語意改由排程啟停決定(停用排程 → 不在
+      scheduler 派工的 tables 內),此處不再讀取逐表排除旗標。
+    - incremental=False(人工全量同步):忽略偵測,整批覆蓋指定 / 全部表(對齊既有語意);
+      但仍更新 signature 基準,供後續增量比對(人工全量為保底重灌路徑)。
     - 單表失敗不中斷整輪:錯誤明細(含 stack trace,機密遮罩)寫入該表 log,續跑下一表;
-      任一表失敗 → run 總狀態 failed(對齊既有 run_etl 慣例)。
+      任一表失敗 → run 總狀態 failed(對齊既有 run 收尾慣例)。
     - 同步後失效 datasets:source:* 快取(對齊 snapshot_service 失效用法)。
     """
     async with AsyncSessionLocal() as session:
@@ -290,13 +232,11 @@ async def mirror_sync(
         try:
             targets = await _resolve_sync_targets(mirror, schema, table, tables)
             configs = [_mirror_config(s, t) for s, t in targets]
-            # 一次取來源全表累計計數器(零掃表);增量模式再讀基準與排除清單
+            # 一次取來源全表累計計數器(零掃表);增量模式再讀 signature 基準
             stats = await mirror.fetch_source_stats()
             baselines: dict[tuple[str, str], tuple[int, int, int] | None] = {}
-            excluded: set[tuple[str, str]] = set()
             if incremental:
                 baselines = await repo.read_stat_baselines(Dataset.SOURCE)
-                excluded = await repo.list_excluded(Dataset.SOURCE)
             run_pid = await store.create_run(
                 trigger_type=trigger_type, schedule_pid=schedule_pid
             )
@@ -307,12 +247,6 @@ async def mirror_sync(
                 current = stats.get(key)
                 # 來源 pg_stat 無此表計數 → 保守以 (0,0,0) 為 signature 基準值
                 current_stat = current or TableStat(0, 0, 0)
-
-                # 增量:逐表排除表一律略過(即使有變動,不灌;log 顯示 skip)
-                if incremental and key in excluded:
-                    await store.add_skipped_log(run_pid=run_pid, config=config)
-                    skipped += 1
-                    continue
 
                 # 增量:未變動表跳過(不重灌、last_synced_at 不更新);
                 # current 為 None(來源無計數)保守視為變動,避免漏灌

@@ -4,9 +4,10 @@ scheduler 啟動指令(與 worker 各自獨立啟動;供 task-012 容器 command
 
     uv run taskiq scheduler app.worker.scheduler:scheduler
 
-- 排程來源:`schedules` 表(啟用且未刪除者);停用排程不派工。
-- v1.3 排程單一化:所有啟用排程一律派 `mirror_sync` 增量(全表),不再派舊 `run_etl`,
-  也不再帶 `etl_table_pid`(sync 排程全表增量,逐表無意義)。
+- 排程來源:`schedules` 表(啟用、未刪除且有 `source_table` 者);停用 / 無來源表者不派工。
+- v1.3.1 排程單一化:每筆排程對應一張來源表;`build_scheduled_tasks` 依
+  `(cron_expr, source_schema)` 分組,同組合併派一發 `mirror_sync` 增量,其 `tables`
+  含該組所有來源表(`mirror_sync` 的 `tables` 需搭配同一 `schema`,故按 schema 再分組)。
 - cron 一律以 UTC+8 解讀(00-overview/05-timezone.md)。
 """
 
@@ -30,12 +31,34 @@ CRON_OFFSET_TAIPEI = timedelta(hours=8)
 MIRROR_SYNC_TASK_NAME = "mirror_sync"
 
 
+def _normalize_cron(cron_expr: str) -> str:
+    """把 cron 正規化為穩定 slug(壓縮空白 → 底線),供 schedule_id 使用。"""
+    return "_".join(cron_expr.split())
+
+
 def build_scheduled_tasks(schedules: Sequence[Schedule]) -> list[ScheduledTask]:
-    """把 DB 排程轉 taskiq ScheduledTask;一律派 mirror_sync 增量,停用 / 已刪除排程不派工。"""
-    tasks: list[ScheduledTask] = []
+    """把 DB 排程轉 taskiq ScheduledTask。
+
+    依 `(cron_expr, source_schema)` 分組,同組合併派一發 `mirror_sync` 增量,
+    `tables` 含該組所有來源表(對齊 `_resolve_sync_targets(schema, tables)` 的同 schema 限制)。
+    停用 / 已刪除 / 無 `source_schema` 或 `source_table` 的排程不派工。
+    """
+    groups: dict[tuple[str, str], list[str]] = {}
+    order: list[tuple[str, str]] = []
     for schedule in schedules:
         if not schedule.is_enabled or schedule.is_deleted:
             continue
+        if schedule.source_schema is None or schedule.source_table is None:
+            continue
+        key = (schedule.cron_expr, schedule.source_schema)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(schedule.source_table)
+
+    tasks: list[ScheduledTask] = []
+    for cron_expr, schema in order:
+        tables = groups[(cron_expr, schema)]
         tasks.append(
             ScheduledTask(
                 task_name=MIRROR_SYNC_TASK_NAME,
@@ -43,11 +66,12 @@ def build_scheduled_tasks(schedules: Sequence[Schedule]) -> list[ScheduledTask]:
                 args=[],
                 kwargs={
                     "incremental": True,
+                    "schema": schema,
+                    "tables": tables,
                     "trigger_type": "schedule",
-                    "schedule_pid": schedule.pid,
                 },
-                schedule_id=f"schedule-{schedule.pid}",
-                cron=schedule.cron_expr,
+                schedule_id=f"cron-{schema}-{_normalize_cron(cron_expr)}",
+                cron=cron_expr,
                 cron_offset=CRON_OFFSET_TAIPEI,
             )
         )
@@ -66,6 +90,7 @@ class DbScheduleSource(ScheduleSource):
                         .where(
                             Schedule.is_enabled.is_(True),
                             Schedule.is_deleted.is_(False),
+                            Schedule.source_table.is_not(None),
                         )
                         .order_by(Schedule.pid)
                     )

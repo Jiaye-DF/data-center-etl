@@ -1,8 +1,10 @@
-"""task-005 執行紀錄 / 逐表詳細 log / 手動觸發 API 測試(真實 PostgreSQL 測試 DB)。
+"""執行紀錄 / 逐表詳細 log API 測試(真實 PostgreSQL 測試 DB)。
 
 涵蓋:run 清單分頁(最新在前)/ 狀態與觸發方式過濾、單 run 明細、
 單 run 逐表 log 欄位齊全(筆數 / 耗時 / 狀態 / 錯誤含 stack trace)與狀態過濾、
-手動觸發 enqueue 成功(InMemoryBroker 就地執行)回傳 run uid、viewer 寫入 403。
+viewer 可讀取清單 / 明細 / log。
+
+v1.3.1:config-ETL 手動觸發(POST /runs/trigger)已隨 task-004/005 移除,對應測試刪除。
 """
 
 import asyncio
@@ -42,7 +44,6 @@ from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app import models  # noqa: E402, F401  匯入全部 model 讓 create_all 建齊資料表
 from app.api.deps import get_db  # noqa: E402
-from app.core import db as core_db  # noqa: E402
 from app.core.db import Base  # noqa: E402
 from app.core.security import hash_password_async  # noqa: E402
 from app.main import create_app  # noqa: E402
@@ -101,14 +102,6 @@ async def _clean_tables(db_engine: AsyncEngine) -> None:
         await conn.execute(text("DELETE FROM etl_mappings"))
         await conn.execute(text("DELETE FROM etl_tables"))
         await conn.execute(text("DELETE FROM users"))
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _dispose_global_engine() -> AsyncIterator[None]:
-    # 手動觸發的 run_etl(taskiq 就地執行)走全域 engine 連線池;
-    # pytest-asyncio 每測試換 event loop,不釋放會跨 loop 重用連線而失敗
-    yield
-    await core_db.engine.dispose()
 
 
 @pytest_asyncio.fixture
@@ -271,19 +264,17 @@ async def test_list_requires_login_401(client: AsyncClient) -> None:
     _assert_shell(resp.json(), success=False, response_code=401)
 
 
-async def test_viewer_can_read_but_trigger_403(
+async def test_viewer_can_read_runs(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _login_as(client, session_factory, "viewer")
     run_uid = await _seed_run(session_factory)
-    # 讀取 OK:清單 / 明細 / 逐表 log
-    assert (await client.get("/api/v1/runs")).status_code == 200
+    # 讀取 OK:清單 / 明細 / 逐表 log(runs 已無寫入端點)
+    list_resp = await client.get("/api/v1/runs")
+    assert list_resp.status_code == 200
+    _assert_shell(list_resp.json(), success=True, response_code=200)
     assert (await client.get(f"/api/v1/runs/{run_uid}")).status_code == 200
     assert (await client.get(f"/api/v1/runs/{run_uid}/logs")).status_code == 200
-    # 手動觸發屬寫入類 → 403
-    resp = await client.post("/api/v1/runs/trigger", json={"etl_table_uid": None})
-    assert resp.status_code == 403
-    _assert_shell(resp.json(), success=False, response_code=403)
 
 
 # ── run 清單 ────────────────────────────────────────────────────────────
@@ -443,68 +434,11 @@ async def test_run_logs_filter_by_status_and_pagination(
     assert [i["source_table"] for i in body["data"]["items"]] == ["T3"]
 
 
-# ── 手動觸發(enqueue 至 taskiq;pytest 下為 InMemoryBroker 就地執行)────
-async def test_trigger_manual_enqueues_and_returns_run_uid(
+# ── 手動觸發端點已移除(v1.3.1):POST /runs/trigger 不存在 ────────────────
+async def test_trigger_endpoint_removed(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _login_as(client, session_factory, "admin")
     resp = await client.post("/api/v1/runs/trigger", json={"etl_table_uid": None})
-    assert resp.status_code == 200
-    body = resp.json()
-    _assert_shell(body, success=True, response_code=200)
-    data = body["data"]
-    assert data["task_id"]
-    # InMemoryBroker(await_inplace)就地執行完畢 → 回傳新建 run 的 uid
-    run_uid = data["run_uid"]
-    assert run_uid is not None
-    # run 已落 DB:manual 觸發、無納管表 → 0 表成功收尾
-    detail = (await client.get(f"/api/v1/runs/{run_uid}")).json()["data"]
-    assert detail["trigger_type"] == "manual"
-    assert detail["status"] == "success"
-    assert detail["total_tables"] == 0
-
-
-async def test_trigger_manual_with_disabled_table_logs_skipped(
-    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    """指定停用表觸發:run 完成且逐表 log 記 skipped(停用表不處理,log 可證)。"""
-    await _login_as(client, session_factory, "admin")
-    resp = await client.post(
-        "/api/v1/etl-tables",
-        json={
-            "source_schema": "DS",
-            "source_table": "SRC_DISABLED",
-            "target_schema": "public",
-            "target_table": "tgt_disabled",
-            "is_enabled": False,
-            "mappings": [
-                {
-                    "source_column": "COL_A",
-                    "target_column": "col_a",
-                    "comment": "欄位 A",
-                    "sort_order": 1,
-                }
-            ],
-        },
-    )
-    assert resp.status_code == 201
-    table_uid = resp.json()["data"]["uid"]
-    resp = await client.post("/api/v1/runs/trigger", json={"etl_table_uid": table_uid})
-    assert resp.status_code == 200
-    run_uid = resp.json()["data"]["run_uid"]
-    assert run_uid is not None
-    logs = (await client.get(f"/api/v1/runs/{run_uid}/logs")).json()["data"]
-    assert logs["total"] == 1
-    log = logs["items"][0]
-    assert log["source_table"] == "SRC_DISABLED"
-    assert log["status"] == "skipped"
-    assert log["etl_table_uid"] == table_uid
-
-
-async def test_trigger_unknown_etl_table_400(
-    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    await _login_as(client, session_factory, "admin")
-    resp = await client.post("/api/v1/runs/trigger", json={"etl_table_uid": str(uuid4())})
-    assert resp.status_code == 400
-    _assert_shell(resp.json(), success=False, response_code=400)
+    # 端點不存在 → 405(/{uid} 路由不吃 POST)或 404
+    assert resp.status_code in (404, 405)

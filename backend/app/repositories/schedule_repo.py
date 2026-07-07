@@ -2,11 +2,28 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, Row, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import EtlRun, EtlTable, Schedule
+from app.models import Dataset, EtlRun, EtlRunLog, EtlTable, RdsTableMeta, Schedule
 from app.utils.datetime import db_now as _db_now
+
+# list_tables_view 每列欄位(label):
+# table_name, business_name, last_synced_at, row_count,
+# schedule_uid, cron_expr, is_enabled, description, last_run_status
+TablesViewRow = Row[
+    tuple[
+        str,
+        str | None,
+        datetime | None,
+        int,
+        UUID | None,
+        str | None,
+        bool | None,
+        str | None,
+        str | None,
+    ]
+]
 
 
 class ScheduleRepository:
@@ -118,3 +135,244 @@ class ScheduleRepository:
             int(schedule_pid): (str(status), finished_at)
             for schedule_pid, status, finished_at in rows
         }
+
+    # ── v1.3.1 一表一排程:逐表讀寫 ─────────────────────────────────────
+    async def find_by_source_table(self, schema: str, table: str) -> Schedule | None:
+        """依 (source_schema, source_table) 於未刪除範圍找排程。"""
+        stmt = select(Schedule).where(
+            Schedule.source_schema == schema,
+            Schedule.source_table == table,
+            Schedule.is_deleted.is_(False),
+        )
+        return (await self._db.execute(stmt)).scalar_one_or_none()
+
+    async def upsert_for_source_table(
+        self,
+        *,
+        schema: str,
+        table: str,
+        name: str,
+        cron_expr: str,
+        is_enabled: bool,
+        actor_uid: UUID,
+    ) -> Schedule:
+        """一表一排程 upsert:無則建;有則不覆蓋既有啟停 / cron(避免快照重置使用者設定)。"""
+        existing = await self.find_by_source_table(schema, table)
+        if existing is not None:
+            return existing
+        schedule = Schedule(
+            uid=uuid4(),
+            name=name,
+            cron_expr=cron_expr,
+            is_enabled=is_enabled,
+            etl_table_pid=None,
+            source_schema=schema,
+            source_table=table,
+            description=None,
+            created_by=actor_uid,
+            updated_by=actor_uid,
+        )
+        self._db.add(schedule)
+        await self._db.flush()
+        return schedule
+
+    async def soft_delete_by_source_tables_absent(
+        self, present: set[tuple[str, str]], actor_uid: UUID
+    ) -> int:
+        """把 source_table 非 NULL 且 (schema, table) 不在 present 的排程軟刪(來源表消失)。"""
+        stmt = select(Schedule).where(
+            Schedule.is_deleted.is_(False),
+            Schedule.source_table.is_not(None),
+        )
+        rows = (await self._db.execute(stmt)).scalars().all()
+        count = 0
+        for schedule in rows:
+            key = (str(schedule.source_schema), str(schedule.source_table))
+            if key not in present:
+                schedule.is_deleted = True
+                schedule.updated_by = actor_uid
+                schedule.updated_at = _db_now()
+                count += 1
+        await self._db.flush()
+        return count
+
+    async def soft_delete_legacy_all_table(self, actor_uid: UUID) -> int:
+        """軟刪 v1.3.0 遺留「全表增量」排程(source_schema IS NULL AND is_deleted=false)。"""
+        stmt = select(Schedule).where(
+            Schedule.source_schema.is_(None),
+            Schedule.is_deleted.is_(False),
+        )
+        rows = (await self._db.execute(stmt)).scalars().all()
+        count = 0
+        for schedule in rows:
+            schedule.is_deleted = True
+            schedule.updated_by = actor_uid
+            schedule.updated_at = _db_now()
+            count += 1
+        await self._db.flush()
+        return count
+
+    # ── v1.3.1 逐表視角查詢 ────────────────────────────────────────────
+    async def list_tables_view(
+        self,
+        *,
+        schema: str,
+        offset: int,
+        limit: int,
+        enabled: str = "all",
+        last_result: str = "all",
+        keyword: str = "",
+    ) -> tuple[list[TablesViewRow], int]:
+        """分頁列出指定 schema 的來源表,LEFT JOIN 其排程與每表最新執行結果。
+
+        - enabled: all / enabled(is_enabled=true)/ disabled(is_enabled 非 true,含無排程)
+        - last_result: all / success / failed / never(無任何 log)/(其餘 status 亦以字面比對)
+        - keyword: 對 table_name 或 business_name 做 ILIKE 子字串比對(空字串不套)
+        """
+        # 每表最新 log 的 status(DISTINCT ON (schema, table) ORDER BY … pid DESC)
+        latest_log = (
+            select(
+                EtlRunLog.source_schema.label("ls_schema"),
+                EtlRunLog.source_table.label("ls_table"),
+                EtlRunLog.status.label("last_status"),
+            )
+            .distinct(EtlRunLog.source_schema, EtlRunLog.source_table)
+            .order_by(
+                EtlRunLog.source_schema,
+                EtlRunLog.source_table,
+                EtlRunLog.pid.desc(),
+            )
+            .subquery()
+        )
+        # 一表一排程:依 (source_schema, source_table) LEFT JOIN;is_deleted 條件入 ON 保 LEFT 語意
+        sched_on = and_(
+            Schedule.source_schema == RdsTableMeta.schema_name,
+            Schedule.source_table == RdsTableMeta.table_name,
+            Schedule.is_deleted.is_(False),
+        )
+        log_on = and_(
+            latest_log.c.ls_schema == RdsTableMeta.schema_name,
+            latest_log.c.ls_table == RdsTableMeta.table_name,
+        )
+
+        conds: list[ColumnElement[bool]] = [
+            RdsTableMeta.dataset == Dataset.SOURCE,
+            RdsTableMeta.schema_name == schema,
+            RdsTableMeta.is_deleted.is_(False),
+        ]
+        if enabled == "enabled":
+            conds.append(Schedule.is_enabled.is_(True))
+        elif enabled == "disabled":
+            conds.append(Schedule.is_enabled.is_not(True))
+
+        if last_result == "never":
+            conds.append(latest_log.c.last_status.is_(None))
+        elif last_result != "all":
+            conds.append(latest_log.c.last_status == last_result)
+
+        keyword = keyword.strip()
+        if keyword:
+            # 跳脫 LIKE 萬用字元,讓輸入以字面比對(escape 反斜線自身在前)
+            escaped = (
+                keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            )
+            pattern = f"%{escaped}%"
+            conds.append(
+                or_(
+                    RdsTableMeta.table_name.ilike(pattern, escape="\\"),
+                    RdsTableMeta.business_name.ilike(pattern, escape="\\"),
+                )
+            )
+
+        total = (
+            await self._db.execute(
+                select(func.count())
+                .select_from(RdsTableMeta)
+                .outerjoin(Schedule, sched_on)
+                .outerjoin(latest_log, log_on)
+                .where(*conds)
+            )
+        ).scalar_one()
+
+        stmt = (
+            select(
+                RdsTableMeta.table_name.label("table_name"),
+                RdsTableMeta.business_name.label("business_name"),
+                RdsTableMeta.last_synced_at.label("last_synced_at"),
+                RdsTableMeta.row_count.label("row_count"),
+                Schedule.uid.label("schedule_uid"),
+                Schedule.cron_expr.label("cron_expr"),
+                Schedule.is_enabled.label("is_enabled"),
+                Schedule.description.label("description"),
+                latest_log.c.last_status.label("last_run_status"),
+            )
+            .select_from(RdsTableMeta)
+            .outerjoin(Schedule, sched_on)
+            .outerjoin(latest_log, log_on)
+            .where(*conds)
+            .order_by(RdsTableMeta.table_name)
+            .offset(offset)
+            .limit(limit)
+        )
+        rows = (await self._db.execute(stmt)).all()
+        return list(rows), int(total)
+
+    async def list_schema_summaries(self) -> list[tuple[str, int, int]]:
+        """聚合來源表各 schema 的 (表數, 已啟用排程數),未刪除範圍,依 schema 名排序。"""
+        table_stmt = (
+            select(RdsTableMeta.schema_name, func.count())
+            .where(
+                RdsTableMeta.dataset == Dataset.SOURCE,
+                RdsTableMeta.is_deleted.is_(False),
+            )
+            .group_by(RdsTableMeta.schema_name)
+            .order_by(RdsTableMeta.schema_name)
+        )
+        table_rows = (await self._db.execute(table_stmt)).all()
+
+        enabled_stmt = (
+            select(Schedule.source_schema, func.count())
+            .where(
+                Schedule.is_deleted.is_(False),
+                Schedule.is_enabled.is_(True),
+                Schedule.source_table.is_not(None),
+            )
+            .group_by(Schedule.source_schema)
+        )
+        enabled_rows = (await self._db.execute(enabled_stmt)).all()
+        enabled_by_schema = {
+            str(schema): int(count) for schema, count in enabled_rows
+        }
+        return [
+            (str(schema), int(count), enabled_by_schema.get(str(schema), 0))
+            for schema, count in table_rows
+        ]
+
+    async def batch_set_enabled(
+        self,
+        *,
+        schema: str | None,
+        enabled: bool,
+        only_source_tables: bool,
+        actor_uid: UUID,
+    ) -> int:
+        """對(指定 schema 或全部)排程批次設 is_enabled,回實際變更筆數。
+
+        - schema=None 為全部 schema;only_source_tables=True 僅限有 source_table 的排程。
+        """
+        conds: list[ColumnElement[bool]] = [
+            Schedule.is_deleted.is_(False),
+            # 僅更新狀態實際改變者 → 回傳筆數即變更筆數
+            Schedule.is_enabled.is_not(enabled),
+        ]
+        if only_source_tables:
+            conds.append(Schedule.source_table.is_not(None))
+        if schema is not None:
+            conds.append(Schedule.source_schema == schema)
+        result = await self._db.execute(
+            update(Schedule)
+            .where(*conds)
+            .values(is_enabled=enabled, updated_by=actor_uid, updated_at=_db_now())
+        )
+        await self._db.flush()
+        return int(result.rowcount)
