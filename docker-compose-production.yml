@@ -35,7 +35,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     # 先套 migration 再起 API(lifespan 建 init admin 需資料表已存在)
-    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    # uvicorn workers env 化(Coolify 填 UVICORN_WORKERS):多行程消弭單一事件迴圈單點,預設 4
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}"]
     environment:
       SERVICE_URL_BACKEND_8000:
       APP_ENV: ${APP_ENV}
@@ -43,6 +44,9 @@ services:
       # 容器內以 service name 互連(TCP 服務不用 SERVICE_URL_*)
       DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
       REDIS_URL: "redis://redis:6379/0"
+      # DB 連線池 env 化(Coolify 依 worker 數填):總連線 = 各服務(pool+overflow)加總,須 < postgres max_connections
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
       INIT_ADMIN_USERNAME: ${INIT_ADMIN_USERNAME}
@@ -86,6 +90,9 @@ services:
       APP_ENV: ${APP_ENV}
       DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
       REDIS_URL: "redis://redis:6379/0"
+      # DB 連線池 env 化(Coolify 依 worker 數填):總連線 = 各服務(pool+overflow)加總,須 < postgres max_connections
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
       INIT_ADMIN_USERNAME: ${INIT_ADMIN_USERNAME}
@@ -130,6 +137,9 @@ services:
       APP_ENV: ${APP_ENV}
       DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
       REDIS_URL: "redis://redis:6379/0"
+      # DB 連線池 env 化(Coolify 依 worker 數填):總連線 = 各服務(pool+overflow)加總,須 < postgres max_connections
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
       INIT_ADMIN_USERNAME: ${INIT_ADMIN_USERNAME}

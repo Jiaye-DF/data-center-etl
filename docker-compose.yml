@@ -43,10 +43,14 @@ services:
       # 帳密由 .env 注入,禁寫死(見 docs/Design-Base/00-overview/02-secrets.md)
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379/0
+      # DB 連線池 env 化:多 worker 時每行程各一組池,總連線須 < postgres max_connections
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-5}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-5}
       - TZ=Asia/Taipei
     # 本地一鍵起跑:先套 migration 再起 API(lifespan 建 init admin 需資料表已存在);
     # 正式部署的 migration 時機見 docs/Design-Base/06-Coolify-CD/05-deploy-flow.md
-    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    # uvicorn workers env 化(多行程,避免單一事件迴圈成為單點);本地預設 2,可由 .env 覆蓋
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2}"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -70,6 +74,8 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379/0
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-5}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-5}
       - TZ=Asia/Taipei
     depends_on:
       postgres:
@@ -98,6 +104,8 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379/0
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-5}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-5}
       - TZ=Asia/Taipei
     depends_on:
       postgres:

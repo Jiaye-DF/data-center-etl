@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     APP_NAME: str = "data-center-etl"
     APP_ENV: Literal["development", "staging", "production"] = "development"
     DATABASE_URL: str
+    # DB 連線池:多 uvicorn worker 為多行程,每行程各一組池 → 單一行程可用連線上限
+    # = DB_POOL_SIZE + DB_MAX_OVERFLOW;整體須滿足
+    #   (UVICORN_WORKERS × 每行程上限) + worker + scheduler < postgres max_connections。
+    # 部署以 env 依 worker 數下調,避免連線耗盡(見 .env.*.example 說明)。
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 5
     JWT_SECRET_KEY: str = Field(default=JWT_SECRET_KEY_DEVELOPMENT_DEFAULT)
     JWT_EXPIRE_MINUTES: int = 480
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
