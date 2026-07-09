@@ -1,7 +1,7 @@
 ---
 id: task-006
 title: 自動刷新前端 — AutoRefreshControl 共用元件 + 各檢視輪詢 + 觸發 404 修復
-status: pending
+status: done
 parallel: false
 depends_on: [task-005]
 affected_files:
@@ -34,11 +34,11 @@ AWS 主控台式的重新整理體驗(純 UI 層,不改任何 API):非同步狀�
 
 ## Acceptance
 
-- [ ] `npm run typecheck` 通過;`npm run lint`(--max-warnings=0)通過
-- [ ] `[ -f frontend/src/components/common/AutoRefreshControl.tsx ]` 為真
-- [ ] `grep -rn "runs/trigger" frontend/src` 無輸出(死端點呼叫清除)
-- [ ] `docker compose up -d --build frontend` 後手測:runs 頁「手動觸發(全部啟用表)」回 202 且新 run 出現在清單(無 404);執行中 run 明細逐表 log 自動增加、run 結束後網路面板不再輪詢;資料清單 / 儀表板顯示「最後更新」並可手動刷新
-- [ ] 四個掛載點(runs 清單 / run 明細 / 資料清單 / 儀表板)皆使用同一 AutoRefreshControl 元件(無複製貼上變體)
+- [x] `npm run typecheck` 通過;`npm run lint`(--max-warnings=0)通過
+- [x] `[ -f frontend/src/components/common/AutoRefreshControl.tsx ]` 為真
+- [x] `grep -rn "runs/trigger" frontend/src` 無輸出(死端點呼叫清除)
+- [ ] `docker compose up -d --build frontend` 後手測:runs 頁「手動觸發(全部啟用表)」回 202 且新 run 出現在清單(無 404);執行中 run 明細逐表 log 自動增加、run 結束後網路面板不再輪詢;資料清單 / 儀表板顯示「最後更新」並可手動刷新 — **待 orchestrator 手測**
+- [x] 四個掛載點(runs 清單 / run 明細 / 資料清單 / 儀表板)皆使用同一 AutoRefreshControl 元件(無複製貼上變體)
 
 ## 必讀檔(Just-in-time)
 

@@ -77,17 +77,6 @@ export interface ActiveRunData {
   processed_tables: number
 }
 
-export interface RunTriggerPayload {
-  /** NULL 表示對全部啟用表執行一輪;指定則只跑該表 */
-  etlTableUid: string | null
-}
-
-export interface RunTriggerResult {
-  task_id: string
-  /** 佇列模式下 run 由 worker 建立,enqueue 當下尚無 run → null */
-  run_uid: string | null
-}
-
 export const runApi = baseApi
   .enhanceEndpoints({ addTagTypes: ['Run', 'RunLog'] })
   .injectEndpoints({
@@ -127,18 +116,6 @@ export const runApi = baseApi
           response: ApiEnvelope<ActiveRunData>,
         ): ActiveRunData | null => response.data,
       }),
-      // 手動觸發:成功後 invalidate run 清單,讓新 run 即時反映
-      triggerRun: build.mutation<RunTriggerResult, RunTriggerPayload>({
-        query: ({ etlTableUid }) => ({
-          url: '/runs/trigger',
-          method: 'POST',
-          body: { etl_table_uid: etlTableUid },
-        }),
-        invalidatesTags: [{ type: 'Run', id: 'LIST' }],
-        transformResponse: (
-          response: ApiEnvelope<RunTriggerResult>,
-        ): RunTriggerResult => unwrap(response),
-      }),
     }),
   })
 
@@ -147,5 +124,4 @@ export const {
   useGetRunQuery,
   useListRunLogsQuery,
   useGetActiveRunQuery,
-  useTriggerRunMutation,
 } = runApi
