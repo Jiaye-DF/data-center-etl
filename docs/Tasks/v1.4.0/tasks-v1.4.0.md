@@ -1,6 +1,6 @@
 # Tasks v1.4.0
 
-> 狀態:實作完成(已完成 6/6,docker 手測收口中)
+> 狀態:實作完成(6/6;2026-07-09 orchestrator API 冒煙驗證通過:未帶 token 401、admin 200、POST /sync/all 202、/runs/active total=4747 且 processed 遞增、running_tables=2 證實並行生效;UI 瀏覽器手測與 /scan-project、/reflect-rules、PR 待收口)
 > 來源:`propose-v1.4.0.md`(scope 地板,禁動;2026-07-09 已補齊 6 項並經 user 批准)
 > 範圍:①同輪表級平行同步(並行度 env 化,預設 2)②全域同步進度條(`GET /runs/active` + sticky bar)③AWS 式自動重新整理(純 UI 輪詢 + 統一控制元件)④runs 頁手動觸發 404 修復 ⑤RBAC 全面 admin-only + member 無權限說明頁。
 > 起點:`dev-v1.4/parallel-sync` @ `6349a57`(已含 uvicorn workers / DB 池 env 化 fix;task-001 動相同 compose / env 檔,**必**以此為基底)。
