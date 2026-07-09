@@ -534,21 +534,27 @@ export function DatasetBrowser({
         </div>
         {isAdmin ? (
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setOpenDialog('sync')}
-              disabled={isSyncingAll}
-              className="df-btn-primary-soft"
-            >
-              {isSyncingAll ? '同步中…' : '全量同步'}
-            </button>
+            {dataset === 'source' ? (
+              <button
+                type="button"
+                onClick={() => setOpenDialog('sync')}
+                disabled={isSyncingAll}
+                className="df-btn-primary-soft"
+              >
+                {isSyncingAll ? '同步中…' : '全量同步'}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setOpenDialog('snapshot')}
               disabled={isRefreshing}
               className="df-btn-outline"
             >
-              {isRefreshing ? '同步中…' : '快照同步'}
+              {isRefreshing
+                ? '同步中…'
+                : dataset === 'target'
+                  ? 'ETL 快照同步'
+                  : '快照同步'}
             </button>
           </div>
         ) : null}
@@ -587,7 +593,7 @@ export function DatasetBrowser({
 
       <ConfirmDialog
         open={openDialog === 'snapshot'}
-        title="快照同步"
+        title={dataset === 'target' ? 'ETL 快照同步' : '快照同步'}
         confirmLabel="開始更新"
         confirmDisabled={isRefreshing}
         onConfirm={handleRefresh}
