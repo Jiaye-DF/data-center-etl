@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: RBAC 前端 — member 無權限頁 + 路由守衛 + 導覽隱藏
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth/useAuth'
 import { Header } from '@/components/layout/Header'
 import { Sidebar } from '@/components/layout/Sidebar'
@@ -26,7 +26,8 @@ export default function MainLayout({
   children,
 }: MainLayoutProps): React.ReactNode {
   const router = useRouter()
-  const { user, isLoading, isAuthenticated, isSessionExpired } = useAuth()
+  const pathname = usePathname()
+  const { user, isLoading, isAuthenticated, isSessionExpired, isAdmin } = useAuth()
 
   // 認證恢復後重置去重 flag,讓下一次 401 仍能觸發 re-auth
   useEffect(() => {
@@ -66,6 +67,18 @@ export default function MainLayout({
     }
   }, [isLoading, isAuthenticated, isSessionExpired, router])
 
+  // auth guard 第三層:RBAC — 非 admin 一律導向 /no-access;admin 誤入則導回首頁(task-004)
+  useEffect(() => {
+    if (isLoading || !isAuthenticated) {
+      return
+    }
+    if (!isAdmin && pathname !== '/no-access') {
+      router.replace('/no-access')
+    } else if (isAdmin && pathname === '/no-access') {
+      router.replace('/')
+    }
+  }, [isLoading, isAuthenticated, isAdmin, pathname, router])
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -75,6 +88,12 @@ export default function MainLayout({
   }
 
   if (!isAuthenticated || user === null) {
+    return null
+  }
+
+  // RBAC 導頁進行中:避免非 admin 閃現後台內容 / admin 閃現無權限頁
+  const rbacRedirecting = (!isAdmin && pathname !== '/no-access') || (isAdmin && pathname === '/no-access')
+  if (rbacRedirecting) {
     return null
   }
 

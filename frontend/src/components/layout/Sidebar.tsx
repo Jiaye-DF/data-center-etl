@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { closeMobileNav } from '@/store/theme-slice'
+import { useAuth } from '@/lib/auth/useAuth'
 
 interface NavItem {
   href: string
@@ -106,10 +107,16 @@ export function Sidebar(): React.ReactNode {
   const dispatch = useAppDispatch()
   const sidebarState = useAppSelector((s) => s.theme.sidebarState)
   const mobileOpen = useAppSelector((s) => s.theme.mobileNavOpen)
+  const { isAdmin } = useAuth()
 
   const collapsed = sidebarState === 'collapsed'
   const handleNavigate = (): void => {
     dispatch(closeMobileNav())
+  }
+
+  // 非 admin 無任何 ETL 後台導覽項可看,整個側欄不渲染(Header 仍保留供登出)
+  if (!isAdmin) {
+    return null
   }
 
   return (
