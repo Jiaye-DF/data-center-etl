@@ -100,7 +100,9 @@ class TargetWriter(Protocol):
 class RunStore(Protocol):
     """etl_runs / etl_run_logs 寫入介面(production:DbRunStore;測試可用 in-memory fake)。"""
 
-    async def create_run(self, *, trigger_type: str, schedule_pid: int | None) -> int: ...
+    async def create_run(
+        self, *, trigger_type: str, schedule_pid: int | None, total_tables: int
+    ) -> int: ...
 
     async def start_table_log(self, *, run_pid: int, config: EtlTableConfig) -> int: ...
 
@@ -136,12 +138,15 @@ class DbRunStore:
         self._session = session
         self._actor_uid = actor_uid
 
-    async def create_run(self, *, trigger_type: str, schedule_pid: int | None) -> int:
+    async def create_run(
+        self, *, trigger_type: str, schedule_pid: int | None, total_tables: int
+    ) -> int:
         run = EtlRun(
             trigger_type=trigger_type,
             schedule_pid=schedule_pid,
             status="running",
             started_at=_db_now(),
+            total_tables=total_tables,
             created_by=self._actor_uid,
             updated_by=self._actor_uid,
         )

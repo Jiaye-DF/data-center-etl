@@ -11,6 +11,7 @@ from app.schemas.response import ApiResponse
 
 # 狀態列舉統一定義於 schemas/run.py(04-api-docs:禁 Literal 散落);非法值由 FastAPI 回 422
 from app.schemas.run import (
+    ActiveRunResponse,
     RunListResponse,
     RunLogListResponse,
     RunLogStatus,
@@ -40,6 +41,19 @@ async def list_runs(
         page=page, page_size=page_size, status=status, trigger_type=trigger_type
     )
     return success(data=data)
+
+
+# 置於 /{uid} 之前:避免 "active" 被當成動態路徑參數吃掉(路由依註冊順序匹配)
+@router.get(
+    "/active",
+    response_model=ApiResponse[ActiveRunResponse],
+    summary="執行中 run 進度(uid / 觸發方式 / 開始時間 / 總表數 + 逐狀態計數;無執行中回 null)",
+)
+async def get_active_run(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ActiveRunResponse]:
+    return success(data=await RunService(db).get_active_run())
 
 
 @router.get(

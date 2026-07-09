@@ -16,6 +16,7 @@ from app.models import EtlRun, EtlRunLog, Schedule
 from app.repositories.run_repo import RunRepository
 from app.repositories.schedule_repo import ScheduleRepository
 from app.schemas.run import (
+    ActiveRunResponse,
     RunListResponse,
     RunLogListResponse,
     RunLogResponse,
@@ -282,6 +283,28 @@ class RunService:
         pids = [run.schedule_pid] if run.schedule_pid is not None else []
         ref_map = await self._ref_repo.schedule_ref_by_pid(pids)
         return self._to_summary(run, ref_map)
+
+    async def get_active_run(self) -> ActiveRunResponse | None:
+        """最新一筆執行中 run 的進度快照;無執行中 run 回 None(供 /runs/active 輪詢)。"""
+        run = await self._repo.latest_running_run()
+        if run is None:
+            return None
+        counts = await self._repo.log_status_counts(run.pid)
+        success_tables = counts.get("success", 0)
+        failed_tables = counts.get("failed", 0)
+        skipped_tables = counts.get("skipped", 0)
+        running_tables = counts.get("running", 0)
+        return ActiveRunResponse(
+            uid=run.uid,
+            trigger_type=TriggerType(run.trigger_type),
+            started_at=run.started_at,
+            total_tables=run.total_tables,
+            success_tables=success_tables,
+            failed_tables=failed_tables,
+            skipped_tables=skipped_tables,
+            running_tables=running_tables,
+            processed_tables=success_tables + failed_tables + skipped_tables,
+        )
 
     async def list_run_logs(
         self,

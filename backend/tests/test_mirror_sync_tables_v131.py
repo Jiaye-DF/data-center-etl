@@ -117,8 +117,15 @@ class FakeRunStore:
         self.run: dict[str, Any] = {}
         self.logs: list[dict[str, Any]] = []
 
-    async def create_run(self, *, trigger_type: str, schedule_pid: int | None) -> int:
-        self.run = {"trigger_type": trigger_type, "schedule_pid": schedule_pid, "status": "running"}
+    async def create_run(
+        self, *, trigger_type: str, schedule_pid: int | None, total_tables: int
+    ) -> int:
+        self.run = {
+            "trigger_type": trigger_type,
+            "schedule_pid": schedule_pid,
+            "status": "running",
+            "total_tables": total_tables,
+        }
         return 1
 
     async def start_table_log(self, *, run_pid: int, config: EtlTableConfig) -> int:

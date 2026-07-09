@@ -54,9 +54,11 @@ class RunStateTracker:
         self.created_run_pid: int | None = None
         self.run_finished = False
 
-    async def create_run(self, *, trigger_type: str, schedule_pid: int | None) -> int:
+    async def create_run(
+        self, *, trigger_type: str, schedule_pid: int | None, total_tables: int
+    ) -> int:
         run_pid = await self._inner.create_run(
-            trigger_type=trigger_type, schedule_pid=schedule_pid
+            trigger_type=trigger_type, schedule_pid=schedule_pid, total_tables=total_tables
         )
         self.created_run_pid = run_pid
         return run_pid
@@ -240,7 +242,9 @@ async def mirror_sync(
             if incremental:
                 baselines = await repo.read_stat_baselines(Dataset.SOURCE)
             run_pid = await store.create_run(
-                trigger_type=trigger_type, schedule_pid=schedule_pid
+                trigger_type=trigger_type,
+                schedule_pid=schedule_pid,
+                total_tables=len(configs),
             )
             skipped = 0
 

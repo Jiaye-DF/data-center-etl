@@ -1,7 +1,7 @@
 ---
 id: task-002
 title: 進度後端 — create_run 帶 total_tables + GET /runs/active
-status: pending
+status: done
 parallel: false
 depends_on: [task-001, task-003]
 affected_files:
@@ -30,10 +30,10 @@ effort: high
 
 ## Acceptance
 
-- [ ] `uv run pytest tests/test_runs_api.py` 全綠(含上列新測試)
-- [ ] `uv run pytest` 全綠;`uv run ruff check .` 通過;`uv run mypy .` 無新增錯誤
-- [ ] `docker compose up -d --build backend` 後:`curl -fsS http://localhost:8000/api/v1/runs/active` 未帶 token 回 401(`| grep 401` 或 -w 驗 status)
-- [ ] 手動觸發全量同步後立即查 `/runs/active`(admin token):`total_tables > 0` 且 processed 隨執行遞增
+- [x] `uv run pytest tests/test_runs_api.py` 全綠(含上列新測試)
+- [x] `uv run pytest` 全綠;`uv run ruff check .` 通過;`uv run mypy .` 無新增錯誤
+- [ ] `docker compose up -d --build backend` 後:`curl -fsS http://localhost:8000/api/v1/runs/active` 未帶 token 回 401(`| grep 401` 或 -w 驗 status)— 待 orchestrator 手測
+- [ ] 手動觸發全量同步後立即查 `/runs/active`(admin token):`total_tables > 0` 且 processed 隨執行遞增 — 待 orchestrator 手測
 
 ## 必讀檔(Just-in-time)
 

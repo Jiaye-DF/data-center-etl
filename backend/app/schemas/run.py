@@ -77,6 +77,20 @@ class RunLogListResponse(BaseModel):
     page_size: int = Field(description="每頁筆數")
 
 
+class ActiveRunResponse(BaseModel):
+    """目前執行中 run 的進度快照(供前端 sticky bar 輪詢);無執行中 run 時整包為 null。"""
+
+    uid: UUID = Field(description="執行中 run 的公開識別碼")
+    trigger_type: TriggerType = Field(description="觸發方式:schedule(排程)/ manual(手動)")
+    started_at: datetime | None = Field(description="開始時間(Asia/Taipei wall-clock)")
+    total_tables: int = Field(description="本輪應處理表總數(進度分母)")
+    success_tables: int = Field(description="目前累計成功表數")
+    failed_tables: int = Field(description="目前累計失敗表數")
+    skipped_tables: int = Field(description="目前累計跳過表數(增量未變動)")
+    running_tables: int = Field(description="目前處理中表數")
+    processed_tables: int = Field(description="已處理表數(success + failed + skipped)")
+
+
 class RunTriggerRequest(BaseModel):
     etl_table_uid: UUID | None = Field(
         default=None, description="指定只跑該表;null 表示對全部啟用表執行一輪"

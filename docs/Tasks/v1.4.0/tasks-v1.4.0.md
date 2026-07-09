@@ -1,6 +1,6 @@
 # Tasks v1.4.0
 
-> 狀態:進行中(已完成 3/6)
+> 狀態:進行中(已完成 4/6)
 > 來源:`propose-v1.4.0.md`(scope 地板,禁動;2026-07-09 已補齊 6 項並經 user 批准)
 > 範圍:①同輪表級平行同步(並行度 env 化,預設 2)②全域同步進度條(`GET /runs/active` + sticky bar)③AWS 式自動重新整理(純 UI 輪詢 + 統一控制元件)④runs 頁手動觸發 404 修復 ⑤RBAC 全面 admin-only + member 無權限說明頁。
 > 起點:`dev-v1.4/parallel-sync` @ `6349a57`(已含 uvicorn workers / DB 池 env 化 fix;task-001 動相同 compose / env 檔,**必**以此為基底)。
@@ -12,7 +12,7 @@
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
 | 001 | 同輪表級平行同步(worker 併發 + SYNC_CONCURRENCY env) | done(worker: claude-A) | ✓ | — | `backend/app/worker/tasks.py` / `backend/app/core/config.py` / `backend/tests/test_mirror_sync_parallel.py` / 3×`docker-compose*.yml` / 3×`.env*.example` |
-| 002 | 進度後端 — create_run 帶 total_tables + `GET /runs/active` | pending | ✗ | 001, 003 | `backend/app/etl/engine.py` / `backend/app/worker/tasks.py` / `backend/app/api/v1/runs.py` / `backend/app/schemas/run.py` / `backend/app/repositories/run_repo.py` / `backend/tests/test_runs_api.py` |
+| 002 | 進度後端 — create_run 帶 total_tables + `GET /runs/active` | done(worker: claude-D) | ✗ | 001, 003 | `backend/app/etl/engine.py` / `backend/app/worker/tasks.py` / `backend/app/api/v1/runs.py` / `backend/app/schemas/run.py` / `backend/app/repositories/run_repo.py` / `backend/tests/test_runs_api.py` |
 | 003 | RBAC 後端 — 資料層端點全面 require_admin | done(worker: claude-B) | ✓ | — | `backend/app/api/v1/{datasets,schedules,runs,sync,dashboard,audit_logs}.py` / `backend/tests/{test_sync_api,test_runs_api,test_schedule_api_v131,test_snapshot_service,test_audit_log}.py` |
 | 004 | RBAC 前端 — member 無權限頁 + 路由守衛 + 導覽隱藏 | done(worker: claude-C) | ✓ | — | `frontend/src/app/(main)/layout.tsx` / `frontend/src/app/(main)/no-access/page.tsx`(新) / `frontend/src/components/layout/Sidebar.tsx` |
 | 005 | 進度前端 — 全域 SyncProgress sticky bar(輪詢 /runs/active) | pending | ✗ | 002, 004 | `frontend/src/components/sync/SyncProgress.tsx`(新) / `frontend/src/lib/api/runApi.ts` / `frontend/src/app/(main)/layout.tsx` |
