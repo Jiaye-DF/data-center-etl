@@ -95,6 +95,8 @@ services:
       # DB 連線池 env 化(Coolify 依 worker 數填):總連線 = 各服務(pool+overflow)加總,須 < postgres max_connections
       DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+      # 單輪同步的表級併發度(僅 worker 讀);調高→來源 RDS 讀壓上升,異常設回 1
+      SYNC_CONCURRENCY: ${SYNC_CONCURRENCY:-2}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
       INIT_ADMIN_USERNAME: ${INIT_ADMIN_USERNAME}

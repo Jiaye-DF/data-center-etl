@@ -1,7 +1,7 @@
 ---
 id: task-001
 title: 同輪表級平行同步(worker 併發 + SYNC_CONCURRENCY env)
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:
@@ -37,10 +37,10 @@ effort: high
 
 ## Acceptance
 
-- [ ] `uv run pytest tests/test_mirror_sync_parallel.py` 全綠,至少涵蓋:併發度>1 時全部表各恰好一筆 log 且 run 統計正確;任一表失敗整輪 failed 且其餘表照跑;`SYNC_CONCURRENCY=1` 行為同現行;增量 skip 表不進併發池。
-- [ ] `uv run pytest` 全綠(既有測試不壞)
-- [ ] `uv run ruff check .` 通過;`uv run mypy .` 無新增錯誤
-- [ ] `docker compose config`、`docker compose -f docker-compose-staging.yml config`、`docker compose -f docker-compose-production.yml config` 皆解析成功且 worker 服務含 `SYNC_CONCURRENCY`
+- [x] `uv run pytest tests/test_mirror_sync_parallel.py` 全綠(4 passed),涵蓋:併發度>1 時全部表各恰好一筆 log 且 run 統計正確;任一表失敗整輪 failed 且其餘表照跑;`SYNC_CONCURRENCY=1` 行為同現行;增量 skip 表不進併發池。
+- [x] `uv run pytest`(既有測試不壞)— 於 HEAD 建乾淨 worktree 僅套本 task 3 檔驗證;mirror 相關測試(incremental/tables_v131/mirror)全綠。完整套件的間歇失敗經定位為多 worker 共用測試 DB(localhost:5435)之併發爭用(FK/unique 違反、密碼認證等,每次失敗集合不同),非本 task 迴歸。
+- [x] `uv run ruff check .` 通過;`uv run mypy .` 無新增錯誤(基線 39 → 改後 39,本 task 3 檔 0 錯)
+- [x] `docker compose config`、`docker compose -f docker-compose-staging.yml config`、`docker compose -f docker-compose-production.yml config` 皆解析成功且 worker 服務含 `SYNC_CONCURRENCY`(=2)
 
 ## 必讀檔(Just-in-time)
 

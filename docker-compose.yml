@@ -78,6 +78,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - DB_POOL_SIZE=${DB_POOL_SIZE:-5}
       - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-5}
+      # 單輪同步的表級併發度(僅 worker 讀);調高→來源 RDS 讀壓上升,異常設回 1
+      - SYNC_CONCURRENCY=${SYNC_CONCURRENCY:-2}
       - TZ=Asia/Taipei
     depends_on:
       postgres:

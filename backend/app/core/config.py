@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # 部署以 env 依 worker 數下調,避免連線耗盡(見 .env.*.example 說明)。
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 5
+    # 單輪同步的表級併發度(僅 worker 讀):同輪多表以 asyncio 併發鏡像,預設 2。
+    # 調高 → 來源 RDS 讀壓上升;來源異常時設回 1 退化為序列同步(見 .env.*.example 說明)。
+    SYNC_CONCURRENCY: int = 2
     JWT_SECRET_KEY: str = Field(default=JWT_SECRET_KEY_DEVELOPMENT_DEFAULT)
     JWT_EXPIRE_MINUTES: int = 480
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
