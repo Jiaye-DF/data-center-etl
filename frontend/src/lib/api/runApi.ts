@@ -64,6 +64,19 @@ export interface RunLogListParams {
   status?: RunLogStatus
 }
 
+/** 執行中 run 的進度快照(對齊 backend ActiveRunResponse;無執行中 run 時整包為 null) */
+export interface ActiveRunData {
+  uid: string
+  trigger_type: string
+  started_at: string | null
+  total_tables: number
+  success_tables: number
+  failed_tables: number
+  skipped_tables: number
+  running_tables: number
+  processed_tables: number
+}
+
 export interface RunTriggerPayload {
   /** NULL 表示對全部啟用表執行一輪;指定則只跑該表 */
   etlTableUid: string | null
@@ -107,6 +120,13 @@ export const runApi = baseApi
           response: ApiEnvelope<RunLogListData>,
         ): RunLogListData => unwrap(response),
       }),
+      // 全域 sticky 進度條輪詢用:無執行中 run 時 data 為合法 null(非錯誤),故不走 unwrap
+      getActiveRun: build.query<ActiveRunData | null, void>({
+        query: () => '/runs/active',
+        transformResponse: (
+          response: ApiEnvelope<ActiveRunData>,
+        ): ActiveRunData | null => response.data,
+      }),
       // 手動觸發:成功後 invalidate run 清單,讓新 run 即時反映
       triggerRun: build.mutation<RunTriggerResult, RunTriggerPayload>({
         query: ({ etlTableUid }) => ({
@@ -126,5 +146,6 @@ export const {
   useListRunsQuery,
   useGetRunQuery,
   useListRunLogsQuery,
+  useGetActiveRunQuery,
   useTriggerRunMutation,
 } = runApi

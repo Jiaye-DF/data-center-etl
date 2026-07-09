@@ -1,7 +1,7 @@
 ---
 id: task-005
 title: 進度前端 — 全域 SyncProgress sticky bar(輪詢 /runs/active)
-status: pending
+status: done
 parallel: false
 depends_on: [task-002, task-004]
 affected_files:
@@ -26,10 +26,10 @@ effort: medium
 
 ## Acceptance
 
-- [ ] `npm run typecheck` 通過;`npm run lint`(--max-warnings=0)通過
-- [ ] `[ -f frontend/src/components/sync/SyncProgress.tsx ]` 為真
-- [ ] `docker compose up -d --build frontend` 後手測:觸發全量同步 → 數秒內任一頁面(儀表板/排程/runs)頂部出現進度條且 n/N 隨執行推進;完成後消失;無同步時重整不出現
-- [ ] 同步含失敗表時,進度條呈現失敗計數(danger 色)
+- [x] `npm run typecheck` 通過;`npm run lint`(--max-warnings=0)通過
+- [x] `[ -f frontend/src/components/sync/SyncProgress.tsx ]` 為真
+- [ ] `docker compose up -d --build frontend` 後手測:觸發全量同步 → 數秒內任一頁面(儀表板/排程/runs)頂部出現進度條且 n/N 隨執行推進;完成後消失;無同步時重整不出現(待 orchestrator 手測)
+- [ ] 同步含失敗表時,進度條呈現失敗計數(danger 色)(待 orchestrator 手測)
 
 ## 必讀檔(Just-in-time)
 
