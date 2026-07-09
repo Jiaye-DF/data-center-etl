@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_login
+from app.api.deps import get_db, require_admin
 from app.core.response import success
 from app.models.user import User
 from app.schemas.response import ApiResponse
@@ -30,7 +30,7 @@ router = APIRouter()
 )
 async def list_runs(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_login)],
+    _user: Annotated[User, Depends(require_admin)],
     status: Annotated[RunStatus | None, Query()] = None,
     trigger_type: Annotated[TriggerType | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -50,7 +50,7 @@ async def list_runs(
 async def get_run(
     uid: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_login)],
+    _user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[RunSummaryResponse]:
     return success(data=await RunService(db).get_run(uid))
 
@@ -63,7 +63,7 @@ async def get_run(
 async def list_run_logs(
     uid: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_login)],
+    _user: Annotated[User, Depends(require_admin)],
     status: Annotated[RunLogStatus | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,

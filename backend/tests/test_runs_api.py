@@ -264,12 +264,24 @@ async def test_list_requires_login_401(client: AsyncClient) -> None:
     _assert_shell(resp.json(), success=False, response_code=401)
 
 
-async def test_viewer_can_read_runs(
+async def test_viewer_read_runs_forbidden_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
+    """RBAC 收緊(task-003):runs 全端點 admin-only,viewer 一律 403。"""
     await _login_as(client, session_factory, "viewer")
     run_uid = await _seed_run(session_factory)
-    # 讀取 OK:清單 / 明細 / 逐表 log(runs 已無寫入端點)
+    list_resp = await client.get("/api/v1/runs")
+    assert list_resp.status_code == 403
+    _assert_shell(list_resp.json(), success=False, response_code=403)
+    assert (await client.get(f"/api/v1/runs/{run_uid}")).status_code == 403
+    assert (await client.get(f"/api/v1/runs/{run_uid}/logs")).status_code == 403
+
+
+async def test_admin_read_runs_unchanged_200(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _login_as(client, session_factory, "admin")
+    run_uid = await _seed_run(session_factory)
     list_resp = await client.get("/api/v1/runs")
     assert list_resp.status_code == 200
     _assert_shell(list_resp.json(), success=True, response_code=200)

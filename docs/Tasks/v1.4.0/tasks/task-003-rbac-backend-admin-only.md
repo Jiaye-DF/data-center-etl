@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: RBAC 後端 — 資料層端點全面 require_admin
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:
@@ -34,10 +34,10 @@ ETL 後台 API **讀寫全部** admin-only:datasets / schedules / runs / sync / 
 
 ## Acceptance
 
-- [ ] `uv run pytest` 全綠(含更新後的五個測試檔)
-- [ ] `grep -rn "require_login" backend/app/api/v1/{datasets,schedules,runs,sync,dashboard,audit_logs}.py` 無輸出(全面換畢)
-- [ ] `uv run ruff check .` 通過;`uv run mypy .` 無新增錯誤
-- [ ] `docker compose up -d --build backend` 後手測:viewer 帳號 token `curl /api/v1/datasets/source/schemas` 回 403;admin 回 200;未帶 token 回 401
+- [x] `uv run pytest` 全綠(含更新後的五個測試檔)
+- [x] `grep -rn "require_login" backend/app/api/v1/{datasets,schedules,runs,sync,dashboard,audit_logs}.py` 無輸出(全面換畢)
+- [x] `uv run ruff check .` 通過;`uv run mypy .` 無新增錯誤
+- [ ] `docker compose up -d --build backend` 後手測:viewer 帳號 token `curl /api/v1/datasets/source/schemas` 回 403;admin 回 200;未帶 token 回 401(**待 orchestrator 手測**)
 
 ## 必讀檔(Just-in-time)
 

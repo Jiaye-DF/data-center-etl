@@ -41,11 +41,14 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app import models  # noqa: E402, F401  匯入全部 model 讓 create_all 建齊資料表
+from app.api.deps import get_db  # noqa: E402
 from app.core import redis as cache  # noqa: E402
 from app.core.db import Base  # noqa: E402
+from app.core.security import hash_password_async  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models import Dataset, RdsTableMeta  # noqa: E402
 from app.repositories.rds_table_meta_repo import RdsTableMetaRepository  # noqa: E402
+from app.repositories.user_repo import UserRepository  # noqa: E402
 from app.services.snapshot_service import (  # noqa: E402
     SnapshotService,
     TableFilters,
@@ -98,6 +101,7 @@ async def db_engine() -> AsyncIterator[AsyncEngine]:
 async def _clean_tables(db_engine: AsyncEngine) -> None:
     async with db_engine.begin() as conn:
         await conn.execute(text("DELETE FROM rds_table_meta"))
+        await conn.execute(text("DELETE FROM users"))
 
 
 @pytest.fixture(autouse=True)
@@ -112,11 +116,52 @@ async def session_factory(db_engine: AsyncEngine) -> async_sessionmaker[AsyncSes
 
 
 @pytest_asyncio.fixture
-async def client() -> AsyncIterator[AsyncClient]:
+async def client(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncClient]:
     app = create_app()
+
+    async def _override_get_db() -> AsyncIterator[AsyncSession]:
+        async with session_factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    app.dependency_overrides[get_db] = _override_get_db
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="https://testserver") as ac:
         yield ac
+
+
+async def _create_user(
+    session_factory: async_sessionmaker[AsyncSession],
+    username: str,
+    password: str,
+    role: str,
+) -> None:
+    async with session_factory() as session:
+        password_hash = await hash_password_async(password)
+        await UserRepository(session).create(
+            username=username, password_hash=password_hash, role=role
+        )
+        await session.commit()
+
+
+async def _login_as(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    role: str,
+) -> None:
+    username = f"{role}-user"
+    password = f"{role}-password-123"
+    await _create_user(session_factory, username, password, role)
+    resp = await client.post(
+        "/api/v1/auth/login", json={"username": username, "password": password}
+    )
+    assert resp.status_code == 200, resp.text
 
 
 def _fake_tables() -> list[_CollectedTable]:
@@ -355,3 +400,27 @@ async def test_columns_endpoint_removed_returns_404(client: AsyncClient) -> None
         "/api/v1/datasets/source/tables/DS/GAT_FILE/columns"
     )
     assert resp.status_code == 404
+
+
+# ── 權限:datasets 全端點 admin-only(task-003 RBAC 收緊)────────────────
+async def test_viewer_read_datasets_forbidden_403(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _login_as(client, session_factory, "viewer")
+    resp = await client.get("/api/v1/datasets/source/schemas")
+    assert resp.status_code == 403
+    _assert_shell_403(resp.json())
+
+
+async def test_admin_read_datasets_unchanged_200(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _login_as(client, session_factory, "admin")
+    resp = await client.get("/api/v1/datasets/source/schemas")
+    assert resp.status_code == 200
+
+
+def _assert_shell_403(body: dict[str, object]) -> None:
+    assert set(body.keys()) == {"success", "data", "detail", "response_code"}
+    assert body["success"] is False
+    assert body["response_code"] == 403
