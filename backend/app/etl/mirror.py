@@ -246,7 +246,9 @@ async def write_mirror(
     for stmt in build_comment_statements(
         schema, table, colnames, table_comment, column_comments
     ):
-        await conn.execute(text(stmt))
+        # COMMENT 為已跳脫完成的 DDL 成品字串;不得再經 text() 解析,
+        # 否則內容含 :xxx(如 "Y":1)會被誤判為 bind 參數而 raise
+        await conn.exec_driver_sql(stmt)
     return written
 
 

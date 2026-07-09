@@ -29,6 +29,7 @@ class FakeConn:
     def __init__(self, *, table_exists: bool) -> None:
         self._table_exists = table_exists
         self.executed: list[str] = []
+        self.driver_executed: list[str] = []
         self.insert_batches: list[int] = []
 
     async def execute(self, sql: Any, params: Any = None) -> _FakeResult:
@@ -38,6 +39,11 @@ class FakeConn:
             self.insert_batches.append(len(params))
         if "information_schema.tables" in s:
             return _FakeResult([(1,)] if self._table_exists else [])
+        return _FakeResult([])
+
+    async def exec_driver_sql(self, sql: str) -> _FakeResult:
+        self.executed.append(sql)
+        self.driver_executed.append(sql)
         return _FakeResult([])
 
 
@@ -193,6 +199,23 @@ async def test_write_mirror_streams_in_batches_not_materialized() -> None:
     assert written == 3
     # 兩批 → 兩次 INSERT execute,批量 params 各為 2 / 1(逐批,非一次全塞)
     assert conn.insert_batches == [2, 1]
+
+
+async def test_write_mirror_comment_with_colon_goes_driver_raw() -> None:
+    """COMMENT 內容含冒號(如 "Y":1)須以 driver 直送執行,不得經 text() 誤解析成 bind 參數。"""
+    conn = FakeConn(table_exists=True)
+    columns = [MirrorColumn("AZA72", "VARCHAR(1)")]
+    await write_mirror(
+        conn,
+        schema="DS",
+        table="AZA_FILE",
+        columns=columns,
+        row_batches=_make_batches([[{"AZA72": "Y"}]]),
+        table_comment=None,
+        column_comments={"aza72": '是否與EasyFlowGP整合("Y":1, "N":2)'},
+    )
+    # COMMENT 語句必須走 exec_driver_sql,且冒號內容原樣保留
+    assert any('("Y":1, "N":2)' in s for s in conn.driver_executed)
 
 
 async def test_write_mirror_skips_empty_batches() -> None:

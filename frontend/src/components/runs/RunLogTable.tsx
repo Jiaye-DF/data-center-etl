@@ -184,7 +184,7 @@ export function RunLogTable({ runUid }: RunLogTableProps): React.ReactNode {
               <thead>
                 <tr className="border-b border-border bg-muted/50">
                   <th className="df-th">來源表</th>
-                  <th className="df-th">狀態</th>
+                  <th className="df-th min-w-[5.5rem]">狀態</th>
                   <th className="df-th">讀寫筆數</th>
                   <th className="df-th">耗時</th>
                   <th className="df-th">開始時間</th>
