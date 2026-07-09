@@ -73,6 +73,26 @@ class RunRepository:
         stmt = select(EtlRun).where(EtlRun.pid == pid, EtlRun.is_deleted.is_(False))
         return (await self._db.execute(stmt)).scalar_one_or_none()
 
+    async def latest_running_run(self) -> EtlRun | None:
+        """最新一筆執行中(status='running')且未刪除的 run(供 /runs/active 進度輪詢)。"""
+        stmt = (
+            select(EtlRun)
+            .where(EtlRun.status == "running", EtlRun.is_deleted.is_(False))
+            .order_by(EtlRun.pid.desc())
+            .limit(1)
+        )
+        return (await self._db.execute(stmt)).scalar_one_or_none()
+
+    async def log_status_counts(self, run_pid: int) -> dict[str, int]:
+        """該 run 逐表 log 依狀態聚合筆數(一次 GROUP BY;分子不加新寫入,純讀端聚合)。"""
+        stmt = (
+            select(EtlRunLog.status, func.count())
+            .where(EtlRunLog.etl_run_pid == run_pid, EtlRunLog.is_deleted.is_(False))
+            .group_by(EtlRunLog.status)
+        )
+        rows = (await self._db.execute(stmt)).all()
+        return {status: int(count) for status, count in rows}
+
     # ── etl_run_logs(單 run 逐表明細)──────────────────────────────────
     async def list_logs(
         self,

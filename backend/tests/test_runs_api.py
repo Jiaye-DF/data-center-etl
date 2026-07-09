@@ -264,17 +264,86 @@ async def test_list_requires_login_401(client: AsyncClient) -> None:
     _assert_shell(resp.json(), success=False, response_code=401)
 
 
-async def test_viewer_can_read_runs(
+async def test_viewer_read_runs_forbidden_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
+    """RBAC 收緊(task-003):runs 全端點 admin-only,viewer 一律 403。"""
     await _login_as(client, session_factory, "viewer")
     run_uid = await _seed_run(session_factory)
-    # 讀取 OK:清單 / 明細 / 逐表 log(runs 已無寫入端點)
+    list_resp = await client.get("/api/v1/runs")
+    assert list_resp.status_code == 403
+    _assert_shell(list_resp.json(), success=False, response_code=403)
+    assert (await client.get(f"/api/v1/runs/{run_uid}")).status_code == 403
+    assert (await client.get(f"/api/v1/runs/{run_uid}/logs")).status_code == 403
+
+
+async def test_admin_read_runs_unchanged_200(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _login_as(client, session_factory, "admin")
+    run_uid = await _seed_run(session_factory)
     list_resp = await client.get("/api/v1/runs")
     assert list_resp.status_code == 200
     _assert_shell(list_resp.json(), success=True, response_code=200)
     assert (await client.get(f"/api/v1/runs/{run_uid}")).status_code == 200
     assert (await client.get(f"/api/v1/runs/{run_uid}/logs")).status_code == 200
+
+
+# ── /runs/active(進度輪詢,task-002)──────────────────────────────────────
+async def test_active_run_requires_login_401(client: AsyncClient) -> None:
+    resp = await client.get("/api/v1/runs/active")
+    assert resp.status_code == 401
+    _assert_shell(resp.json(), success=False, response_code=401)
+
+
+async def test_active_run_viewer_forbidden_403(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _login_as(client, session_factory, "viewer")
+    resp = await client.get("/api/v1/runs/active")
+    assert resp.status_code == 403
+    _assert_shell(resp.json(), success=False, response_code=403)
+
+
+async def test_active_run_none_when_no_running(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _login_as(client, session_factory, "admin")
+    await _seed_run(session_factory, status="success")
+    resp = await client.get("/api/v1/runs/active")
+    assert resp.status_code == 200
+    body = resp.json()
+    _assert_shell(body, success=True, response_code=200)
+    assert body["data"] is None
+
+
+async def test_active_run_counts_from_logs(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _login_as(client, session_factory, "admin")
+    # 已收尾的舊 run 不應被 /active 撿到(status != running)
+    await _seed_run(session_factory, status="success", total_tables=1)
+    run_uid = await _seed_run(
+        session_factory, status="running", trigger_type="schedule", total_tables=5
+    )
+    await _seed_log(session_factory, run_uid, source_table="T1", status="success", row_count=10)
+    await _seed_log(session_factory, run_uid, source_table="T2", status="failed")
+    await _seed_log(session_factory, run_uid, source_table="T3", status="skipped")
+    await _seed_log(session_factory, run_uid, source_table="T4", status="running")
+    resp = await client.get("/api/v1/runs/active")
+    assert resp.status_code == 200
+    body = resp.json()
+    _assert_shell(body, success=True, response_code=200)
+    data = body["data"]
+    assert data["uid"] == run_uid
+    assert data["trigger_type"] == "schedule"
+    assert data["total_tables"] == 5
+    assert data["success_tables"] == 1
+    assert data["failed_tables"] == 1
+    assert data["skipped_tables"] == 1
+    assert data["running_tables"] == 1
+    # processed = success + failed + skipped(不含 running 中)
+    assert data["processed_tables"] == 3
 
 
 # ── run 清單 ────────────────────────────────────────────────────────────

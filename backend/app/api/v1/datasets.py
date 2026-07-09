@@ -4,7 +4,7 @@ dataset ∈ {source, target}:
 - source → AWS_RDS_SOURCE_DB(erp_migration_test,Raw 原始資料)
 - target → AWS_RDS_TARGET_DB(erp_etl_hub_test,ETL 轉換後資料)
 
-瀏覽端點改讀 rds_table_meta 快照(不即時打 RDS);快照重建走 POST snapshot/refresh(admin)。
+瀏覽端點改讀 rds_table_meta 快照(不即時打 RDS)。全端點 admin-only(viewer 403)。
 """
 
 from datetime import date, datetime, time
@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_admin, require_login
+from app.api.deps import get_db, require_admin
 from app.core.response import success
 from app.models.user import User
 from app.schemas.rawdata import (
@@ -46,7 +46,7 @@ def _end_of_day(value: date | None) -> datetime | None:
 async def list_schemas(
     dataset: Dataset,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_login)],
+    _user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[SchemaListResponse]:
     data = await SnapshotService(db).list_schemas(dataset)
     return success(data=data)
@@ -61,7 +61,7 @@ async def list_tables(
     dataset: Dataset,
     schema: Annotated[str, Query(min_length=1, max_length=128)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_login)],
+    _user: Annotated[User, Depends(require_admin)],
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
     rows: Annotated[RowFilter, Query()] = "nonempty",
@@ -106,7 +106,7 @@ async def schema_summary(
     dataset: Dataset,
     schema: Annotated[str, Query(min_length=1, max_length=128)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_login)],
+    _user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[SchemaStatSummary]:
     data = await SnapshotService(db).list_summary(dataset, schema)
     return success(data=data)

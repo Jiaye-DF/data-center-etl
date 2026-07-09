@@ -1,13 +1,21 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useGetRunQuery } from '@/lib/api/runApi'
 import { RunLogTable } from '@/components/runs/RunLogTable'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import {
+  AutoRefreshControl,
+  useLastUpdatedAt,
+} from '@/components/common/AutoRefreshControl'
 import { TRIGGER_TYPE_LABELS } from '@/constants/labels'
 import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatDateTime, formatNullableDateTime } from '@/utils/datetime'
+
+// run 執行中時 5s 輪詢摘要,結束(success/failed)即停;視窗未聚焦一律暫停
+const RUNNING_POLLING_INTERVAL_MS = 5_000
 
 interface SummaryItemProps {
   label: string
@@ -27,7 +35,23 @@ function SummaryItem({ label, children }: SummaryItemProps): React.ReactNode {
 
 export default function RunDetailPage(): React.ReactNode {
   const { uid } = useParams<{ uid: string }>()
-  const { data, isLoading, isError, error } = useGetRunQuery(uid)
+  // pollingInterval 需在拿到 data.status 前就決定,故用「render 期間依差異更新 state」
+  // (React 官方認可的模式,非 useEffect)讓輪詢間隔在下一輪 render 就反映最新 status
+  const [pollingMs, setPollingMs] = useState(0)
+  const [prevIsRunning, setPrevIsRunning] = useState<boolean | null>(null)
+  const { data, isLoading, isError, error, isFetching, refetch } =
+    useGetRunQuery(uid, {
+      pollingInterval: pollingMs,
+      skipPollingIfUnfocused: true,
+    })
+  const lastUpdatedAt = useLastUpdatedAt(isFetching)
+  const isRunning = data?.status === 'running'
+
+  // run 結束(non-running)即停輪詢;首次拿到 status 前預設不輪詢
+  if (isRunning !== prevIsRunning) {
+    setPrevIsRunning(isRunning)
+    setPollingMs(isRunning ? RUNNING_POLLING_INTERVAL_MS : 0)
+  }
 
   return (
     <section className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -55,11 +79,20 @@ export default function RunDetailPage(): React.ReactNode {
       {data !== undefined ? (
         <>
           <div className="df-card flex flex-col gap-4 p-5 md:p-6">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-xl font-bold text-foreground md:text-2xl">
-                執行詳細資訊
-              </h1>
-              <StatusBadge status={data.status} />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-xl font-bold text-foreground md:text-2xl">
+                  執行詳細資訊
+                </h1>
+                <StatusBadge status={data.status} />
+              </div>
+              <AutoRefreshControl
+                onRefresh={refetch}
+                isFetching={isFetching}
+                lastUpdatedAt={lastUpdatedAt}
+                polling={isRunning}
+                intervalSeconds={RUNNING_POLLING_INTERVAL_MS / 1000}
+              />
             </div>
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <SummaryItem label="觸發方式">
@@ -100,7 +133,7 @@ export default function RunDetailPage(): React.ReactNode {
             <h2 className="text-lg font-bold text-foreground md:text-xl">
               逐表詳細 log
             </h2>
-            <RunLogTable runUid={uid} />
+            <RunLogTable runUid={uid} isRunning={isRunning} />
           </div>
         </>
       ) : null}

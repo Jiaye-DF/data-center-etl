@@ -10,6 +10,7 @@ worker 啟動指令(供 task-012 容器 command 使用):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import traceback
 from collections.abc import Sequence
@@ -20,6 +21,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import redis as cache
+from app.core.config import get_settings
 from app.core.db import AsyncSessionLocal
 from app.core.logging import setup_logging
 from app.etl.engine import (
@@ -52,9 +54,11 @@ class RunStateTracker:
         self.created_run_pid: int | None = None
         self.run_finished = False
 
-    async def create_run(self, *, trigger_type: str, schedule_pid: int | None) -> int:
+    async def create_run(
+        self, *, trigger_type: str, schedule_pid: int | None, total_tables: int
+    ) -> int:
         run_pid = await self._inner.create_run(
-            trigger_type=trigger_type, schedule_pid=schedule_pid
+            trigger_type=trigger_type, schedule_pid=schedule_pid, total_tables=total_tables
         )
         self.created_run_pid = run_pid
         return run_pid
@@ -238,66 +242,94 @@ async def mirror_sync(
             if incremental:
                 baselines = await repo.read_stat_baselines(Dataset.SOURCE)
             run_pid = await store.create_run(
-                trigger_type=trigger_type, schedule_pid=schedule_pid
+                trigger_type=trigger_type,
+                schedule_pid=schedule_pid,
+                total_tables=len(configs),
             )
-            success = failed = skipped = 0
-            for config in configs:
-                s, t = config.source_schema, config.source_table
-                key = (s, t)
-                current = stats.get(key)
-                # 來源 pg_stat 無此表計數 → 保守以 (0,0,0) 為 signature 基準值
-                current_stat = current or TableStat(0, 0, 0)
+            skipped = 0
 
+            # 增量 skip 表不進併發池:序列判斷未變動表 → skip log,其餘進 to_sync 併發同步。
+            # (skip log 寫自有 DB,亦須序列;此處在主協程序列處理,天然安全)
+            to_sync: list[EtlTableConfig] = []
+            for config in configs:
+                key = (config.source_schema, config.source_table)
                 # 增量:未變動表跳過(不重灌、last_synced_at 不更新);
                 # current 為 None(來源無計數)保守視為變動,避免漏灌
                 if incremental:
+                    current = stats.get(key)
                     baseline_tuple = baselines.get(key)
                     baseline = (
                         None if baseline_tuple is None else TableStat(*baseline_tuple)
                     )
+                    current_stat = current or TableStat(0, 0, 0)
                     changed = current is None or stat_changed(current_stat, baseline)
                     if not changed:
                         await store.add_skipped_log(run_pid=run_pid, config=config)
                         skipped += 1
                         continue
+                to_sync.append(config)
 
-                started = now_tw()
-                log_pid = await store.start_table_log(run_pid=run_pid, config=config)
-                try:
-                    written = await mirror.mirror_table(s, t)
-                except Exception as exc:
-                    failed += 1
-                    logger.exception("同步單表失敗:%s.%s", s, t)
-                    await store.finish_table_log(
-                        log_pid,
-                        status="failed",
-                        row_count=None,
-                        duration_ms=_sync_elapsed_ms(started),
-                        error_message=mask_secrets(str(exc)),
-                        error_stack=mask_secrets(traceback.format_exc()),
-                    )
-                    continue
-                success += 1
-                await _mark_meta_synced(session, repo, s, t, written)
-                # 覆蓋成功 → 更新 signature 基準(全量模式亦更新,建立/刷新基準)
-                await repo.update_stat_signature(
-                    Dataset.SOURCE,
-                    s,
-                    t,
-                    n_tup_ins=current_stat.n_tup_ins,
-                    n_tup_upd=current_stat.n_tup_upd,
-                    n_tup_del=current_stat.n_tup_del,
-                    actor_uid=SYSTEM_ACTOR_UID,
-                )
-                await store.finish_table_log(
-                    log_pid,
-                    status="success",
-                    row_count=written,
-                    duration_ms=_sync_elapsed_ms(started),
-                    error_message=None,
-                    error_stack=None,
-                )
-                logger.info("同步單表完成:%s.%s(%d 筆)", s, t, written)
+            # 表級併發:僅 mirror.mirror_table(s, t)(讀寫 RDS,各 call 自連線池取連線)併發;
+            # 所有自有 DB 寫入(start/finish_table_log、_mark_meta_synced、update_stat_signature)
+            # 共用同一 AsyncSession → 以單一 db_lock 序列化,禁跨協程同時使用 session。
+            # 前提:字典 COMMENT 讀自來源 DB,不依賴目標 DS 表先落地 → 表間無順序硬依賴,可併發。
+            # SYNC_CONCURRENCY=1 時 semaphore 逐一放行 → 行為(含 log 順序)等同現行序列版。
+            concurrency = max(get_settings().SYNC_CONCURRENCY, 1)
+            sem = asyncio.Semaphore(concurrency)
+            db_lock = asyncio.Lock()
+
+            async def _sync_one(config: EtlTableConfig) -> bool:
+                """同步單表:回傳 True(成功)/ False(失敗);計數由回傳值收斂,禁 race。"""
+                s, t = config.source_schema, config.source_table
+                # 來源 pg_stat 無此表計數 → 保守以 (0,0,0) 為 signature 基準值
+                current_stat = stats.get((s, t)) or TableStat(0, 0, 0)
+                async with sem:
+                    started = now_tw()
+                    async with db_lock:
+                        log_pid = await store.start_table_log(
+                            run_pid=run_pid, config=config
+                        )
+                    try:
+                        written = await mirror.mirror_table(s, t)
+                    except Exception as exc:
+                        logger.exception("同步單表失敗:%s.%s", s, t)
+                        async with db_lock:
+                            await store.finish_table_log(
+                                log_pid,
+                                status="failed",
+                                row_count=None,
+                                duration_ms=_sync_elapsed_ms(started),
+                                error_message=mask_secrets(str(exc)),
+                                error_stack=mask_secrets(traceback.format_exc()),
+                            )
+                        return False
+                    async with db_lock:
+                        await _mark_meta_synced(session, repo, s, t, written)
+                        # 覆蓋成功 → 更新 signature 基準(全量模式亦更新,建立/刷新基準)
+                        await repo.update_stat_signature(
+                            Dataset.SOURCE,
+                            s,
+                            t,
+                            n_tup_ins=current_stat.n_tup_ins,
+                            n_tup_upd=current_stat.n_tup_upd,
+                            n_tup_del=current_stat.n_tup_del,
+                            actor_uid=SYSTEM_ACTOR_UID,
+                        )
+                        await store.finish_table_log(
+                            log_pid,
+                            status="success",
+                            row_count=written,
+                            duration_ms=_sync_elapsed_ms(started),
+                            error_message=None,
+                            error_stack=None,
+                        )
+                    logger.info("同步單表完成:%s.%s(%d 筆)", s, t, written)
+                    return True
+
+            # 單表失敗不中斷整輪:_sync_one 內部吞例外並回傳 False,gather 全數跑完
+            results = await asyncio.gather(*(_sync_one(cfg) for cfg in to_sync))
+            success = sum(1 for ok in results if ok)
+            failed = len(results) - success
             status = "failed" if failed else "success"
             await store.finish_run(
                 run_pid,

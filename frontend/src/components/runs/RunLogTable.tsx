@@ -5,6 +5,13 @@ import { useListRunLogsQuery, type RunLog, type RunLogStatus } from '@/lib/api/r
 import { formatNullableDateTime } from '@/utils/datetime'
 import { Pagination } from '@/components/common/Pagination'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import {
+  AutoRefreshControl,
+  useLastUpdatedAt,
+} from '@/components/common/AutoRefreshControl'
+
+// 對齊 run 明細摘要的輪詢間隔:run 執行中才輪詢,結束即停(見 [uid]/page.tsx)
+const RUNNING_POLLING_INTERVAL_MS = 5_000
 
 function formatDurationMs(ms: number | null): string {
   if (ms === null) {
@@ -101,22 +108,34 @@ const RunLogRow = memo(function RunLogRow({
 
 export interface RunLogTableProps {
   runUid: string
+  /** 所屬 run 是否執行中;true 時 5s 輪詢逐表 log,結束即停 */
+  isRunning: boolean
 }
 
 /** 單次執行的逐表詳細 log(狀態過濾 + 分頁;stack trace 預設收合) */
-export function RunLogTable({ runUid }: RunLogTableProps): React.ReactNode {
+export function RunLogTable({
+  runUid,
+  isRunning,
+}: RunLogTableProps): React.ReactNode {
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<'' | RunLogStatus>('')
   const [expandedUids, setExpandedUids] = useState<ReadonlySet<string>>(
     new Set<string>(),
   )
 
-  const { data, isLoading, isError } = useListRunLogsQuery({
-    runUid,
-    page,
-    pageSize: LOG_PAGE_SIZE,
-    status: statusFilter === '' ? undefined : statusFilter,
-  })
+  const { data, isLoading, isError, isFetching, refetch } = useListRunLogsQuery(
+    {
+      runUid,
+      page,
+      pageSize: LOG_PAGE_SIZE,
+      status: statusFilter === '' ? undefined : statusFilter,
+    },
+    {
+      pollingInterval: isRunning ? RUNNING_POLLING_INTERVAL_MS : 0,
+      skipPollingIfUnfocused: true,
+    },
+  )
+  const lastUpdatedAt = useLastUpdatedAt(isFetching)
 
   const handleStatusChange = useCallback(
     (event: React.ChangeEvent<HTMLSelectElement>): void => {
@@ -144,25 +163,34 @@ export function RunLogTable({ runUid }: RunLogTableProps): React.ReactNode {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <label
-          htmlFor="run-log-status-filter"
-          className="text-sm font-medium text-foreground md:text-base"
-        >
-          逐表狀態
-        </label>
-        <select
-          id="run-log-status-filter"
-          value={statusFilter}
-          onChange={handleStatusChange}
-          className="df-input w-auto min-w-[8rem]"
-        >
-          {LOG_STATUS_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="run-log-status-filter"
+            className="text-sm font-medium text-foreground md:text-base"
+          >
+            逐表狀態
+          </label>
+          <select
+            id="run-log-status-filter"
+            value={statusFilter}
+            onChange={handleStatusChange}
+            className="df-input w-auto min-w-[8rem]"
+          >
+            {LOG_STATUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <AutoRefreshControl
+          onRefresh={refetch}
+          isFetching={isFetching}
+          lastUpdatedAt={lastUpdatedAt}
+          polling={isRunning}
+          intervalSeconds={RUNNING_POLLING_INTERVAL_MS / 1000}
+        />
       </div>
 
       {isLoading ? (

@@ -4,15 +4,19 @@ import { memo, useCallback, useState } from 'react'
 import Link from 'next/link'
 import {
   useListRunsQuery,
-  useTriggerRunMutation,
   type RunStatus,
   type RunSummary,
   type TriggerType,
 } from '@/lib/api/runApi'
+import { useSyncAllMutation } from '@/lib/api/syncApi'
 import { useAuth } from '@/lib/auth/useAuth'
 import { Pagination } from '@/components/common/Pagination'
 import { StatusBadge } from '@/components/common/StatusBadge'
 import { Segmented, type SegmentedOption } from '@/components/common/Segmented'
+import {
+  AutoRefreshControl,
+  useLastUpdatedAt,
+} from '@/components/common/AutoRefreshControl'
 import { TRIGGER_TYPE_LABELS } from '@/constants/labels'
 import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatNullableDateTime } from '@/utils/datetime'
@@ -81,16 +85,17 @@ export default function RunsPage(): React.ReactNode {
   const [triggerError, setTriggerError] = useState<string | null>(null)
   const [triggerNotice, setTriggerNotice] = useState<string | null>(null)
 
-  const { data, isLoading, isError } = useListRunsQuery(
+  const { data, isLoading, isError, isFetching, refetch } = useListRunsQuery(
     {
       page,
       pageSize: PAGE_SIZE,
       status: statusFilter === '' ? undefined : statusFilter,
       triggerType: triggerFilter === '' ? undefined : triggerFilter,
     },
-    { pollingInterval: POLLING_INTERVAL_MS },
+    { pollingInterval: POLLING_INTERVAL_MS, skipPollingIfUnfocused: true },
   )
-  const [triggerRun, { isLoading: isTriggering }] = useTriggerRunMutation()
+  const lastUpdatedAt = useLastUpdatedAt(isFetching)
+  const [syncAll, { isLoading: isTriggering }] = useSyncAllMutation()
 
   const handleStatusChange = useCallback((value: '' | RunStatus): void => {
     setStatusFilter(value)
@@ -109,7 +114,7 @@ export default function RunsPage(): React.ReactNode {
   const handleTrigger = useCallback(async (): Promise<void> => {
     setTriggerError(null)
     setTriggerNotice(null)
-    const result = await triggerRun({ etlTableUid: null })
+    const result = await syncAll()
     if ('error' in result) {
       setTriggerError(
         extractApiErrorDetail(result.error, '手動觸發失敗,請稍後再試'),
@@ -117,7 +122,7 @@ export default function RunsPage(): React.ReactNode {
     } else {
       setTriggerNotice('已送出手動觸發(全部啟用表),新 run 稍後出現在清單最上方')
     }
-  }, [triggerRun])
+  }, [syncAll])
 
   return (
     <section className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -130,16 +135,25 @@ export default function RunsPage(): React.ReactNode {
             ETL 執行 run 清單:狀態 / 觸發方式過濾,點入查看逐表詳細 log
           </p>
         </div>
-        {isAdmin ? (
-          <button
-            type="button"
-            onClick={handleTrigger}
-            disabled={isTriggering}
-            className="df-btn-primary"
-          >
-            手動觸發(全部啟用表)
-          </button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          <AutoRefreshControl
+            onRefresh={refetch}
+            isFetching={isFetching}
+            lastUpdatedAt={lastUpdatedAt}
+            polling
+            intervalSeconds={POLLING_INTERVAL_MS / 1000}
+          />
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={handleTrigger}
+              disabled={isTriggering}
+              className="df-btn-primary"
+            >
+              手動觸發(全部啟用表)
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {triggerError !== null ? (

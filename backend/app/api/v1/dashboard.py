@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_login
+from app.api.deps import get_db, require_admin
 from app.core.response import success
 from app.models.user import User
 from app.schemas.dashboard import DashboardOverview
@@ -22,6 +22,6 @@ router = APIRouter()
 )
 async def overview(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_login)],
+    _user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[DashboardOverview]:
     return success(data=await DashboardService(db).overview())

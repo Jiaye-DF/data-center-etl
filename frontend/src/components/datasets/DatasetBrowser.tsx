@@ -23,11 +23,17 @@ import {
 import { useAuth } from '@/lib/auth/useAuth'
 import { Pagination } from '@/components/common/Pagination'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import {
+  AutoRefreshControl,
+  useLastUpdatedAt,
+} from '@/components/common/AutoRefreshControl'
 import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatNullableDateTime } from '@/utils/datetime'
 import { getSchemaDescription } from '@/constants/schemaDescriptions'
 
 const PAGE_SIZE = 50
+// 資料清單非執行狀態類,採較長輪詢間隔;視窗未聚焦一律暫停
+const POLLING_INTERVAL_MS = 30_000
 
 /** 進階篩選預設值：僅顯示有資料，其餘不限 */
 const DEFAULT_FILTERS: TableFilters = {
@@ -393,7 +399,12 @@ export function DatasetBrowser({
     data: schemas,
     isLoading: schemasLoading,
     isError: schemasError,
-  } = useListDatasetSchemasQuery(dataset)
+    isFetching: schemasFetching,
+    refetch: refetchSchemas,
+  } = useListDatasetSchemasQuery(dataset, {
+    pollingInterval: POLLING_INTERVAL_MS,
+    skipPollingIfUnfocused: true,
+  })
 
   const [activeSchema, setActiveSchema] = useState<string | null>(null)
   const [page, setPage] = useState(1)
@@ -419,6 +430,23 @@ export function DatasetBrowser({
 
   // 尚未手動選擇時，以載入後的排序第一個（DS 優先）當預設，不在 effect 內 setState
   const effectiveSchema = activeSchema ?? orderedSchemas[0] ?? null
+
+  // 與 SchemaTables 相同查詢參數 → RTK Query 共用同一筆快取（不會多打一次 API），
+  // 這裡只是為了在 header 取得 isFetching / refetch 供 AutoRefreshControl 使用
+  const { isFetching: tablesFetching, refetch: refetchTables } =
+    useListDatasetTablesQuery(
+      effectiveSchema !== null
+        ? { dataset, schema: effectiveSchema, page, pageSize: PAGE_SIZE, ...filters }
+        : skipToken,
+      { pollingInterval: POLLING_INTERVAL_MS, skipPollingIfUnfocused: true },
+    )
+  const isFetchingAny = schemasFetching || tablesFetching
+  const lastUpdatedAt = useLastUpdatedAt(isFetchingAny)
+
+  const handleRefreshAll = useCallback((): void => {
+    refetchSchemas()
+    refetchTables()
+  }, [refetchSchemas, refetchTables])
 
   // combobox 建議：取當前 schema + 其他篩選（不含關鍵字）的表名 / 業務名
   const { data: suggestData } = useListDatasetTablesQuery(
@@ -532,32 +560,41 @@ export function DatasetBrowser({
             {description}
           </p>
         </div>
-        {isAdmin ? (
-          <div className="flex flex-wrap gap-2">
-            {dataset === 'source' ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <AutoRefreshControl
+            onRefresh={handleRefreshAll}
+            isFetching={isFetchingAny}
+            lastUpdatedAt={lastUpdatedAt}
+            polling
+            intervalSeconds={POLLING_INTERVAL_MS / 1000}
+          />
+          {isAdmin ? (
+            <div className="flex flex-wrap gap-2">
+              {dataset === 'source' ? (
+                <button
+                  type="button"
+                  onClick={() => setOpenDialog('sync')}
+                  disabled={isSyncingAll}
+                  className="df-btn-primary-soft"
+                >
+                  {isSyncingAll ? '同步中…' : '全量同步'}
+                </button>
+              ) : null}
               <button
                 type="button"
-                onClick={() => setOpenDialog('sync')}
-                disabled={isSyncingAll}
-                className="df-btn-primary-soft"
+                onClick={() => setOpenDialog('snapshot')}
+                disabled={isRefreshing}
+                className="df-btn-outline"
               >
-                {isSyncingAll ? '同步中…' : '全量同步'}
+                {isRefreshing
+                  ? '同步中…'
+                  : dataset === 'target'
+                    ? 'ETL 快照同步'
+                    : '快照同步'}
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setOpenDialog('snapshot')}
-              disabled={isRefreshing}
-              className="df-btn-outline"
-            >
-              {isRefreshing
-                ? '同步中…'
-                : dataset === 'target'
-                  ? 'ETL 快照同步'
-                  : '快照同步'}
-            </button>
-          </div>
-        ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {actionError !== null ? (

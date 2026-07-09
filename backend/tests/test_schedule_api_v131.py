@@ -285,17 +285,18 @@ async def test_list_requires_login_401(client: AsyncClient) -> None:
     _assert_shell(resp.json(), success=False, response_code=401)
 
 
-async def test_viewer_can_read_but_writes_403(
+async def test_viewer_all_endpoints_forbidden_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
+    """RBAC 收緊(task-003):schedules 全端點 admin-only,viewer 讀寫皆 403。"""
     await _login_as(client, session_factory, "viewer")
     await _snapshot(session_factory, schema="DS", table="GAT_FILE")
     uid = await _bind_schedule(session_factory, schema="DS", table="GAT_FILE")
-    # 讀取 OK
-    assert (
-        await client.get("/api/v1/schedules", params={"schema": "DS"})
-    ).status_code == 200
-    assert (await client.get("/api/v1/schedules/schemas")).status_code == 200
+    # 讀取類一律 403(v1.4.0 前為 200,權限收緊後不再開放 viewer)
+    resp = await client.get("/api/v1/schedules", params={"schema": "DS"})
+    assert resp.status_code == 403
+    _assert_shell(resp.json(), success=False, response_code=403)
+    assert (await client.get("/api/v1/schedules/schemas")).status_code == 403
     # 寫入類一律 403:patch / enable / disable / batch-enabled
     assert (
         await client.patch(f"/api/v1/schedules/{uid}", json={"description": "x"})
@@ -306,9 +307,21 @@ async def test_viewer_can_read_but_writes_403(
     assert (
         await client.post(f"/api/v1/schedules/{uid}/disable")
     ).status_code == 403
-    resp = await client.post("/api/v1/schedules/batch-enabled", json={"enabled": True})
-    assert resp.status_code == 403
-    _assert_shell(resp.json(), success=False, response_code=403)
+    resp2 = await client.post("/api/v1/schedules/batch-enabled", json={"enabled": True})
+    assert resp2.status_code == 403
+    _assert_shell(resp2.json(), success=False, response_code=403)
+
+
+async def test_admin_read_schedules_unchanged_200(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    await _login_as(client, session_factory, "admin")
+    await _snapshot(session_factory, schema="DS", table="GAT_FILE")
+    await _bind_schedule(session_factory, schema="DS", table="GAT_FILE")
+    resp = await client.get("/api/v1/schedules", params={"schema": "DS"})
+    assert resp.status_code == 200
+    _assert_shell(resp.json(), success=True, response_code=200)
+    assert (await client.get("/api/v1/schedules/schemas")).status_code == 200
 
 
 # ── 已移除端點 ──────────────────────────────────────────────────────────

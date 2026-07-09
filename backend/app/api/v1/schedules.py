@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_admin, require_login
+from app.api.deps import get_db, require_admin
 from app.core.response import success
 from app.models.user import User
 from app.schemas.response import ApiResponse
@@ -28,7 +28,7 @@ router = APIRouter()
 )
 async def list_tables_view(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_login)],
+    _user: Annotated[User, Depends(require_admin)],
     schema: Annotated[str, Query(min_length=1, description="來源表 schema(必填)")],
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -72,7 +72,7 @@ async def list_tables_view(
 )
 async def list_schema_summaries(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_login)],
+    _user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[ScheduleSchemaSummaryListResponse]:
     return success(data=await ScheduleService(db).list_schema_summaries())
 

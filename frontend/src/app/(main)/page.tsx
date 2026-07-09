@@ -12,6 +12,10 @@ import {
   type DashboardLatestRun,
 } from '@/lib/api/dashboardApi'
 import { StatusBadge } from '@/components/common/StatusBadge'
+import {
+  AutoRefreshControl,
+  useLastUpdatedAt,
+} from '@/components/common/AutoRefreshControl'
 import { formatNullableDateTime } from '@/utils/datetime'
 import { nextRunFromCron } from '@/utils/cron'
 
@@ -19,6 +23,9 @@ const DATASET_LABELS: Record<string, string> = {
   source: '原始資料',
   target: 'ETL 資料',
 }
+
+// 儀表板非執行狀態類,採較長輪詢間隔;視窗未聚焦一律暫停
+const POLLING_INTERVAL_MS = 30_000
 
 function pad2(value: number): string {
   return value.toString().padStart(2, '0')
@@ -224,7 +231,12 @@ function DatasetScaleCard({
 export default function DashboardPage(): React.ReactNode {
   const router = useRouter()
   const { user } = useAuth()
-  const { data, isLoading, isError } = useDashboardOverviewQuery()
+  const { data, isLoading, isError, isFetching, refetch } =
+    useDashboardOverviewQuery(undefined, {
+      pollingInterval: POLLING_INTERVAL_MS,
+      skipPollingIfUnfocused: true,
+    })
+  const lastUpdatedAt = useLastUpdatedAt(isFetching)
 
   // silent re-auth 保留現場復原:登入成功回到 dashboard 時導回原頁(復原一次即清除)
   useEffect(() => {
@@ -244,13 +256,22 @@ export default function DashboardPage(): React.ReactNode {
 
   return (
     <section className="mx-auto flex max-w-7xl flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-bold text-foreground md:text-2xl">儀表板</h1>
-        {user !== null ? (
-          <p className="mt-1 text-sm text-muted-foreground md:text-base">
-            歡迎,{user.display_name ?? user.username}
-          </p>
-        ) : null}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-foreground md:text-2xl">儀表板</h1>
+          {user !== null ? (
+            <p className="mt-1 text-sm text-muted-foreground md:text-base">
+              歡迎,{user.display_name ?? user.username}
+            </p>
+          ) : null}
+        </div>
+        <AutoRefreshControl
+          onRefresh={refetch}
+          isFetching={isFetching}
+          lastUpdatedAt={lastUpdatedAt}
+          polling
+          intervalSeconds={POLLING_INTERVAL_MS / 1000}
+        />
       </div>
 
       {isError ? (
