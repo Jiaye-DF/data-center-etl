@@ -35,12 +35,14 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     # 先套 migration 再起 API(lifespan 建 init admin 需資料表已存在)
-    # uvicorn workers env 化(Coolify 填 UVICORN_WORKERS):多行程消弭單一事件迴圈單點,預設 4
-    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}"]
+    # uvicorn workers 由 environment 的 UVICORN_WORKERS 控制(容器內 shell 展開,$$ 避免 compose 先插值);預設 2
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers $${UVICORN_WORKERS:-2}"]
     environment:
       SERVICE_URL_BACKEND_8000:
       APP_ENV: ${APP_ENV}
       BACKEND_PORT: "8000"
+      # uvicorn 行程數(消弭單一事件迴圈單點,間歇 502 對策);預設 2,依機器 vCPU 調整
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
       # 容器內以 service name 互連(TCP 服務不用 SERVICE_URL_*)
       DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
       REDIS_URL: "redis://redis:6379/0"

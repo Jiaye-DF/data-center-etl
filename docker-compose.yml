@@ -39,6 +39,8 @@ services:
       - .env
     environment:
       - BACKEND_PORT=8000
+      # uvicorn 行程數(command 以此啟動);本地預設 2,可由 .env 覆蓋
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
       # container 內須以 service name 連 DB / redis(覆蓋 .env 的 localhost,僅供本機 dev)
       # 帳密由 .env 注入,禁寫死(見 docs/Design-Base/00-overview/02-secrets.md)
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
@@ -49,8 +51,8 @@ services:
       - TZ=Asia/Taipei
     # 本地一鍵起跑:先套 migration 再起 API(lifespan 建 init admin 需資料表已存在);
     # 正式部署的 migration 時機見 docs/Design-Base/06-Coolify-CD/05-deploy-flow.md
-    # uvicorn workers env 化(多行程,避免單一事件迴圈成為單點);本地預設 2,可由 .env 覆蓋
-    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2}"]
+    # uvicorn workers 由 environment 的 UVICORN_WORKERS 控制(容器內 shell 展開,$$ 避免 compose 先插值);預設 2
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers $${UVICORN_WORKERS:-2}"]
     depends_on:
       postgres:
         condition: service_healthy
