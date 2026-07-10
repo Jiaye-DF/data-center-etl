@@ -132,3 +132,62 @@
   fixture」方案,應同時涵蓋「內建 seed 資料 sync」(roles 這類 migration-seeded
   的地基資料);在那之前,全新機器首次跑全量 pytest 前需先確保共用測試 DB
   已有 roles seed(跑一次 `test_auth.py` 或手動 INSERT 皆可)。
+
+## §5 — `models/user.py` 收 NOT NULL 依 §3 預告連動 `test_models_v141.py`,白名單外最小修正
+
+- **時間**:2026-07-10T00:00+08:00
+- **commit / PR**:(見本次 task-003 commit)
+- **影響檔案**:`backend/tests/test_models_v141.py`(**不在** task-003 `affected_files`
+  白名單內;`backend/app/models/user.py` 在白名單內)
+- **問題**:task-003 規格明確要求「`models/user.py` 的 `role_pid` mapped_column 收緊
+  `nullable=False`」(DB 端已由 v8 收 NOT NULL,model 端補齊),但 task-001 產出的
+  `test_models_v141.py::test_user_role_pid_fk_and_index` 明文斷言
+  `columns["role_pid"].nullable is True`(當時刻意驗證「model 端暫留 nullable=True」
+  的過渡態,見 fixed.md §3)。model 端收緊後該斷言與新狀態直接矛盾,`uv run pytest`
+  全量跑必紅,違反 Acceptance「全套不迴歸」。但該檔不在 task-003 白名單。
+- **根因**:與 §3 同源 —§3 的「後續」欄位當時已明確預告「task-003 或收口時將
+  `models/user.py` 的 `role_pid` 收為 `nullable=False`,並同步修
+  `test_user_role_pid_fk_and_index`」,但 task-003 規格 / 白名單撰寫時未回頭核對
+  §3 的這條待辦,`affected_files` 未納入該測試檔,規格文字與白名單再度脫鉤
+  (第三次同型態問題,見 §3「後續」reflect 候選)。
+- **修正**:僅改動衝突的單一斷言行(`nullable is True` → `nullable is False`)+
+  對應行內註解更新,不動其餘斷言 / fixture / 其他測試邏輯。修正後
+  `test_models_v141.py` 9 個測試全綠,`uv run pytest` 全量 239 個測試全綠,
+  `uv run mypy .` 維持 42 個既有錯誤(無新增,含本檔既有的 3 個 `FromClause` 型別
+  已知錯誤,行號隨編輯位移但錯誤數不變)。
+- **規範參照**:`docs/Tasks/v1.4.1/tasks/task-003-roles-users-admin-api.md`
+  §「規格」「承接 task-002 尾巴」段;`docs/Tasks/v1.4.1/fixed.md` §3「後續」;
+  `01-propose/03-multi-agent-flow.md`(白名單協議)
+- **後續**:reflect 候選(併入 §3 同型態候選)——「fixed.md 條目自身的『後續』
+  待辦,在下一個 task 規格撰寫階段應被系統性核對並反映到白名單」,否則會重複
+  在每個接手 task 上演「白名單外最小修正 + 補一條 fixed.md」。
+
+## §6 — task-003 Acceptance 的 curl/jq 驗證指令與 ApiResponse 殼規範衝突,採規範優先
+
+- **時間**:2026-07-10T00:00+08:00
+- **commit / PR**:(見本次 task-003 commit)
+- **影響檔案**:無程式碼異動(純驗證方式偏離記錄);相關:
+  `backend/app/schemas/role.py`(`RoleListResponse.items`)
+- **問題**:task-003 Acceptance 逐字寫
+  `curl ... | jq -e '[.data[].code] | sort == ["admin","viewer"]'`,語法上假設
+  `GET /api/v1/roles` 的 `ApiResponse.data` 直接是陣列。但
+  `docs/Design-Base/03-backend/01-routing.md`「統一回應外殼」明文:「`data`:
+  `null` 或 dict;**禁**直接為 array(列表須 `{items: [...], total}`)」——本 task
+  規格本文「`GET /api/v1/roles`」條目亦要求回「角色列表」,實作依此規範以
+  `RoleListResponse{items: [...]}` 包裝,`data` 為 dict 非 array,故字面
+  `jq '[.data[].code]'` 語法在本機驗證會回空陣列(非炸錯,但比對必為 false)。
+- **根因**:Acceptance 驗證指令撰寫時未同步核對同一份 task 檔規格段落與
+  binding 的 01-routing.md 外殼慣例,兩處出現「陣列殼 vs dict-items 殼」的
+  字面不一致;`03-multi-agent-flow.md` 白名單協議管的是「改哪些檔案」,未涵蓋
+  「Acceptance 驗證指令本身的正確性」,此類落差目前無自動核對機制。
+- **修正**:不改規範(01-routing.md 優先於本 task 檔字面,依
+  CLAUDE.md「規範優先順序」);以等價語意驗證取代逐字指令 ——
+  `curl -s -b <admin cookie> http://localhost:8000/api/v1/roles` 後以
+  `jq -e '[.data.items[].code] | sort == ["admin","viewer"]'`(或本機無 jq 時以
+  python 等價解析)驗證,本機對 dockerized 服務(`docker compose up -d --build`
+  後)實測通過(`codes: ['admin', 'viewer']` → PASS)。
+- **規範參照**:`docs/Design-Base/03-backend/01-routing.md`「統一回應外殼」;
+  CLAUDE.md「規範優先順序」(`docs/Design-Base/*` > 本檔案 > `docs/Tasks/*`)
+- **後續**:reflect 候選 —「propose-to-tasks 產出的 Acceptance 驗證指令,若涉及
+  API 回應結構(如 jq path),應在拆解階段對照 01-routing.md 等 binding
+  規範跑一次一致性檢查,避免字面指令與規範不符导致驗證卡關」。

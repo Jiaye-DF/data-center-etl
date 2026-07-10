@@ -32,14 +32,14 @@ class User(BaseModel):
             "/ Role string (deprecated; superseded by role_pid → roles table)"
         ),
     )
-    # v1.4.1 起 source of truth;建立 / 指派寫入邏輯屬 task-002 / task-003,
-    # 該邏輯落地前暫不收 NOT NULL(理由見 docs/Tasks/v1.4.1/fixed.md)
-    role_pid: Mapped[int | None] = mapped_column(
+    # v1.4.1 起 source of truth;建立(task-002)/ 指派(task-003)寫入邏輯已落地,
+    # DB 端已由 v8 migration 收 NOT NULL,model 端同步收緊(fixed.md §3 後續)
+    role_pid: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("roles.pid", name="fk_users_role"),
-        nullable=True,
+        nullable=False,
         comment=(
-            "角色(roles.pid;v1.4.1 起 source of truth,建立/指派寫入邏輯屬 task-002/003)"
+            "角色(roles.pid;v1.4.1 起 source of truth)"
             "/ Role (roles.pid; source of truth from v1.4.1)"
         ),
     )

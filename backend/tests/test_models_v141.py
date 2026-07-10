@@ -170,9 +170,8 @@ def test_role_code_partial_unique_index() -> None:
 def test_user_role_pid_fk_and_index() -> None:
     columns = User.__table__.columns
     assert "role_pid" in columns
-    # DB 端已由 v8 收 NOT NULL;model 端暫留 nullable=True(models/user.py 不在
-    # task-002 白名單,同步收緊留待後續,見 fixed.md §3)
-    assert columns["role_pid"].nullable is True
+    # DB 端已由 v8 收 NOT NULL;model 端於 task-003 同步收緊(fixed.md §3 後續 / §5)
+    assert columns["role_pid"].nullable is False
     fk_names = {fk.name for fk in User.__table__.foreign_keys}
     assert "fk_users_role" in fk_names
     idx_names = {i.name for i in User.__table__.indexes}

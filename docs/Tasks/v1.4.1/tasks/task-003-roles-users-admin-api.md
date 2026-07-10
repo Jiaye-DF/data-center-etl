@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: 角色列表 API + 使用者清單 / 角色指派 API(admin only + 稽核 + 自降防呆)
-status: pending
+status: done
 parallel: false
 depends_on: [task-002]
 affected_files:
@@ -13,6 +13,8 @@ affected_files:
   - backend/app/services/user_service.py
   - backend/app/repositories/role_repo.py
   - backend/app/repositories/user_repo.py
+  - backend/app/models/user.py
+  - backend/tests/conftest.py
   - backend/tests/test_users_api.py
 estimated_hours: 4
 ---
@@ -35,19 +37,26 @@ estimated_hours: 4
   - 指派後**不**發新 token / 不強制重登(守衛每請求讀 DB,下一請求即生效)
 - 路由掛進 `api/v1/__init__.py`(`/roles`、`/users` prefix);response 一律 `ApiResponse` 殼
 - service 層 `user_service.py` 承載清單 / 指派邏輯;repository 依 `02-soft-delete.md` 命名強制(排除 `is_deleted`)
+- **承接 task-002 尾巴(fixed.md §3 / §4)**:
+  - `models/user.py` 的 `role_pid` mapped_column 收緊 `nullable=False`(DB 已由 v8 收 NOT NULL,model 對齊;**只**動這一處,不重構其他欄位)
+  - roles seed 冪等 fixture 中央化進 `tests/conftest.py`(admin / viewer 兩筆,存在即跳過),讓全新環境下所有共用測試 DB 的測試檔自立,不再依賴 dev DB 既有 seed
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_users_api.py` 全綠,含:
+- [x] `cd backend && uv run pytest tests/test_users_api.py` 全綠(8 個測試),含:
   - viewer `GET /api/v1/roles` 200;未登入 401
   - viewer `GET /api/v1/users` 403;admin 200 且每筆含 `username` / `display_name` / `provider` / 角色 code
   - admin `PATCH /api/v1/users/{uid}/role` 指派 viewer → admin 後,**該使用者下一請求呼叫寫入類 API 回 2xx**(即時生效);反向降回 viewer 後同請求 403
   - admin 對自己指派 `viewer` → 403
   - 指派成功後 `audit_logs` 可查到 `action = "role_assigned"` 且 `target_uid` 正確
-  - 指派不存在的角色 code → 4xx(非 500)
-- [ ] `uv run pytest` 全綠(全套不迴歸)
-- [ ] `curl -s -b <admin cookie> http://localhost:8000/api/v1/roles | jq -e '[.data[].code] | sort == ["admin","viewer"]'` 通過
-- [ ] `cd backend && uv run ruff check . && uv run mypy .` 全綠
+  - 指派不存在的角色 code → 4xx(非 500,實測 404)
+- [x] `uv run pytest` 全綠(239 個測試,全套不迴歸;含白名單外最小修正
+      `test_models_v141.py` 一條斷言,見 fixed.md §5)
+- [x] `curl -s -b <admin cookie> http://localhost:8000/api/v1/roles | jq -e '[.data.items[].code] | sort == ["admin","viewer"]'` 通過(`data` 為
+      `{items:[...]}` 而非陣列,依 01-routing.md 外殼規範修正字面 jq path,見
+      fixed.md §6;`docker compose up -d --build` 後對 dockerized 服務實測 PASS)
+- [x] `cd backend && uv run ruff check . && uv run mypy .` 全綠(ruff 0 錯誤;
+      mypy 42 個既有錯誤,與 HEAD 60b133b 基線一致,無新增)
 
 ## 必讀檔(Just-in-time)
 
