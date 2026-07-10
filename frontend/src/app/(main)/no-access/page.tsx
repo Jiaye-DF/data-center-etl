@@ -19,10 +19,7 @@ export default function NoAccessPage(): React.ReactNode {
           無存取權限
         </h1>
         <p className="mt-3 text-sm text-muted-foreground md:text-base">
-          您目前的帳號為一般成員(member),無權限查看資料中心的資料層設定、同步排程與 ETL 後台資訊。
-        </p>
-        <p className="mt-2 text-sm text-muted-foreground md:text-base">
-          如業務上需要存取,請洽資訊團隊(系統負責團隊)申請權限。
+          您的帳號無此系統的存取權限,如有需要請洽資訊團隊。
         </p>
         <button type="button" onClick={logout} className="df-btn-outline mt-6 w-full">
           登出
