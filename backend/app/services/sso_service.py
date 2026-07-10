@@ -20,7 +20,7 @@ from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.core.security import JWT_ALGORITHM
 from app.models.user import User
-from app.repositories.user_repo import UserRepository
+from app.repositories.user_repo import UserRepository, resolve_role_code
 from app.services.audit_service import AuditService
 
 PROVIDER_SSO = "sso"
@@ -106,7 +106,7 @@ def create_sso_access_token(
     now = datetime.now(UTC)
     payload: dict[str, object] = {
         "sub": str(user.uid),
-        "role": user.role,
+        "role": resolve_role_code(user),
         "provider": PROVIDER_SSO,
         "sso_sub": user.sso_subject,
         "sso_token": sso_token,

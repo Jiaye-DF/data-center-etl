@@ -69,6 +69,13 @@ CENTRAL_USER = {
     "loginAt": "2026-07-03T10:00:00.000Z",
 }
 
+# 內建角色 seed(對齊 v7 migration;create_all 只建表不 seed,測試 DB 需自行補)
+_SYSTEM_ACTOR_UID = "00000000-0000-0000-0000-000000000000"
+_SEED_ROLES = (
+    ("admin", "管理員", "00000000-0000-0000-0000-0000000000a1"),
+    ("viewer", "檢視者", "00000000-0000-0000-0000-0000000000a2"),
+)
+
 
 # ── fixtures ────────────────────────────────────────────────────────────
 @pytest.fixture(scope="session", autouse=True)
@@ -96,6 +103,31 @@ def _prepare_test_db() -> None:
         try:
             async with test_engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                # seed 內建角色(冪等):UserRepository.create 依 roles.code 建關聯
+                for code, name, seed_uid in _SEED_ROLES:
+                    exists = (
+                        await conn.execute(
+                            text(
+                                "SELECT 1 FROM roles "
+                                "WHERE code = :code AND is_deleted = false"
+                            ),
+                            {"code": code},
+                        )
+                    ).scalar()
+                    if exists is None:
+                        await conn.execute(
+                            text(
+                                "INSERT INTO roles "
+                                "(uid, code, name, is_builtin, created_by, updated_by) "
+                                "VALUES (:uid, :code, :name, true, :actor, :actor)"
+                            ),
+                            {
+                                "uid": seed_uid,
+                                "code": code,
+                                "name": name,
+                                "actor": _SYSTEM_ACTOR_UID,
+                            },
+                        )
         finally:
             await test_engine.dispose()
 
@@ -233,6 +265,21 @@ async def test_first_sso_login_creates_viewer_user(
         assert user.role == "viewer"
         assert user.password_hash is None
         assert user.username == CENTRAL_USER["email"]
+
+
+@respx.mock
+async def test_first_sso_login_links_viewer_role(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """task-002:SSO 首次登入建立之使用者,roles 關聯 code = viewer(字串 dual-write 同值)。"""
+    _mock_central_ok()
+    await _sso_login(client)
+    async with session_factory() as session:
+        stmt = select(User).where(User.sso_subject == CENTRAL_USER["userId"])
+        user = (await session.execute(stmt)).scalar_one()
+        assert user.role_ref is not None
+        assert user.role_ref.code == "viewer"
+        assert user.role == "viewer"
 
 
 @respx.mock

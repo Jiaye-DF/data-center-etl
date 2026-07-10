@@ -26,6 +26,7 @@ from app.core.config import get_settings
 from app.core.cookies import JWT_COOKIE_NAME, clear_jwt_cookie, set_jwt_cookie
 from app.core.response import failure, success
 from app.core.security import decode_access_token
+from app.repositories.user_repo import resolve_role_code
 from app.schemas.response import ApiResponse
 from app.services.audit_service import AuditService
 from app.services.sso_service import (
@@ -149,7 +150,7 @@ async def sso_me(
     data = SsoMeResponse(
         uid=user.uid,
         username=user.username,
-        role=user.role,
+        role=resolve_role_code(user),
         provider=PROVIDER_SSO,
         sso_user=sso_user,
     )

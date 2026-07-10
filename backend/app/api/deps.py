@@ -13,6 +13,7 @@ from app.core.db import AsyncSessionLocal
 from app.core.exceptions import AppError
 from app.core.security import decode_access_token
 from app.models.user import User
+from app.repositories.user_repo import resolve_role_code
 from app.services.auth_service import AuthService
 from app.services.sso_service import PROVIDER_SSO, is_sso_session_revoked
 
@@ -95,7 +96,8 @@ require_login = get_current_user
 
 def require_role(*roles: str) -> Callable[[User], Coroutine[object, object, User]]:
     async def _dep(user: Annotated[User, Depends(get_current_user)]) -> User:
-        if user.role not in roles:
+        # 授權判斷改自 roles 關聯(單一入口;get_current_user 已隨主查詢 eager load)
+        if resolve_role_code(user) not in roles:
             raise AppError("權限不足", response_code=403, status_code=403)
         return user
 

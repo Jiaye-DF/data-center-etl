@@ -76,3 +76,59 @@
   跑一輪「schema sync」共用 fixture,或 (b) 改各測試檔各自使用獨立 DB 名
   (犧牲一些建表時間換取隔離),或 (c) CI 固定用全新 DB(若尚未如此)、
   僅本機 dev 需要此類補丁,風險可接受但應在 `07-testing.md` 補一句提醒。
+
+## §3 — v8 收 NOT NULL 與 task-001 產物測試硬衝突,`test_models_v141.py` 白名單外最小修正
+
+- **時間**:2026-07-10T00:00+08:00
+- **commit / PR**:(見本次 task-002 commit)
+- **影響檔案**:`backend/tests/test_models_v141.py`(**不在** task-002 `affected_files`
+  白名單內)、`backend/alembic/versions/v8_enforce_users_role_pid_not_null.py`
+- **問題**:task-002 規格新增的 v8 migration(`role_pid` 收 NOT NULL)與 task-001
+  產出的 `test_models_v141.py` 兩處硬衝突:(1) 該檔 session fixture 對實跑 migration
+  的獨立測試 DB 插入「無 `role_pid` 的舊 schema user」— v8 套用後(downgrade 為
+  no-op,NOT NULL 不會鬆回)在**全新環境**首輪 upgrade head 即收約束,該 INSERT
+  必炸;(2) `test_new_user_without_role_pid_still_insertable` 明文驗證「無 role_pid
+  仍可插入」的過渡態,v8 落地後該過渡態被依規格終結,測試必紅,直接違反本 task
+  Acceptance「pytest 全綠」。但該檔不在 task-002 白名單。
+- **根因**:task-002 規格中途補入「v8 收 NOT NULL」段(承接 §1 後續)時,
+  `affected_files` 白名單未同步盤點「哪些既有測試固定了即將被終結的過渡態行為」——
+  白名單與規格演進脫鉤,和 §1 同屬「跨 task 相依未在拆解層被察覺」的變體。
+- **修正**:對 `test_models_v141.py` 做最小必要修正(僅動硬衝突處,不重構):
+  (1) fixture 的 legacy user INSERT 改以子查詢帶入 `role_pid`(v7 backfill 斷言退化為
+  「關聯對應正確」驗證;v7 對 NULL 列的 backfill 已在 task-001 驗證過,
+  v8 之後依設計無法再重現);(2) 原過渡態測試改寫為
+  `test_role_pid_not_null_enforced_after_v8`(驗 `information_schema` is_nullable='NO'
+  + 無關聯插入拋 IntegrityError);(3) `test_user_role_pid_fk_and_index` 的過時註解
+  同步更新。model 端 `role_pid` 仍為 `nullable=True`(`models/user.py` 亦不在白名單,
+  且改動會連動更多既有斷言)→ DB 端已 NOT NULL、model 端未收緊的不一致留待後續。
+- **規範參照**:`docs/Tasks/v1.4.1/tasks/task-002-auth-chain-role-source.md`
+  §「規格」收 NOT NULL 段;`01-propose/03-multi-agent-flow.md`(白名單協議)
+- **後續**:(a) task-003 或收口時將 `models/user.py` 的 `role_pid` 收為
+  `Mapped[int]` / `nullable=False`,並同步修 `test_user_role_pid_fk_and_index`;
+  (b) reflect 候選 — 規格中途補段(尤其終結某過渡態的 migration)時,
+  `affected_files` 應同步重盤「固定該過渡態的測試」。
+
+## §4 — `UserRepository.create` 依賴 roles seed:共用測試 DB 在全新環境的隱性前提
+
+- **時間**:2026-07-10T00:00+08:00
+- **commit / PR**:(見本次 task-002 commit)
+- **影響檔案**:無程式碼異動(純風險記錄);相關:`backend/tests/test_audit_log.py`、
+  `test_runs_api.py`、`test_schedule_api_v131.py`、`test_snapshot_service.py`、
+  `test_sync_api.py`(皆直呼 `UserRepository.create`,且皆不在 task-002 白名單)
+- **問題**:task-002 起 `UserRepository.create` 依 `roles.code` 查表建關聯、
+  查無即 fail-fast(規格紅線)。上述非白名單測試檔共用 `data_center_etl_test`
+  且以 `create_all` 建 schema(只建表、不 seed);**全新環境**首次跑
+  `uv run pytest` 時按字母序 `test_audit_log.py` 先於 `test_auth.py` 執行,
+  彼時 roles 表為空,所有建立使用者的測試將集體 fail-fast。
+- **根因**:與 §2 同源 —「create_all 建 schema 的測試 DB」與「migration 才會 seed
+  的資料前提」之間無人負責;本 task 只能在白名單內的 `test_auth.py` /
+  `test_sso.py` fixture 補冪等 seed,無法覆蓋其他檔。
+- **修正**:本機 `data_center_etl_test` 的 roles 已存在 admin / viewer(先前已
+  seed 過),本機全量 pytest 231 全綠,**無**環境異動;`test_auth.py` /
+  `test_sso.py` 的 session fixture 已補冪等 seed(對齊 v7 的固定 uid),
+  該兩檔單獨在全新 DB 跑亦可自立。
+- **規範參照**:`docs/Design-Base/03-backend/07-testing.md`(真 DB 測試慣例)
+- **後續**:併入 §2 的 reflect 候選一起決議 — 若採「session 開頭 schema sync 共用
+  fixture」方案,應同時涵蓋「內建 seed 資料 sync」(roles 這類 migration-seeded
+  的地基資料);在那之前,全新機器首次跑全量 pytest 前需先確保共用測試 DB
+  已有 roles seed(跑一次 `test_auth.py` 或手動 INSERT 皆可)。

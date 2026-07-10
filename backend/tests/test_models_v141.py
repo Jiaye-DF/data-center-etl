@@ -38,6 +38,7 @@ from alembic.command import downgrade as alembic_downgrade  # noqa: E402
 from alembic.command import upgrade as alembic_upgrade  # noqa: E402
 from alembic.config import Config as AlembicConfig  # noqa: E402
 from sqlalchemy import select, text  # noqa: E402
+from sqlalchemy.exc import IntegrityError  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncEngine,
     AsyncSession,
@@ -109,11 +110,18 @@ def _prepare_test_db() -> None:
                     )
                 ).scalar()
                 if exists is None:
+                    # v8(task-002)起 role_pid 已收 NOT NULL(downgrade no-op 不鬆回),
+                    # 插入時即以子查詢帶入對應角色;v7 backfill 對此列退化為 no-op,
+                    # 後續斷言改驗「關聯對應正確」(見 fixed.md §3)
                     await conn.execute(
                         text(
                             "INSERT INTO users "
-                            "(uid, username, password_hash, role, created_by, updated_by) "
-                            "VALUES (:uid, :username, NULL, 'admin', :uid, :uid)"
+                            "(uid, username, password_hash, role, role_pid, "
+                            "created_by, updated_by) "
+                            "VALUES (:uid, :username, NULL, 'admin', "
+                            "(SELECT pid FROM roles "
+                            "WHERE code = 'admin' AND is_deleted = false), "
+                            ":uid, :uid)"
                         ),
                         {"uid": str(_LEGACY_USER_UID), "username": "v141-legacy-admin"},
                     )
@@ -162,7 +170,8 @@ def test_role_code_partial_unique_index() -> None:
 def test_user_role_pid_fk_and_index() -> None:
     columns = User.__table__.columns
     assert "role_pid" in columns
-    # task-002 前建立路徑尚未寫入 role_pid,暫不收 NOT NULL(見 fixed.md)
+    # DB 端已由 v8 收 NOT NULL;model 端暫留 nullable=True(models/user.py 不在
+    # task-002 白名單,同步收緊留待後續,見 fixed.md §3)
     assert columns["role_pid"].nullable is True
     fk_names = {fk.name for fk in User.__table__.foreign_keys}
     assert "fk_users_role" in fk_names
@@ -235,32 +244,35 @@ async def test_user_role_ref_relationship_returns_role_code(
         assert user.role_ref.code == "admin"
 
 
-async def test_new_user_without_role_pid_still_insertable(
+async def test_role_pid_not_null_enforced_after_v8(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """role_pid 暫未收 NOT NULL:既有建立使用者路徑(尚未寫入 role_pid)不炸(fixed.md)。
+    """v8(task-002)起 role_pid 收 NOT NULL:未寫入角色關聯的插入被 DB 拒絕。
 
-    自行清理插入列(DELETE,非 DROP):本檔測試 DB 為持久複用,避免每次重跑
-    在 users 表留下永久 NULL role_pid 殘列,干擾 test_no_null_role_pid_after_backfill。
+    取代原「暫未收 NOT NULL 仍可插入」測試(該過渡態已由 v8 依規格終結,見 fixed.md §3)。
     """
-    new_uid = uuid4()
     async with session_factory() as session:
-        session.add(
-            User(
-                uid=new_uid,
-                username=f"v141-no-role-pid-{new_uid}",
-                password_hash=None,
-                role="viewer",
-                created_by=new_uid,
-                updated_by=new_uid,
+        is_nullable = (
+            await session.execute(
+                text(
+                    "SELECT is_nullable FROM information_schema.columns "
+                    "WHERE table_name = 'users' AND column_name = 'role_pid'"
+                )
             )
-        )
-        await session.commit()
+        ).scalar_one()
+        assert is_nullable == "NO"
 
-    async with session_factory() as session:
-        user = (await session.execute(select(User).where(User.uid == new_uid))).scalar_one()
-        assert user.role_pid is None
-
-    async with session_factory() as session:
-        await session.execute(text("DELETE FROM users WHERE uid = :uid"), {"uid": str(new_uid)})
-        await session.commit()
+    new_uid = uuid4()
+    with pytest.raises(IntegrityError):
+        async with session_factory() as session:
+            session.add(
+                User(
+                    uid=new_uid,
+                    username=f"v141-no-role-pid-{new_uid}",
+                    password_hash=None,
+                    role="viewer",
+                    created_by=new_uid,
+                    updated_by=new_uid,
+                )
+            )
+            await session.commit()

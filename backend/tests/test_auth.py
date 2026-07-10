@@ -42,6 +42,7 @@ from app import models  # noqa: E402, F401  匯入全部 model 讓 create_all �
 from app.api.deps import get_db, require_admin  # noqa: E402
 from app.core.config import Settings  # noqa: E402
 from app.core.db import Base  # noqa: E402
+from app.core.exceptions import AppError  # noqa: E402
 from app.core.response import success  # noqa: E402
 from app.core.security import hash_password_async  # noqa: E402
 from app.main import create_app  # noqa: E402
@@ -49,6 +50,13 @@ from app.models.user import User  # noqa: E402
 from app.repositories.user_repo import UserRepository  # noqa: E402
 from app.schemas.response import ApiResponse  # noqa: E402
 from app.services.auth_service import ensure_init_admin  # noqa: E402
+
+# 內建角色 seed(對齊 v7 migration;create_all 只建表不 seed,測試 DB 需自行補)
+_SYSTEM_ACTOR_UID = "00000000-0000-0000-0000-000000000000"
+_SEED_ROLES = (
+    ("admin", "管理員", "00000000-0000-0000-0000-0000000000a1"),
+    ("viewer", "檢視者", "00000000-0000-0000-0000-0000000000a2"),
+)
 
 # ── 假 admin-only 端點:驗證 require_admin(viewer 一律 403)──────────────
 _probe_router = APIRouter()
@@ -91,6 +99,31 @@ def _prepare_test_db() -> None:
         try:
             async with test_engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                # seed 內建角色(冪等):UserRepository.create 依 roles.code 建關聯
+                for code, name, seed_uid in _SEED_ROLES:
+                    exists = (
+                        await conn.execute(
+                            text(
+                                "SELECT 1 FROM roles "
+                                "WHERE code = :code AND is_deleted = false"
+                            ),
+                            {"code": code},
+                        )
+                    ).scalar()
+                    if exists is None:
+                        await conn.execute(
+                            text(
+                                "INSERT INTO roles "
+                                "(uid, code, name, is_builtin, created_by, updated_by) "
+                                "VALUES (:uid, :code, :name, true, :actor, :actor)"
+                            ),
+                            {
+                                "uid": seed_uid,
+                                "code": code,
+                                "name": name,
+                                "actor": _SYSTEM_ACTOR_UID,
+                            },
+                        )
         finally:
             await test_engine.dispose()
 
@@ -338,3 +371,57 @@ async def test_init_admin_can_login(
     )
     assert resp.status_code == 200
     assert resp.json()["data"]["role"] == "admin"
+
+
+# ── task-002:授權鏈路改由 roles 關聯驅動 ─────────────────────────────────
+async def test_created_user_links_role_and_dual_writes_string(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """建立使用者寫入 roles 關聯,deprecated 字串欄位 dual-write 同值。"""
+    created = await _create_user(session_factory, "dual", "dual-password-123", "admin")
+    async with session_factory() as session:
+        user = (
+            await session.execute(select(User).where(User.uid == created.uid))
+        ).scalar_one()
+        assert user.role_ref is not None
+        assert user.role_ref.code == "admin"
+        assert user.role == "admin"
+
+
+async def test_create_user_with_unknown_role_fails_fast(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """找不到對應角色 code → fail-fast AppError,禁默默 fallback。"""
+    async with session_factory() as session:
+        with pytest.raises(AppError):
+            await UserRepository(session).create(
+                username="ghost", password_hash=None, role="ghost-role"
+            )
+
+
+async def test_role_relation_change_effective_next_request(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """直接改 DB 角色關聯後,同一 token 下一請求即以新角色判定(即時生效)。
+
+    刻意只改 role_pid、不動 deprecated 字串欄位:守衛 / me 若仍讀字串,本測試必失敗
+    → 固定「授權取值來自 DB 關聯,角色不嵌 JWT 判斷」的行為。
+    """
+    await _create_user(session_factory, "riser", "riser-password-123", "viewer")
+    await _login(client, "riser", "riser-password-123")
+    assert (await client.post("/api/v1/admin-only-probe")).status_code == 403
+    async with session_factory() as session:
+        admin_pid = (
+            await session.execute(
+                text("SELECT pid FROM roles WHERE code = 'admin' AND is_deleted = false")
+            )
+        ).scalar_one()
+        await session.execute(
+            text("UPDATE users SET role_pid = :pid WHERE username = 'riser'"),
+            {"pid": admin_pid},
+        )
+        await session.commit()
+    assert (await client.post("/api/v1/admin-only-probe")).status_code == 200
+    me = await client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert me.json()["data"]["role"] == "admin"
