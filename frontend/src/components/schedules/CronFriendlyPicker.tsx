@@ -18,12 +18,14 @@ const FREQ_OPTIONS: ReadonlyArray<{ value: CronFrequency; label: string }> = [
   { value: 'monthly', label: '每月' },
 ]
 
-// 間隔下拉限定常用值,避免 33 分鐘這類難對齊的間隔;既有 cron 帶非清單值時動態納入
-const MINUTE_STEP_OPTIONS: readonly number[] = [5, 10, 15, 20, 30]
-const HOUR_STEP_OPTIONS: readonly number[] = [1, 2, 3, 4, 6, 8, 12]
+// 間隔可自由輸入,前端限定有效範圍(cron 步進語意:分 1–59、時 1–23)
+const MINUTE_STEP_MAX = 59
+const HOUR_STEP_MAX = 23
 
-function stepOptions(base: readonly number[], current: number): number[] {
-  return base.includes(current) ? [...base] : [...base, current].sort((a, b) => a - b)
+function parseStepInput(raw: string, max: number): number | null {
+  if (!/^\d+$/.test(raw.trim())) return null
+  const value = Number.parseInt(raw, 10)
+  return value >= 1 && value <= max ? value : null
 }
 
 const WEEKDAY_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [
@@ -122,13 +124,42 @@ export function CronFriendlyPicker({
     },
     [friendly, emitFriendly],
   )
+  // 間隔輸入框:保留原始輸入字串,僅有效值外流;無效時顯示提示、blur 還原上次有效值
+  const [everyNText, setEveryNText] = useState<string>(
+    'everyN' in friendly ? String(friendly.everyN) : '',
+  )
+  // 外部有效值變動(切頻率 / 自進階同步回簡易)時同步輸入框:render 期間依差異更新 state
+  const currentEveryN = 'everyN' in friendly ? friendly.everyN : null
+  const [prevEveryN, setPrevEveryN] = useState<number | null>(currentEveryN)
+  if (currentEveryN !== prevEveryN) {
+    setPrevEveryN(currentEveryN)
+    if (currentEveryN !== null) {
+      setEveryNText(String(currentEveryN))
+    }
+  }
+  const everyNMax = friendly.freq === 'everyHours' ? HOUR_STEP_MAX : MINUTE_STEP_MAX
+  const everyNInvalid =
+    (friendly.freq === 'everyMinutes' || friendly.freq === 'everyHours') &&
+    parseStepInput(everyNText, everyNMax) === null
+
   const handleEveryNChange = useCallback(
-    (event: React.ChangeEvent<HTMLSelectElement>): void => {
+    (event: React.ChangeEvent<HTMLInputElement>): void => {
       if (friendly.freq !== 'everyMinutes' && friendly.freq !== 'everyHours') return
-      emitFriendly({ ...friendly, everyN: Number.parseInt(event.target.value, 10) })
+      const raw = event.target.value
+      setEveryNText(raw)
+      const max = friendly.freq === 'everyHours' ? HOUR_STEP_MAX : MINUTE_STEP_MAX
+      const parsed = parseStepInput(raw, max)
+      if (parsed !== null) emitFriendly({ ...friendly, everyN: parsed })
     },
     [friendly, emitFriendly],
   )
+  const handleEveryNBlur = useCallback((): void => {
+    if (friendly.freq !== 'everyMinutes' && friendly.freq !== 'everyHours') return
+    const max = friendly.freq === 'everyHours' ? HOUR_STEP_MAX : MINUTE_STEP_MAX
+    if (parseStepInput(everyNText, max) === null) {
+      setEveryNText(String(friendly.everyN))
+    }
+  }, [friendly, everyNText])
   const handleWeekdayChange = useCallback(
     (event: React.ChangeEvent<HTMLSelectElement>): void => {
       if (friendly.freq !== 'weekly') return
@@ -180,35 +211,37 @@ export function CronFriendlyPicker({
             </label>
             {friendly.freq === 'everyMinutes' ? (
               <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-                間隔
-                <select
-                  value={friendly.everyN}
+                間隔(分鐘)
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={MINUTE_STEP_MAX}
+                  step={1}
+                  value={everyNText}
                   onChange={handleEveryNChange}
+                  onBlur={handleEveryNBlur}
+                  aria-invalid={everyNInvalid}
                   className="df-input"
-                >
-                  {stepOptions(MINUTE_STEP_OPTIONS, friendly.everyN).map((n) => (
-                    <option key={n} value={n}>
-                      每 {n} 分鐘
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             ) : null}
             {friendly.freq === 'everyHours' ? (
               <>
                 <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-                  間隔
-                  <select
-                    value={friendly.everyN}
+                  間隔(小時)
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={HOUR_STEP_MAX}
+                    step={1}
+                    value={everyNText}
                     onChange={handleEveryNChange}
+                    onBlur={handleEveryNBlur}
+                    aria-invalid={everyNInvalid}
                     className="df-input"
-                  >
-                    {stepOptions(HOUR_STEP_OPTIONS, friendly.everyN).map((n) => (
-                      <option key={n} value={n}>
-                        每 {n} 小時
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
                 <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
                   第幾分執行
@@ -285,6 +318,22 @@ export function CronFriendlyPicker({
               </label>
             ) : null}
           </div>
+          {everyNInvalid ? (
+            <p className="text-sm text-danger md:text-base">
+              間隔需為 1–{everyNMax} 的整數(
+              {friendly.freq === 'everyHours' ? '小時' : '分鐘'})
+            </p>
+          ) : null}
+          {!everyNInvalid && friendly.freq === 'everyMinutes' && 60 % friendly.everyN !== 0 ? (
+            <p className="text-sm text-muted-foreground md:text-base">
+              注意:60 無法被 {friendly.everyN} 整除,每小時整點會重新對齊起算
+            </p>
+          ) : null}
+          {!everyNInvalid && friendly.freq === 'everyHours' && 24 % friendly.everyN !== 0 ? (
+            <p className="text-sm text-muted-foreground md:text-base">
+              注意:24 無法被 {friendly.everyN} 整除,每日 0 點會重新對齊起算
+            </p>
+          ) : null}
           <p className="text-sm text-muted-foreground md:text-base">
             {describeFriendly(friendly)}(UTC+8)
           </p>
