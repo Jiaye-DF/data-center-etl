@@ -947,12 +947,51 @@ flowchart LR
       <tr><td>7</td><td>Grant Database 權限</td><td>Lake Formation</td><td>Principal <code class="n-cust">Glue-ServiceRole-ERP-Hub</code>；Database <b>Describe + Create Table + Alter</b></td><td>讓 Crawler 進得了 Database 層（關鍵缺口）</td></tr>
       <tr><td>8</td><td>Grant Table / Column</td><td>Lake Formation</td><td><code class="n-svc">ALL_TABLES</code>（Describe/Select/Insert/Alter/Delete）、<code class="n-svc">ALL_COLUMNS</code>（Select）</td><td>讓 Crawler 建 / 改表 Metadata</td></tr>
       <tr><td>9</td><td>執行 Crawler + 驗證</td><td>Glue Crawler</td><td>On-Demand Run → 查 Data Catalog</td><td>確認 <code>Tables &gt; 0</code>、Metadata 建立成功</td></tr>
-      <tr><td>10</td><td>建自架排程</td><td>Taskiq Scheduler + Redis（後續）</td><td>依自有 DB 排程定義到點派工；Redis 作 broker</td><td>取代 EventBridge / Lambda 編排</td></tr>
-      <tr><td>11</td><td>建 ETL Worker</td><td>Taskiq Worker（後續）</td><td>純 Python 直連 RDS：讀 Raw → 轉換 → 寫 <code class="n-cust">ETL-Hub</code>；不依賴 Glue Job / Spark</td><td>Raw → ETL-Hub 清洗轉換</td></tr>
+      <tr><td>10</td><td>建自架排程</td><td>Taskiq Scheduler + Redis（已實作）</td><td><code class="n-cust">schedules</code> 表一表一排程；cron 以 Asia/Taipei (UTC+8) 解讀；到點派 <code class="n-cust">mirror_sync</code> 增量（詳見下方〈自架排程項目〉）</td><td>取代 EventBridge / Lambda 編排</td></tr>
+      <tr><td>11</td><td>建 ETL Worker</td><td>Taskiq Worker（已實作）</td><td>純 Python 直連 RDS：讀 Raw → 轉換 → 寫 <code class="n-cust">ETL-Hub</code>；不依賴 Glue Job / Spark</td><td>Raw → ETL-Hub 清洗轉換</td></tr>
       <tr><td>12</td><td>容器化部署</td><td>Docker Compose + Coolify（後續）</td><td>image <code class="n-cust">etl_</code> prefix；Coolify 部署於 EC2，連 RDS 讀寫</td><td>自架 ETL 上線</td></tr>
     </tbody>
   </table>
-  <div class="callout ok"><span class="h">✅ 目前進度</span>Step 1–9 已完成並驗證（Crawler 成功建立 Metadata，<code>Tables &gt; 0</code>）；Step 10–12（自架 Taskiq + Redis ETL，Docker Compose / Coolify 部署於 EC2）為下一步，ETL 執行不再走 Glue Job。詳見 <code>docs/Tasks/v1.1.0/propose-v1.1.0.md</code>。</div>
+
+  <h3>自架排程項目（Taskiq + Redis，對齊 data-center-etl 現況）</h3>
+  <p class="lead">排程已改由<b>自架 Taskiq + Redis</b> 處理（不用 EventBridge / Lambda / Glue Trigger）。排程定義存於自有 DB <code class="n-cust">schedules</code> 表，Scheduler 每輪重讀 DB，啟停即時生效；到點依組合併派 <code class="n-cust">mirror_sync</code> 增量同步，與手動觸發共用 <code class="n-cust">etl_runs</code> 執行紀錄。</p>
+
+  <div class="diagram">
+    <div class="mermaid">
+flowchart LR
+  UI["排程管理 UI<br/>簡易模式：每 N 分 / 每 N 時 / 每日 / 每週<br/>＋進階 cron 模式"] --> SDB[("schedules 表<br/>一表一排程 · Asia/Taipei")]
+  SDB --> SRC["DbScheduleSource<br/>每輪自 DB 重讀<br/>啟停即時生效"]
+  SRC --> GRP["同 cron + schema<br/>分組合併派工"]
+  GRP --> RED["Redis<br/>broker"]
+  MAN["手動觸發<br/>（各檢視同步按鈕）"] -.-> RED
+  RED --> WK["Taskiq Worker<br/>mirror_sync 增量同步"]
+  WK --> HUB[("ETL-Hub")]
+  WK --> RUNS[("etl_runs<br/>執行紀錄<br/>schedule / manual 同軌")]
+
+  classDef ui fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
+  classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  classDef etl fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
+  class UI,MAN ui; class SDB,HUB,RUNS db; class SRC,GRP,RED,WK etl;
+    </div>
+    <div class="cap">圖 8-1 — 自架排程派工鏈：schedules 表 → Scheduler → Redis → Worker（排程 / 手動同軌記錄 etl_runs）</div>
+  </div>
+
+  <table>
+    <thead><tr><th>#</th><th>排程項目</th><th>實作方式</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>排程定義表</td><td><code class="n-cust">schedules</code>（PostgreSQL）</td><td><b>一表一排程</b>：<code>source_schema</code> + <code>source_table</code> 未刪除範圍內唯一；含 <code>cron_expr</code>、<code>is_enabled</code> 啟停、軟刪除</td></tr>
+      <tr><td>2</td><td>時區約定</td><td>cron 一律 Asia/Taipei（UTC+8）</td><td>固定 +8 offset 解讀，不依賴系統 tzdata</td></tr>
+      <tr><td>3</td><td>排程 UI</td><td>簡易模式 + 進階 cron</td><td>簡易模式支援<b>每 N 分鐘 / 每 N 小時 / 每日 / 每週</b>（自由輸入含前端驗證）；夜間時段預設全停用</td></tr>
+      <tr><td>4</td><td>排程來源熱載入</td><td><code class="n-cust">DbScheduleSource</code>（自訂 ScheduleSource）</td><td>Scheduler 每輪自 DB 重讀啟用中排程，<b>新增 / 啟停即時生效</b>，免重啟容器</td></tr>
+      <tr><td>5</td><td>派工合併</td><td>依 <code>(cron_expr, source_schema)</code> 分組</td><td>同組合併派<b>一發</b> <code class="n-cust">mirror_sync</code>，<code>tables</code> 帶該組全部來源表，降低重複派工</td></tr>
+      <tr><td>6</td><td>訊息傳遞</td><td>Redis broker</td><td>Scheduler 到點派工經 Redis 佇列傳遞至 Worker</td></tr>
+      <tr><td>7</td><td>同步執行</td><td><code class="n-cust">mirror_sync</code>（增量）</td><td>Worker 直連 RDS：讀 Raw → 增量轉換 → 寫 ETL-Hub</td></tr>
+      <tr><td>8</td><td>執行紀錄</td><td><code class="n-cust">etl_runs</code> / <code class="n-cust">etl_run_logs</code></td><td><code>trigger_type</code> 分 <code>schedule</code> / <code>manual</code>，排程與手動觸發<b>同軌</b>留痕</td></tr>
+      <tr><td>9</td><td>排程涵蓋率</td><td>Schedule Coverage 檢視</td><td>盤點哪些表已排程 / 未排程，避免漏排</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout ok"><span class="h">✅ 目前進度</span>Step 1–9 已完成並驗證（Crawler 成功建立 Metadata，<code>Tables &gt; 0</code>）；Step 10–11（自架 Taskiq + Redis 排程與 Worker，如上表）已於本專案 <code>data-center-etl</code> 實作並以 Docker Compose 運行、部署於 Coolify 測試站；Step 12 部署至 AWS EC2 為下一步。ETL 執行不再走 Glue Job。詳見 <code>docs/Tasks/v1.1.0/propose-v1.1.0.md</code>。</div>
 
   <div class="terms">
     <div class="terms-h">📖 本頁名詞</div>
@@ -962,6 +1001,9 @@ flowchart LR
       <dt>Glue Crawler</dt><dd>掃描資料源結構，把 Metadata 寫入 Data Catalog。</dd>
       <dt>Lake Formation</dt><dd>在 IAM 之上對 Catalog 的 Database / Table / Column 細粒度授權。</dd>
       <dt>Taskiq + Redis</dt><dd>自架 ETL：Scheduler 依 DB 排程派工、Redis 作 broker、Worker 直連 RDS 完成轉換（取代 Glue Job + EventBridge / Lambda）。</dd>
+      <dt>一表一排程</dt><dd>每張來源表對應一筆排程（未刪除範圍內唯一）；同 cron + schema 合併派工。</dd>
+      <dt>mirror_sync</dt><dd>Worker 的增量同步任務：讀 Raw → 增量轉換 → 寫 ETL-Hub；排程 / 手動觸發同軌。</dd>
+      <dt>etl_runs</dt><dd>同步執行紀錄表，<code>trigger_type</code> 分 schedule / manual，供 UI 檢視歷史。</dd>
       <dt>Coolify</dt><dd>自架 PaaS / CD，把容器化 ETL 部署於 EC2。</dd>
     </dl>
     <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
