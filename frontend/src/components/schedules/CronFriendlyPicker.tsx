@@ -11,10 +11,20 @@ import {
 } from '@/utils/cron'
 
 const FREQ_OPTIONS: ReadonlyArray<{ value: CronFrequency; label: string }> = [
+  { value: 'everyMinutes', label: '每 N 分鐘' },
+  { value: 'everyHours', label: '每 N 小時' },
   { value: 'daily', label: '每日' },
   { value: 'weekly', label: '每週' },
   { value: 'monthly', label: '每月' },
 ]
+
+// 間隔下拉限定常用值,避免 33 分鐘這類難對齊的間隔;既有 cron 帶非清單值時動態納入
+const MINUTE_STEP_OPTIONS: readonly number[] = [5, 10, 15, 20, 30]
+const HOUR_STEP_OPTIONS: readonly number[] = [1, 2, 3, 4, 6, 8, 12]
+
+function stepOptions(base: readonly number[], current: number): number[] {
+  return base.includes(current) ? [...base] : [...base, current].sort((a, b) => a - b)
+}
 
 const WEEKDAY_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [
   { value: 0, label: '週日' },
@@ -37,9 +47,16 @@ function pad2(value: number): string {
   return value.toString().padStart(2, '0')
 }
 
-/** 切換頻率下拉時,沿用原本時:分,週幾 / 幾號補預設值 */
+/** 切換頻率下拉時,沿用原本時:分,間隔 / 週幾 / 幾號補預設值 */
 function withFrequency(current: FriendlySchedule, freq: CronFrequency): FriendlySchedule {
-  const { hour, minute } = current
+  const hour = 'hour' in current ? current.hour : 3
+  const minute = 'minute' in current ? current.minute : 0
+  if (freq === 'everyMinutes') {
+    return { freq, everyN: current.freq === 'everyMinutes' ? current.everyN : 30 }
+  }
+  if (freq === 'everyHours') {
+    return { freq, everyN: current.freq === 'everyHours' ? current.everyN : 1, minute }
+  }
   if (freq === 'weekly') {
     return { freq, hour, minute, weekday: current.freq === 'weekly' ? current.weekday : 0 }
   }
@@ -93,13 +110,22 @@ export function CronFriendlyPicker({
   )
   const handleHourChange = useCallback(
     (event: React.ChangeEvent<HTMLSelectElement>): void => {
+      if (friendly.freq === 'everyMinutes' || friendly.freq === 'everyHours') return
       emitFriendly({ ...friendly, hour: Number.parseInt(event.target.value, 10) })
     },
     [friendly, emitFriendly],
   )
   const handleMinuteChange = useCallback(
     (event: React.ChangeEvent<HTMLSelectElement>): void => {
+      if (friendly.freq === 'everyMinutes') return
       emitFriendly({ ...friendly, minute: Number.parseInt(event.target.value, 10) })
+    },
+    [friendly, emitFriendly],
+  )
+  const handleEveryNChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>): void => {
+      if (friendly.freq !== 'everyMinutes' && friendly.freq !== 'everyHours') return
+      emitFriendly({ ...friendly, everyN: Number.parseInt(event.target.value, 10) })
     },
     [friendly, emitFriendly],
   )
@@ -152,6 +178,54 @@ export function CronFriendlyPicker({
                 ))}
               </select>
             </label>
+            {friendly.freq === 'everyMinutes' ? (
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
+                間隔
+                <select
+                  value={friendly.everyN}
+                  onChange={handleEveryNChange}
+                  className="df-input"
+                >
+                  {stepOptions(MINUTE_STEP_OPTIONS, friendly.everyN).map((n) => (
+                    <option key={n} value={n}>
+                      每 {n} 分鐘
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {friendly.freq === 'everyHours' ? (
+              <>
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
+                  間隔
+                  <select
+                    value={friendly.everyN}
+                    onChange={handleEveryNChange}
+                    className="df-input"
+                  >
+                    {stepOptions(HOUR_STEP_OPTIONS, friendly.everyN).map((n) => (
+                      <option key={n} value={n}>
+                        每 {n} 小時
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
+                  第幾分執行
+                  <select
+                    value={friendly.minute}
+                    onChange={handleMinuteChange}
+                    className="df-input"
+                  >
+                    {MINUTE_OPTIONS.map((minute) => (
+                      <option key={minute} value={minute}>
+                        {pad2(minute)} 分
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : null}
             {friendly.freq === 'weekly' ? (
               <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
                 週幾
@@ -184,30 +258,32 @@ export function CronFriendlyPicker({
                 </select>
               </label>
             ) : null}
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-              時間
-              <div className="flex items-center gap-1.5">
-                <select value={friendly.hour} onChange={handleHourChange} className="df-input">
-                  {HOUR_OPTIONS.map((hour) => (
-                    <option key={hour} value={hour}>
-                      {pad2(hour)}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-muted-foreground">:</span>
-                <select
-                  value={friendly.minute}
-                  onChange={handleMinuteChange}
-                  className="df-input"
-                >
-                  {MINUTE_OPTIONS.map((minute) => (
-                    <option key={minute} value={minute}>
-                      {pad2(minute)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </label>
+            {'hour' in friendly ? (
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
+                時間
+                <div className="flex items-center gap-1.5">
+                  <select value={friendly.hour} onChange={handleHourChange} className="df-input">
+                    {HOUR_OPTIONS.map((hour) => (
+                      <option key={hour} value={hour}>
+                        {pad2(hour)}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-muted-foreground">:</span>
+                  <select
+                    value={friendly.minute}
+                    onChange={handleMinuteChange}
+                    className="df-input"
+                  >
+                    {MINUTE_OPTIONS.map((minute) => (
+                      <option key={minute} value={minute}>
+                        {pad2(minute)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </label>
+            ) : null}
           </div>
           <p className="text-sm text-muted-foreground md:text-base">
             {describeFriendly(friendly)}(UTC+8)
