@@ -1,7 +1,7 @@
 ---
 id: task-005
 title: 端到端收口驗證 — 全流程手測清單 + 對外承諾逐條覆核 + 驗證紀錄
-status: pending
+status: done
 parallel: false
 depends_on: [task-004]
 affected_files:
