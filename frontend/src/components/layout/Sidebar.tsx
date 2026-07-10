@@ -32,6 +32,10 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/runs', label: 'ETL 執行紀錄', icon: <HistoryIcon /> },
     ],
   },
+  {
+    title: '系統管理',
+    items: [{ href: '/users', label: '使用者與角色', icon: <UsersIcon /> }],
+  },
 ]
 
 function isActivePath(pathname: string, href: string): boolean {
@@ -194,6 +198,17 @@ function HistoryIcon(): React.ReactNode {
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
       <path d="M3 4v4h4" />
       <path d="M12 8v4l3 2" />
+    </svg>
+  )
+}
+
+function UsersIcon(): React.ReactNode {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   )
 }

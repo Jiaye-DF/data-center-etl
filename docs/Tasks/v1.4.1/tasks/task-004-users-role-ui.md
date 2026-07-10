@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: 前端 — 使用者與角色管理檢視(admin only)+ API 串接
-status: pending
+status: done
 parallel: false
 depends_on: [task-003]
 affected_files:
