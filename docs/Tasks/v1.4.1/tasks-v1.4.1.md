@@ -4,7 +4,7 @@
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
-| 001 | roles 表 + users 關聯欄位 + migration backfill | pending | ✗ | — | `backend/app/models/role.py`(新)/ `backend/app/models/user.py` / `backend/app/models/__init__.py` / `backend/alembic/versions/v7_add_v141_roles.py`(新)/ `backend/tests/test_models_v141.py`(新)/ `docs/Tasks/v1.4.1/manual-removal-checklist.md`(新) |
+| 001 | roles 表 + users 關聯欄位 + migration backfill | done(worker: claude-A) | ✗ | — | `backend/app/models/role.py`(新)/ `backend/app/models/user.py` / `backend/app/models/__init__.py` / `backend/alembic/versions/v7_add_v141_roles.py`(新)/ `backend/tests/test_models_v141.py`(新)/ `docs/Tasks/v1.4.1/manual-removal-checklist.md`(新) |
 | 002 | 授權鏈路改由角色表驅動(守衛 / auth me / SSO,對外值零變化) | pending | ✗ | 001 | `backend/app/api/deps.py` / `backend/app/api/v1/{auth,sso}.py` / `backend/app/services/{auth_service,sso_service}.py` / `backend/app/repositories/user_repo.py` / `backend/tests/{test_auth,test_sso}.py` |
 | 003 | 角色列表 API + 使用者清單 / 角色指派 API(admin only + 稽核 + 自降防呆) | pending | ✗ | 002 | `backend/app/api/v1/{roles,users}.py`(新)/ `backend/app/api/v1/__init__.py` / `backend/app/schemas/{role,user}.py`(新)/ `backend/app/services/user_service.py`(新)/ `backend/app/repositories/role_repo.py`(新)/ `backend/app/repositories/user_repo.py` / `backend/tests/test_users_api.py`(新) |
 | 004 | 前端 — 使用者與角色管理檢視(admin only)+ API 串接 | pending | ✗ | 003 | `frontend/src/lib/api/userApi.ts`(新)/ `frontend/src/app/(main)/users/page.tsx`(新)/ `frontend/src/components/users/UserRoleTable.tsx`(新)/ `frontend/src/components/layout/Sidebar.tsx` |

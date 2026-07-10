@@ -1,7 +1,8 @@
-from sqlalchemy import CheckConstraint, Index, String, Text, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, String, Text, text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+from app.models.role import Role
 
 
 class User(BaseModel):
@@ -25,13 +26,32 @@ class User(BaseModel):
         nullable=False,
         default="viewer",
         server_default="viewer",
-        comment="角色(admin/viewer)/ Role (admin/viewer)",
+        comment=(
+            "角色字串(deprecated:v1.4.1 起 source of truth 改為 role_pid → roles 表,"
+            "本欄保留供相容,人工移除步驟見 docs/Tasks/v1.4.1/manual-removal-checklist.md)"
+            "/ Role string (deprecated; superseded by role_pid → roles table)"
+        ),
+    )
+    # v1.4.1 起 source of truth;建立 / 指派寫入邏輯屬 task-002 / task-003,
+    # 該邏輯落地前暫不收 NOT NULL(理由見 docs/Tasks/v1.4.1/fixed.md)
+    role_pid: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("roles.pid", name="fk_users_role"),
+        nullable=True,
+        comment=(
+            "角色(roles.pid;v1.4.1 起 source of truth,建立/指派寫入邏輯屬 task-002/003)"
+            "/ Role (roles.pid; source of truth from v1.4.1)"
+        ),
     )
     sso_subject: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="DF-SSO 對外識別碼(獨立欄位,禁作主鍵)/ DF-SSO external subject id",
     )
+
+    # lazy="joined":async session 下避免隱式 lazy load(MissingGreenlet),
+    # role_pid 又是每次授權判斷都需要的高頻欄位,直接併入主查詢的 JOIN
+    role_ref: Mapped[Role | None] = relationship(Role, lazy="joined")
 
     __table_args__ = (
         CheckConstraint("role IN ('admin', 'viewer')", name="ck_users_role"),
@@ -48,4 +68,5 @@ class User(BaseModel):
             unique=True,
             postgresql_where=text("is_deleted = false AND sso_subject IS NOT NULL"),
         ),
+        Index("idx_users_role_pid", "role_pid"),
     )
