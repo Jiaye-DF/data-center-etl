@@ -9,7 +9,7 @@ import { ThemeSwitcher } from './ThemeSwitcher'
 
 const ROLE_LABELS: Record<string, string> = {
   admin: '管理者',
-  viewer: '檢視者',
+  member: '成員',
 }
 
 export function Header(): React.ReactNode {

@@ -1,6 +1,7 @@
 from sqlalchemy import CheckConstraint, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.roles import DEFAULT_ROLE, ROLE_CHECK_SQL
 from app.models.base import BaseModel
 
 
@@ -16,16 +17,17 @@ class User(BaseModel):
     display_name: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="顯示名稱(SSO 姓名)/ Display name"
     )
-    # 只存不可逆雜湊(bcrypt),禁明文;SSO-only 使用者可為 NULL(登入邏輯屬 task-002)
+    # 只存不可逆雜湊(bcrypt),禁明文;SSO-only 使用者可為 NULL
     password_hash: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="密碼雜湊(bcrypt,禁明文)/ Password hash (bcrypt only)"
     )
+    # 角色唯一事實來源:字串 + CHECK 約束(不另設 roles 表 / 外鍵關聯)
     role: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        default="viewer",
-        server_default="viewer",
-        comment="角色(admin/viewer)/ Role (admin/viewer)",
+        default=DEFAULT_ROLE,
+        server_default=DEFAULT_ROLE,
+        comment="角色(admin / member)/ Role (admin / member)",
     )
     sso_subject: Mapped[str | None] = mapped_column(
         String(255),
@@ -34,7 +36,7 @@ class User(BaseModel):
     )
 
     __table_args__ = (
-        CheckConstraint("role IN ('admin', 'viewer')", name="ck_users_role"),
+        CheckConstraint(ROLE_CHECK_SQL, name="ck_users_role"),
         # 軟刪除後允許重建同帳號 → 以 partial unique index 取代一般 unique
         Index(
             "uq_users_username",

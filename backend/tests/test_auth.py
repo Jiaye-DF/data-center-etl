@@ -42,6 +42,7 @@ from app import models  # noqa: E402, F401  匯入全部 model 讓 create_all �
 from app.api.deps import get_db, require_admin  # noqa: E402
 from app.core.config import Settings  # noqa: E402
 from app.core.db import Base  # noqa: E402
+from app.core.exceptions import AppError  # noqa: E402
 from app.core.response import success  # noqa: E402
 from app.core.security import hash_password_async  # noqa: E402
 from app.main import create_app  # noqa: E402
@@ -50,7 +51,7 @@ from app.repositories.user_repo import UserRepository  # noqa: E402
 from app.schemas.response import ApiResponse  # noqa: E402
 from app.services.auth_service import ensure_init_admin  # noqa: E402
 
-# ── 假 admin-only 端點:驗證 require_admin(viewer 一律 403)──────────────
+# ── 假 admin-only 端點:驗證 require_admin(member 一律 403)──────────────
 _probe_router = APIRouter()
 
 
@@ -208,7 +209,7 @@ async def test_login_sso_only_user_401(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """無本地密碼(SSO-only)使用者走本地登入一律 401。"""
-    await _create_user(session_factory, "sso-only", None, "viewer")
+    await _create_user(session_factory, "sso-only", None, "member")
     resp = await client.post(
         "/api/v1/auth/login", json={"username": "sso-only", "password": "anything-123"}
     )
@@ -224,19 +225,19 @@ async def test_me_requires_login(client: AsyncClient) -> None:
 async def test_me_after_login(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    await _create_user(session_factory, "bob", "bob-password-123", "viewer")
+    await _create_user(session_factory, "bob", "bob-password-123", "member")
     await _login(client, "bob", "bob-password-123")
     resp = await client.get("/api/v1/auth/me")
     assert resp.status_code == 200
     body = resp.json()
     assert body["data"]["username"] == "bob"
-    assert body["data"]["role"] == "viewer"
+    assert body["data"]["role"] == "member"
 
 
 async def test_logout_clears_cookie(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    await _create_user(session_factory, "bob", "bob-password-123", "viewer")
+    await _create_user(session_factory, "bob", "bob-password-123", "member")
     await _login(client, "bob", "bob-password-123")
     assert (await client.get("/api/v1/auth/me")).status_code == 200
     resp = await client.post("/api/v1/auth/logout")
@@ -244,11 +245,11 @@ async def test_logout_clears_cookie(
     assert (await client.get("/api/v1/auth/me")).status_code == 401
 
 
-# ── 角色權限:viewer 打 admin-only 一律 403 ─────────────────────────────
-async def test_viewer_hits_admin_only_403(
+# ── 角色權限:member 打 admin-only 一律 403 ─────────────────────────────
+async def test_member_hits_admin_only_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    await _create_user(session_factory, "vera", "vera-password-123", "viewer")
+    await _create_user(session_factory, "vera", "vera-password-123", "member")
     await _login(client, "vera", "vera-password-123")
     resp = await client.post("/api/v1/admin-only-probe")
     assert resp.status_code == 403
@@ -338,3 +339,44 @@ async def test_init_admin_can_login(
     )
     assert resp.status_code == 200
     assert resp.json()["data"]["role"] == "admin"
+
+
+# ── 角色為字串(admin / member),授權判斷一律讀 DB 現值 ────────────────────
+async def test_created_user_stores_role_string(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    created = await _create_user(session_factory, "dual", "dual-password-123", "admin")
+    async with session_factory() as session:
+        user = (
+            await session.execute(select(User).where(User.uid == created.uid))
+        ).scalar_one()
+        assert user.role == "admin"
+
+
+async def test_create_user_with_unknown_role_fails_fast(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """未知角色 code → fail-fast AppError,禁默默寫入(DB CHECK 之前先擋)。"""
+    async with session_factory() as session:
+        with pytest.raises(AppError):
+            await UserRepository(session).create(
+                username="ghost", password_hash=None, role="ghost-role"
+            )
+
+
+async def test_role_change_effective_next_request(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """直接改 DB 角色後,同一 token 下一請求即以新角色判定(角色不嵌 JWT 判斷)。"""
+    await _create_user(session_factory, "riser", "riser-password-123", "member")
+    await _login(client, "riser", "riser-password-123")
+    assert (await client.post("/api/v1/admin-only-probe")).status_code == 403
+    async with session_factory() as session:
+        await session.execute(
+            text("UPDATE users SET role = 'admin' WHERE username = 'riser'")
+        )
+        await session.commit()
+    assert (await client.post("/api/v1/admin-only-probe")).status_code == 200
+    me = await client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert me.json()["data"]["role"] == "admin"

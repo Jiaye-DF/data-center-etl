@@ -1,7 +1,7 @@
 import { baseApi } from '@/lib/api/baseApi'
 import { unwrap, type ApiEnvelope } from '@/types/api'
 
-export type UserRole = 'admin' | 'viewer'
+export type UserRole = 'admin' | 'member'
 
 /** 登入來源(模式 B 雙軌;silent re-auth 分流依據) */
 export type AuthProvider = 'local' | 'sso'

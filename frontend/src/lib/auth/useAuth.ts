@@ -13,8 +13,8 @@ export interface UseAuthResult {
   user: AuthUser | null
   role: UserRole | null
   isAdmin: boolean
-  /** viewer 角色:各頁面據此隱藏寫入類 UI(010 / 011 使用) */
-  isViewer: boolean
+  /** member 角色:各頁面據此隱藏寫入類 UI(010 / 011 使用) */
+  isMember: boolean
   isLoading: boolean
   isAuthenticated: boolean
   /** /me 回 401(session 失效);silent re-auth 只攔截此情況,中央不可達等其他錯誤不觸發 */
@@ -52,7 +52,7 @@ export function useAuth(): UseAuthResult {
       user,
       role: user?.role ?? null,
       isAdmin: user?.role === 'admin',
-      isViewer: user?.role === 'viewer',
+      isMember: user?.role === 'member',
       isLoading,
       isAuthenticated: user !== null,
       isSessionExpired,
