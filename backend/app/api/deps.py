@@ -89,12 +89,13 @@ async def get_current_user(
     return user
 
 
-# 已登入即可(admin / viewer 皆可讀)
+# 已登入即可(admin / member 皆可讀)
 require_login = get_current_user
 
 
 def require_role(*roles: str) -> Callable[[User], Coroutine[object, object, User]]:
     async def _dep(user: Annotated[User, Depends(get_current_user)]) -> User:
+        # 授權判斷改自 roles 關聯(單一入口;get_current_user 已隨主查詢 eager load)
         if user.role not in roles:
             raise AppError("權限不足", response_code=403, status_code=403)
         return user
@@ -102,5 +103,5 @@ def require_role(*roles: str) -> Callable[[User], Coroutine[object, object, User
     return _dep
 
 
-# admin 可寫;viewer 呼叫寫入類 API 一律 403
+# admin 可寫;member 呼叫寫入類 API 一律 403
 require_admin = require_role("admin")

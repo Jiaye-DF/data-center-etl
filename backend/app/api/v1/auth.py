@@ -47,14 +47,22 @@ async def login(
 ) -> ApiResponse[UserResponse]:
     user = await AuthService(db).authenticate(payload.username, payload.password)
     settings = get_settings()
+    role_code = user.role
     token = create_access_token(
         subject=str(user.uid),
-        role=user.role,
+        role=role_code,
         secret_key=settings.JWT_SECRET_KEY,
         expires_minutes=settings.JWT_EXPIRE_MINUTES,
     )
     set_jwt_cookie(response, token, max_age=settings.JWT_EXPIRE_MINUTES * 60)
-    return success(data=UserResponse.model_validate(user))
+    return success(
+        data=UserResponse(
+            uid=user.uid,
+            username=user.username,
+            display_name=user.display_name,
+            role=role_code,
+        )
+    )
 
 
 @router.post(

@@ -18,7 +18,7 @@
 
 ### 系統架構流程
 
-1. 地端資料透過 **Migration**（DMS）移轉至 AWS RDS（名為 **Raw-Data-Replication**）
+1. 地端資料透過 **Migration**（DMS）移轉至 AWS RDS（名為 **Raw-Data-Replication**）；CDC 階段改由 DMS 把異動 event log 寫入 **Kinesis Data Streams**，再由 **Lambda** 消費事件寫回 Raw-Data-Replication
 2. 以 **AWS Glue Crawler / Data Catalog** 建立來源 Metadata；實際 ETL 轉換改由**自架 Taskiq + Redis（Docker Compose，Coolify 部署於 EC2）**執行，把 Raw 轉換寫回 RDS（名為 **ETL-Hub**）
 3. **Data Hub** 讀取 ETL-Hub 的資料供各業務系統應用
 4. **AWS EC2** 設置（Data Hub / Center 運算）
@@ -51,10 +51,13 @@ flowchart TB
   subgraph AWS["AWS VPC 10.0.0.0/16 (ap-northeast-1)"]
     VGW{{"VGW (VPN 落地)"}}
 
-    subgraph Z1["Phase 1 ｜ 遷移落地"]
+    subgraph Z1["Phase 1–2 ｜ 遷移落地（Full Load + CDC）"]
       direction LR
-      DMS["DMS Replication Instance<br/>Full Load → CDC"]
-      RAW[("RDS Raw-Data-Replication<br/>PostgreSQL")]
+      DMS["DMS Replication Instance<br/>Full Load + CDC"]
+      KDS["Kinesis Data Streams<br/>（CDC 異動 event log）"]
+      LMB["Lambda<br/>（消費 event → 寫入 DB）"]
+      RAW[("DB: Raw-Data-Replication<br/>（RDS PostgreSQL）")]
+      CDCDB[("DB: erp_cdc_event_logs<br/>（同座 RDS · 異動事件）")]
     end
 
     subgraph Z2["Phase 2 ｜ ETL（Catalog + 自架 Taskiq）"]
@@ -80,7 +83,8 @@ flowchart TB
   end
 
   ERP == "Site-to-Site VPN｜1521" ==> VGW --> DMS
-  DMS == "5432" ==> RAW
+  DMS == "資料｜5432" ==> RAW
+  DMS == "異動紀錄（CDC event log）" ==> KDS == "event source 觸發" ==> LMB == "寫入｜5432" ==> CDCDB
   RAW == "掃描 Metadata" ==> GLUE
   RAW == "讀取" ==> WORKER == "寫入" ==> HUB
   HUB == "讀取 ETL-Hub" ==> EC2 == "供應" ==> BIZ
@@ -92,7 +96,7 @@ flowchart TB
 
 ## III、Phase 1 VPC 網路拓撲（實測成果）
 
-本期已驗證：`Oracle → VPN → DMS → Raw-Data-Replication(RDS)` Full Load。每個 CIDR / 元件標示用途。
+本期已驗證：`Oracle → VPN → DMS → Raw-Data-Replication(RDS)` Full Load；CDC 擴充後 DMS 另把**異動紀錄**推送 `Kinesis → Lambda → erp_cdc_event_logs`。每個 CIDR / 元件標示用途。
 
 ```mermaid
 flowchart TB
@@ -108,20 +112,30 @@ flowchart TB
       NAT["NAT Gateway<br/>(私網對外更新用)"]
     end
     subgraph PRIV["Private Subnet 10.0.32.0/24 (AZ-a)"]
-      DMS["DMS Replication Instance<br/>dms.t3.medium / 50GB"]
+      DMS["DMS Replication Instance<br/>dms.t3.medium / 50GB<br/>Task: Full Load + CDC"]
+      LMB["Lambda (CDC Consumer)<br/>VPC 內執行"]
     end
     subgraph DBG["DB Subnet Group (≥2 AZ)"]
-      RAW[("RDS Raw-Data-Replication<br/>db.t4g.small / 5432")]
+      subgraph RDSI["RDS 實例 db.t4g.small / 5432"]
+        RAW[("DB: Raw-Data-Replication")]
+        CDCDB[("DB: erp_cdc_event_logs")]
+      end
       NETA["DB Subnet 10.0.33.0/24 (AZ-a)"]
       NETC["DB Subnet 10.0.34.0/24 (AZ-c)"]
     end
-    VPCE["VPC Endpoint (S3 Gateway)"]
+    VPCE["VPC Endpoint (S3 Gateway + Kinesis Interface)"]
   end
 
+  KDS["Kinesis Data Streams<br/>(區域級 · CDC event log)"]
+
   ORA == "VPN｜TCP 1521" ==> VGW --> DMS
-  DMS == "TCP 5432" ==> RAW
-  RAW -.-> NETA
-  RAW -.-> NETC
+  DMS == "資料｜TCP 5432" ==> RAW
+  DMS == "異動紀錄" ==> KDS
+  KDS == "event source 觸發" ==> LMB
+  LMB == "寫入｜TCP 5432" ==> CDCDB
+  LMB -.私網讀 stream.-> VPCE
+  RDSI -.-> NETA
+  RDSI -.-> NETC
   DMS -.logs.-> VPCE
   NAT --> IGW
 ```
@@ -140,13 +154,18 @@ AWS VPC 10.0.0.0/16                          用途：整體雲端私有網路
   ├─ VGW                                     用途：VPN 落地閘道
   ├─ Public Subnet 10.0.0.0/24
   │    └─ NAT Gateway                        用途：私網對外更新/呼叫 AWS API
-  ├─ Private Subnet 10.0.32.0/24 (AZ-a)      用途：DMS 主機
-  │    └─ DMS Replication Instance
-  │            │ TCP 5432
+  ├─ Private Subnet 10.0.32.0/24 (AZ-a)      用途：DMS 主機 + Lambda (CDC Consumer)
+  │    ├─ DMS Replication Instance           Task：Full Load + CDC
+  │    │      ├─ 資料     ──TCP 5432──▶ RDS / DB: Raw-Data-Replication
+  │    │      └─ 異動紀錄 ─────────────▶ Kinesis Data Streams（區域級服務）
+  │    └─ Lambda (CDC Consumer)   ◀── Kinesis event source 觸發
+  │             └─ ──TCP 5432──▶ RDS / DB: erp_cdc_event_logs
   └─ DB Subnet Group (≥2 AZ)                 用途：RDS 高可用
        ├─ DB Subnet 10.0.33.0/24 (AZ-a)
        ├─ DB Subnet 10.0.34.0/24 (AZ-c)
-       └─ RDS Raw-Data-Replication (db.t4g.small / 5432 / Public Access=No)
+       └─ RDS 實例 (db.t4g.small / 5432 / Public Access=No)
+            ├─ DB: Raw-Data-Replication      ← DMS 直寫的原始複製(保留來源樣貌)
+            └─ DB: erp_cdc_event_logs        ← Lambda 寫入的異動事件紀錄
 ```
 
 ### Security Group 資料流（方向）
@@ -155,6 +174,7 @@ AWS VPC 10.0.0.0/16                          用途：整體雲端私有網路
 flowchart LR
   ORA[("Oracle SG")]
   DMS["DMS SG"]
+  LMB["Lambda SG"]
   RDS[("RDS SG")]
   CORP["公司 CIDR (選用)"]
 
@@ -162,8 +182,12 @@ flowchart LR
   ORA -- "Inbound 1521 ← DMS" --> DMS
   DMS -- "Outbound 5432 →" --> RDS
   RDS -- "Inbound 5432 ← DMS SG" --> DMS
+  LMB -- "Outbound 5432 →" --> RDS
+  RDS -- "Inbound 5432 ← Lambda SG" --> LMB
   CORP -- "Inbound 5432" --> RDS
 ```
+
+> Lambda 另需 Outbound 443 → Kinesis Interface Endpoint（VPC 內執行才需要）。
 
 ---
 
@@ -183,13 +207,17 @@ flowchart LR
 | Route Table（Local / VGW / NAT） | 路由（只增不刪既有） | 1 |
 | Security Group（Oracle / DMS / RDS / EC2 / Glue） | 流量控管（禁 `0.0.0.0/0`） | 1 |
 | VPC Endpoint（S3 Gateway） | 私網存取 S3 不繞公網 | 1–3 |
+| VPC Endpoint（Kinesis Interface） | VPC 內 Lambda 私網讀取 Kinesis stream，不繞公網 / 免 NAT | 2 |
 
 ### 遷移 / 資料
 
 | 設施 | 用途 | Phase |
 | --- | --- | --- |
-| DMS Replication Instance + Endpoints | Oracle/SQL Server → RDS（Full Load → CDC） | 1→2 |
-| RDS Raw-Data-Replication（PostgreSQL） | 原始複製落地 | 1 |
+| DMS Replication Instance + Endpoints | Oracle/SQL Server → RDS（Full Load + CDC）；資料寫 RDS、異動紀錄推 Kinesis | 1→2 |
+| Kinesis Data Streams | 接收 DMS CDC 推送的異動 event log（JSON） | 2 |
+| Lambda（CDC Consumer） | 由 Kinesis event source 觸發，解析異動事件寫入 `erp_cdc_event_logs`（取代 EventBridge 觸發） | 2 |
+| RDS ｜ DB `Raw-Data-Replication`（PostgreSQL） | 原始複製落地（DMS 直寫） | 1 |
+| RDS ｜ DB `erp_cdc_event_logs`（同一實例） | 異動事件紀錄（Lambda 寫入） | 2 |
 | RDS ETL-Hub（PostgreSQL） | ETL 轉換後資料 | 2 |
 | DB Subnet Group（≥2 AZ） | RDS 高可用 | 1 |
 
@@ -216,10 +244,10 @@ flowchart LR
 
 | 設施 | 用途 |
 | --- | --- |
-| IAM Role（DMS / Glue / EC2） | 最小權限存取 |
+| IAM Role（DMS / Lambda / Glue / EC2） | 最小權限存取（DMS 需 `kinesis:PutRecord*`；Lambda 需 Kinesis 讀取 + RDS 寫入） |
 | Secrets Manager | DB 帳密集中管理 |
-| KMS | 靜態加密金鑰 |
-| CloudWatch（Logs / Metrics / Alarms） | DMS / Glue / RDS 監控告警 |
+| KMS | 靜態加密金鑰（RDS / S3 / Kinesis stream） |
+| CloudWatch（Logs / Metrics / Alarms） | DMS / Kinesis（IteratorAge）/ Lambda / Glue / RDS 監控告警 |
 | CloudTrail | API 稽核 |
 
 ---
@@ -242,9 +270,11 @@ flowchart TB
     end
     subgraph PRIV["Private Subnet"]
       DMS["DMS Replication Instance"]
+      LMB["Lambda (CDC Consumer)"]
     end
     subgraph DBSUB["DB Subnet Group (≥2 AZ)"]
-      RAW[("RDS Raw-Data-Replication")]
+      RAW[("RDS ｜ DB: Raw-Data-Replication")]
+      CDCDB[("RDS ｜ DB: erp_cdc_event_logs")]
       HUB[("RDS ETL-Hub")]
     end
     subgraph ETLSELF["自架 ETL（Coolify on EC2）"]
@@ -257,6 +287,7 @@ flowchart TB
   end
 
   subgraph REGION["區域級服務"]
+    KDS["Kinesis Data Streams<br/>(CDC 異動 event log)"]
     GLUE["AWS Glue Crawler + Catalog"]
     S3["S3 Data Lake"]
     ATH["Athena"]
@@ -273,7 +304,10 @@ flowchart TB
 
   ONP ==>|Site-to-Site VPN| VGW
   VGW --> DMS
-  DMS ==>|寫入| RAW
+  DMS ==>|資料寫入| RAW
+  DMS ==>|異動紀錄 event log| KDS
+  KDS ==>|event source 觸發| LMB
+  LMB ==>|寫入異動事件| CDCDB
   GLUE -->|掃描 Metadata| RAW
   SCHED -->|派工| REDIS
   REDIS -->|觸發| WORKER
@@ -287,28 +321,34 @@ flowchart TB
   NAT -->|對外上網| IGW
   DMS -.->|出向流量| NAT
   DMS -.->|task log| VPCE
+  LMB -.->|私網讀 stream| VPCE
   SGD -.->|套用| DMS
   SGR -.->|套用| RAW
   SGR -.->|套用| HUB
   IAM -.->|授權| DMS
+  IAM -.->|授權| LMB
   IAM -.->|授權| GLUE
   IAM -.->|授權| WORKER
   IAM -.->|授權| EC2
   SM -.->|提供帳密| DMS
+  SM -.->|提供帳密| LMB
   SM -.->|提供帳密| WORKER
   SM -.->|提供帳密| EC2
   KMS -.->|加密| RAW
   KMS -.->|加密| HUB
   KMS -.->|加密| S3
+  KMS -.->|加密| KDS
   CW -.->|監控| DMS
+  CW -.->|監控| KDS
+  CW -.->|監控| LMB
   CW -.->|監控| RAW
   CW -.->|監控| GLUE
   CT -.->|稽核| IAM
 
   %% 線條分類上色:藍=資料流 / 灰=基礎連線 / 紫=安全治理
-  linkStyle 0,1,2,3,4,5,6,7,8,9,10,11,12 stroke:#1f6feb,stroke-width:2.5px
-  linkStyle 13,14,15 stroke:#94a3b8,stroke-width:1.5px
-  linkStyle 16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32 stroke:#8b5cf6,stroke-width:1.5px
+  linkStyle 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 stroke:#1f6feb,stroke-width:2.5px
+  linkStyle 16,17,18,19 stroke:#94a3b8,stroke-width:1.5px
+  linkStyle 20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41 stroke:#8b5cf6,stroke-width:1.5px
 ```
 
 > 各階段範圍對照見〈IV、整體使用到的 AWS 設施〉的 Phase 欄。
@@ -319,9 +359,10 @@ flowchart TB
 
 - **VPC/Subnet**：VPC `10.0.0.0/16`；Private `10.0.32.0/24`(AZ-a)；DB `10.0.33.0/24`(AZ-a)、`10.0.34.0/24`(AZ-c)。DB Subnet Group ≥2 AZ。
 - **Route Table**：`10.0.0.0/16`→Local、`10.200.0.0/16`→VGW、`10.240.0.0/16`→VGW（**只增不移除**）。
-- **Security Group**：Oracle In 1521←DMS；DMS Out 1521→Oracle / 5432→RDS；RDS In 5432←DMS SG（+公司 CIDR 選用）。**禁 `0.0.0.0/0`**。
-- **RDS**：PostgreSQL `db.t4g.small`、gp3 20GB（只增不減）、Single-AZ(Dev)、Public Access=No。
-- **DMS**：`dms.t3.medium`/50GB/Private Subnet；Task = Full Load / Drop tables / Limited LOB 32KB / Validation Off。
+- **Security Group**：Oracle In 1521←DMS；DMS Out 1521→Oracle / 5432→RDS；RDS In 5432←DMS SG + Lambda SG（+公司 CIDR 選用）；Lambda Out 5432→RDS / 443→Kinesis Endpoint。**禁 `0.0.0.0/0`**。
+- **RDS**：PostgreSQL `db.t4g.small`、gp3 20GB（只增不減）、Single-AZ(Dev)、Public Access=No；同實例兩個 DB：`Raw-Data-Replication`（DMS 直寫）、`erp_cdc_event_logs`（Lambda 寫入）。
+- **DMS**：`dms.t3.medium`/50GB/Private Subnet；Task = Full Load + CDC / Drop tables / Limited LOB 32KB / Validation Off；資料 → RDS，異動紀錄 → Kinesis。
+- **Kinesis / Lambda**：Kinesis Data Streams 承接 CDC event log；Lambda 以 event source mapping 批次消費，寫入 `erp_cdc_event_logs`。
 - **Oracle Endpoint**：1521 / 唯讀 User（非 SYS/SYSTEM）；`dba_registry` 錯誤 → 套最小權限 SQL（見附錄）。
 - **Table Mapping**：白名單只含 `DS.*`、`M2201.*`，不同步其他 Schema。
 
@@ -339,13 +380,13 @@ flowchart LR
     SUB["2. Subnet<br/>Public 10.0.0.0/24 · Private 10.0.32.0/24(AZ-a)<br/>DB 10.0.33.0/24(AZ-a) · 10.0.34.0/24(AZ-c)"]
     VPN["3. VGW + Site-to-Site VPN<br/>地端 ↔ 雲端 IPsec"]
     RT["4. Route Table<br/>10.0.0.0/16→Local · 10.200/10.240→VGW（只增不刪）"]
-    SG["5. Security Group<br/>Oracle/DMS/RDS 互引用 · 禁 0.0.0.0/0"]
+    SG["5. Security Group<br/>Oracle/DMS/Lambda/RDS 互引用 · 禁 0.0.0.0/0"]
     VPC --> SUB --> VPN --> RT --> SG
   end
   subgraph DBL["② 資料庫層"]
     direction TB
     DBG["DB Subnet Group（≥2 AZ）"]
-    RDS["6. RDS Raw-Data-Replication<br/>PostgreSQL db.t4g.small · gp3 20GB · 5432 · Public=No"]
+    RDS["6. RDS 實例<br/>PostgreSQL db.t4g.small · gp3 20GB · 5432 · Public=No<br/>DB: Raw-Data-Replication + erp_cdc_event_logs"]
     DBG --> RDS
   end
   subgraph MIG["③ 遷移層"]
@@ -353,12 +394,20 @@ flowchart LR
     DMS["7. DMS Replication Instance<br/>dms.t3.medium · 50GB · Private Subnet"]
     EP["8. Endpoints + 測試<br/>Source Oracle 1521(唯讀) · Target PostgreSQL 5432"]
     TM["Table Mapping 白名單<br/>DS.* · M2201.*"]
-    TASK["9. Migration Task<br/>Full Load · Drop tables · LOB 32KB · Validation Off"]
-    VER["10. 驗證同步<br/>比對筆數 / 抽樣核對"]
-    DMS --> EP --> TM --> TASK --> VER
+    TASK["9. Migration Task<br/>Full Load + CDC · LOB 32KB · Validation Off"]
+    VER["12. 驗證同步<br/>比對筆數 / 抽樣核對 / 異動事件落地"]
+    DMS --> EP --> TM --> TASK
+  end
+  subgraph CDCL["④ CDC 事件層"]
+    direction TB
+    KDS["10. Kinesis Data Streams<br/>DMS CDC Target · 承接異動 event log"]
+    LMB["11. Lambda (CDC Consumer)<br/>event source mapping · VPC 內 · 寫 erp_cdc_event_logs"]
+    KDS --> LMB
   end
   SG ==> DBG
   RDS ==> DMS
+  TASK ==> KDS
+  LMB ==> VER
 ```
 
 ### 逐步明細
@@ -369,12 +418,14 @@ flowchart LR
 | 2 | 切 Subnet | Public / Private / DB Subnet | Public `10.0.0.0/24`、Private `10.0.32.0/24`(AZ-a)、DB `10.0.33.0/24`(AZ-a)+`10.0.34.0/24`(AZ-c) | 分層隔離;DB 跨 2 AZ 供 RDS 高可用 |
 | 3 | 建 VGW + VPN | VGW / Site-to-Site VPN | IPsec、對接地端閘道 | 地端 ↔ 雲端加密通道 |
 | 4 | 設 Route Table | Route Table | `10.0.0.0/16`→Local、`10.200.0.0/16`+`10.240.0.0/16`→VGW | 導向地端網段(**只增不刪**既有) |
-| 5 | 設 Security Group | SG(Oracle / DMS / RDS) | Oracle In 1521←DMS;DMS Out 1521→Oracle、5432→RDS;RDS In 5432←DMS SG;**禁 `0.0.0.0/0`** | 執行個體層防火牆,以 SG 互引取代固定 IP |
-| 6 | 建 RDS | RDS Raw-Data-Replication + DB Subnet Group | PostgreSQL `db.t4g.small`、gp3 20GB(只增不減)、Single-AZ(Dev)、Public Access=No | 原始複製落地目標 |
+| 5 | 設 Security Group | SG(Oracle / DMS / Lambda / RDS) | Oracle In 1521←DMS;DMS Out 1521→Oracle、5432→RDS;Lambda Out 5432→RDS、443→Kinesis Endpoint;RDS In 5432←DMS SG + Lambda SG;**禁 `0.0.0.0/0`** | 執行個體層防火牆,以 SG 互引取代固定 IP |
+| 6 | 建 RDS | RDS 實例 + DB Subnet Group | PostgreSQL `db.t4g.small`、gp3 20GB(只增不減)、Single-AZ(Dev)、Public Access=No;建兩個 DB:`Raw-Data-Replication`、`erp_cdc_event_logs` | 原始複製落地 + 異動事件紀錄 |
 | 7 | 建 DMS 主機 | DMS Replication Instance | `dms.t3.medium`、50GB、置於 Private Subnet | 執行遷移的運算資源 |
 | 8 | 建 Endpoints + 測試 | Source / Target Endpoint | Oracle 1521 唯讀 User(非 SYS/SYSTEM)、Target PostgreSQL 5432;先 Test connection | 建立來源 / 目標連線並驗通 |
-| 9 | 建 Migration Task | DMS Task + Table Mapping | Full Load / Drop tables on target / Limited LOB 32KB / Validation Off;白名單 `DS.*`、`M2201.*` | 全量複製指定 Schema |
-| 10 | 驗證同步 | — | 比對來源 / 目標筆數、抽樣核對欄位 | 確認落地正確、資料無漏 |
+| 9 | 建 Migration Task | DMS Task + Table Mapping | Full Load + CDC / Limited LOB 32KB / Validation Off;白名單 `DS.*`、`M2201.*` | 全量複製 + 持續擷取異動 |
+| 10 | 建 Kinesis Stream | Kinesis Data Streams | 作為 DMS CDC 的 Target Endpoint;DMS IAM Role 需 `kinesis:PutRecord*`;KMS 加密 | 承接來源異動的 event log |
+| 11 | 建 Lambda Consumer | Lambda + Event Source Mapping | 置於 VPC(Private Subnet)、掛 Lambda SG;批次消費 Kinesis;寫入 `erp_cdc_event_logs` | 把異動事件落地成可查詢的紀錄 |
+| 12 | 驗證同步 | — | 比對來源 / 目標筆數、抽樣核對欄位;確認異動事件寫入 `erp_cdc_event_logs`、Kinesis IteratorAge 無累積 | 確認落地正確、資料無漏 |
 
 ---
 
@@ -701,8 +752,12 @@ flowchart LR
 | DMS | Database Migration Service | 資料庫遷移服務 |
 | Replication Instance | DMS 複寫主機 | 執行遷移的運算資源（`dms.t3.medium`） |
 | Full Load | 全量載入 | 一次性整批複製既有資料（Phase 1） |
-| CDC | Change Data Capture | 持續同步增刪改（Phase 2） |
-| Endpoint | 來源 / 目標端點 | DMS 連線設定（Host/Port/帳密） |
+| CDC | Change Data Capture | 持續同步增刪改（Phase 2）；本架構 CDC 目標端點為 Kinesis |
+| Kinesis Data Streams | 即時串流服務 | 承接 DMS CDC 推送的異動 event log（JSON，含 before/after image 與操作別） |
+| Shard | Kinesis 分片 | Kinesis 的吞吐單位；partition key 決定事件落哪一片，同片內順序保證 |
+| Event Source Mapping | Lambda 事件來源對應 | Lambda 輪詢 Kinesis 並批次觸發的設定（取代 EventBridge 排程觸發） |
+| Lambda（CDC Consumer） | 無伺服器函式 | 消費 Kinesis 異動事件、寫入 `erp_cdc_event_logs`；與 ETL 層的自架 Taskiq 分屬不同層 |
+| Endpoint | 來源 / 目標端點 | DMS 連線設定（Host/Port/帳密）；CDC Target 為 Kinesis Stream |
 | Table Mapping | 表對應規則 | 白名單指定同步 Schema（`DS.*` 等） |
 | LOB | Large Object | 大型欄位；Limited LOB 32KB |
 | RDS | Relational Database Service | 託管關聯式資料庫（皆 PostgreSQL） |
@@ -751,6 +806,7 @@ flowchart LR
 
 | 名詞 | 說明 |
 | --- | --- |
-| Raw-Data-Replication | DMS 落地的「原始複製」RDS，保留來源樣貌、不轉換 |
+| Raw-Data-Replication | DMS 直寫落地的「原始複製」DB，保留來源樣貌、不轉換 |
+| erp_cdc_event_logs | 與 Raw-Data-Replication 同一座 RDS 實例的另一個 DB；存放 Lambda 由 Kinesis 消費而來的來源異動事件紀錄 |
 | ETL-Hub | 經 ETL（自架 Taskiq）轉換後的 RDS，供業務 / 分析使用 |
 | Data Hub / Center | 讀取 ETL-Hub 對外供應資料的應用層（EC2） |

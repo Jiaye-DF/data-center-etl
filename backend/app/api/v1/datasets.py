@@ -4,7 +4,7 @@ dataset ∈ {source, target}:
 - source → AWS_RDS_SOURCE_DB(erp_migration_test,Raw 原始資料)
 - target → AWS_RDS_TARGET_DB(erp_etl_hub_test,ETL 轉換後資料)
 
-瀏覽端點改讀 rds_table_meta 快照(不即時打 RDS)。全端點 admin-only(viewer 403)。
+瀏覽端點改讀 rds_table_meta 快照(不即時打 RDS)。全端點 admin-only(member 403)。
 """
 
 from datetime import date, datetime, time

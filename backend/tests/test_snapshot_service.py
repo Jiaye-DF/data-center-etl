@@ -403,10 +403,10 @@ async def test_columns_endpoint_removed_returns_404(client: AsyncClient) -> None
 
 
 # ── 權限:datasets 全端點 admin-only(task-003 RBAC 收緊)────────────────
-async def test_viewer_read_datasets_forbidden_403(
+async def test_member_read_datasets_forbidden_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    await _login_as(client, session_factory, "viewer")
+    await _login_as(client, session_factory, "member")
     resp = await client.get("/api/v1/datasets/source/schemas")
     assert resp.status_code == 403
     _assert_shell_403(resp.json())

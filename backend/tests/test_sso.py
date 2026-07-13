@@ -1,6 +1,6 @@
 """task-003 DF-SSO 後端整合測試(中央以 respx mock;真實 PostgreSQL 測試 DB)。
 
-涵蓋:callback 換 token / 首次登入建 viewer / 重複登入不重建 /
+涵蓋:callback 換 token / 首次登入建 member / 重複登入不重建 /
 back-channel logout 使 session 失效,以及 /me / /logout 契約行為。
 """
 
@@ -220,9 +220,9 @@ async def test_callback_central_unreachable_redirects_error(client: AsyncClient)
     assert resp.headers["location"] == f"{FRONTEND_URL}/login?error=exchange_error"
 
 
-# ── 首次登入建 user(role=viewer)/ 重複登入不重建 ───────────────────────
+# ── 首次登入建 user(role=member)/ 重複登入不重建 ───────────────────────
 @respx.mock
-async def test_first_sso_login_creates_viewer_user(
+async def test_first_sso_login_creates_member_user(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     _mock_central_ok()
@@ -230,7 +230,7 @@ async def test_first_sso_login_creates_viewer_user(
     async with session_factory() as session:
         stmt = select(User).where(User.sso_subject == CENTRAL_USER["userId"])
         user = (await session.execute(stmt)).scalar_one()
-        assert user.role == "viewer"
+        assert user.role == "member"
         assert user.password_hash is None
         assert user.username == CENTRAL_USER["email"]
 
@@ -249,7 +249,7 @@ async def test_repeat_sso_login_does_not_recreate_user(
         rows = (await session.execute(stmt)).scalars().all()
         assert len(rows) == 1
         assert rows[0].uid == first.uid
-        assert rows[0].role == "viewer"
+        assert rows[0].role == "member"
 
 
 @respx.mock
@@ -286,7 +286,7 @@ async def test_sso_me_returns_local_role_and_central_user(client: AsyncClient) -
     assert body["success"] is True
     data = body["data"]
     assert data["provider"] == "sso"
-    assert data["role"] == "viewer"
+    assert data["role"] == "member"
     assert data["username"] == CENTRAL_USER["email"]
     assert data["sso_user"]["user_id"] == CENTRAL_USER["userId"]
 
@@ -453,7 +453,7 @@ async def test_general_api_with_sso_token_revalidates_central(client: AsyncClien
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["provider"] == "sso"
-    assert data["role"] == "viewer"
+    assert data["role"] == "member"
 
 
 @respx.mock
