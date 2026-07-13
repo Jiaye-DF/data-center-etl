@@ -2,7 +2,7 @@
 
 涵蓋:run 清單分頁(最新在前)/ 狀態與觸發方式過濾、單 run 明細、
 單 run 逐表 log 欄位齊全(筆數 / 耗時 / 狀態 / 錯誤含 stack trace)與狀態過濾、
-viewer 可讀取清單 / 明細 / log。
+member 可讀取清單 / 明細 / log。
 
 v1.3.1:config-ETL 手動觸發(POST /runs/trigger)已隨 task-004/005 移除,對應測試刪除。
 """
@@ -257,18 +257,18 @@ async def _seed_log(
         await session.commit()
 
 
-# ── 未登入 / viewer 權限 ────────────────────────────────────────────────
+# ── 未登入 / member 權限 ────────────────────────────────────────────────
 async def test_list_requires_login_401(client: AsyncClient) -> None:
     resp = await client.get("/api/v1/runs")
     assert resp.status_code == 401
     _assert_shell(resp.json(), success=False, response_code=401)
 
 
-async def test_viewer_read_runs_forbidden_403(
+async def test_member_read_runs_forbidden_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """RBAC 收緊(task-003):runs 全端點 admin-only,viewer 一律 403。"""
-    await _login_as(client, session_factory, "viewer")
+    """RBAC 收緊(task-003):runs 全端點 admin-only,member 一律 403。"""
+    await _login_as(client, session_factory, "member")
     run_uid = await _seed_run(session_factory)
     list_resp = await client.get("/api/v1/runs")
     assert list_resp.status_code == 403
@@ -296,10 +296,10 @@ async def test_active_run_requires_login_401(client: AsyncClient) -> None:
     _assert_shell(resp.json(), success=False, response_code=401)
 
 
-async def test_active_run_viewer_forbidden_403(
+async def test_active_run_member_forbidden_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    await _login_as(client, session_factory, "viewer")
+    await _login_as(client, session_factory, "member")
     resp = await client.get("/api/v1/runs/active")
     assert resp.status_code == 403
     _assert_shell(resp.json(), success=False, response_code=403)

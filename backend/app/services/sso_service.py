@@ -1,7 +1,7 @@
 """DF-SSO 使用者對應與 session 管理(模式 B:本地帳密 + SSO 雙軌)。
 
 契約:`docs/Design-Base/90-third-party-service/08-df-sso.md`
-- SSO 使用者對應自有 `users` 表:首次登入自動建 viewer(升 admin 由管理者調整)
+- SSO 使用者對應自有 `users` 表:首次登入自動建 member(升 admin 由管理者調整)
 - SSO 側 token 驗證一律即時回源中央(契約 #1);本模組的撤銷註記僅為
   back-channel logout(契約 #4)的本地補強,見 fixed.md
 """
@@ -18,9 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.clients.df_sso import DfSsoUser, get_df_sso_client
 from app.core.config import get_settings
 from app.core.exceptions import AppError
+from app.core.roles import DEFAULT_ROLE
 from app.core.security import JWT_ALGORITHM
 from app.models.user import User
-from app.repositories.user_repo import UserRepository, resolve_role_code
+from app.repositories.user_repo import UserRepository
 from app.services.audit_service import AuditService
 
 PROVIDER_SSO = "sso"
@@ -81,11 +82,11 @@ class SsoService:
             by_username.display_name = sso_user.name
             await self._db.flush()
             return by_username
-        # 首次登入:自動建 viewer,無本地密碼(SSO-only)
+        # 首次登入:自動建 member,無本地密碼(SSO-only)
         user = await self._users.create(
             username=sso_user.email,
             password_hash=None,
-            role="viewer",
+            role=DEFAULT_ROLE,
             display_name=sso_user.name,
         )
         user.sso_subject = sso_user.user_id
@@ -106,7 +107,7 @@ def create_sso_access_token(
     now = datetime.now(UTC)
     payload: dict[str, object] = {
         "sub": str(user.uid),
-        "role": resolve_role_code(user),
+        "role": user.role,
         "provider": PROVIDER_SSO,
         "sso_sub": user.sso_subject,
         "sso_token": sso_token,

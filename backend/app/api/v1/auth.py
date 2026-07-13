@@ -11,7 +11,6 @@ from app.core.cookies import JWT_COOKIE_NAME, clear_jwt_cookie, set_jwt_cookie
 from app.core.response import success
 from app.core.security import create_access_token, decode_access_token
 from app.models.user import User
-from app.repositories.user_repo import resolve_role_code
 from app.schemas.auth import LoginRequest, LogoutResponse, UserResponse
 from app.schemas.response import ApiResponse
 from app.services.audit_service import AuditService
@@ -48,7 +47,7 @@ async def login(
 ) -> ApiResponse[UserResponse]:
     user = await AuthService(db).authenticate(payload.username, payload.password)
     settings = get_settings()
-    role_code = resolve_role_code(user)
+    role_code = user.role
     token = create_access_token(
         subject=str(user.uid),
         role=role_code,
@@ -103,7 +102,7 @@ async def me(
             uid=user.uid,
             username=user.username,
             display_name=user.display_name,
-            role=resolve_role_code(user),
+            role=user.role,
             provider=provider,
         )
     )

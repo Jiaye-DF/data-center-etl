@@ -2,7 +2,7 @@
 
 涵蓋:單表 / 全量同步 enqueue(InMemoryBroker 就地執行)回 202 + ApiResponse 外殼與 run uid、
 run 落 DB 狀態 success 且逐表 log 齊全、來源快照 last_synced_at / row_count 更新、
-viewer 呼叫同步一律 403。
+member 呼叫同步一律 403。
 """
 
 import asyncio
@@ -235,11 +235,11 @@ async def _get_source_meta(
         ).scalar_one()
 
 
-# ── 權限:viewer 一律 403 ───────────────────────────────────────────────
-async def test_viewer_sync_forbidden_403(
+# ── 權限:member 一律 403 ───────────────────────────────────────────────
+async def test_member_sync_forbidden_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    await _login_as(client, session_factory, "viewer")
+    await _login_as(client, session_factory, "member")
     resp = await client.post(
         "/api/v1/sync/table", json={"schema": "DS", "table": "AAA_FILE"}
     )

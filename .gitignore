@@ -42,3 +42,7 @@ etl_pkg.zip
 
 # TypeScript incremental build 產物
 *.tsbuildinfo
+
+# DB 備份 / dump(含帳密雜湊等敏感資料,禁進版控)
+.backup/
+*.dump

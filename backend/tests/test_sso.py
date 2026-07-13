@@ -1,6 +1,6 @@
 """task-003 DF-SSO 後端整合測試(中央以 respx mock;真實 PostgreSQL 測試 DB)。
 
-涵蓋:callback 換 token / 首次登入建 viewer / 重複登入不重建 /
+涵蓋:callback 換 token / 首次登入建 member / 重複登入不重建 /
 back-channel logout 使 session 失效,以及 /me / /logout 契約行為。
 """
 
@@ -69,13 +69,6 @@ CENTRAL_USER = {
     "loginAt": "2026-07-03T10:00:00.000Z",
 }
 
-# 內建角色 seed(對齊 v7 migration;create_all 只建表不 seed,測試 DB 需自行補)
-_SYSTEM_ACTOR_UID = "00000000-0000-0000-0000-000000000000"
-_SEED_ROLES = (
-    ("admin", "管理員", "00000000-0000-0000-0000-0000000000a1"),
-    ("viewer", "檢視者", "00000000-0000-0000-0000-0000000000a2"),
-)
-
 
 # ── fixtures ────────────────────────────────────────────────────────────
 @pytest.fixture(scope="session", autouse=True)
@@ -103,31 +96,6 @@ def _prepare_test_db() -> None:
         try:
             async with test_engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-                # seed 內建角色(冪等):UserRepository.create 依 roles.code 建關聯
-                for code, name, seed_uid in _SEED_ROLES:
-                    exists = (
-                        await conn.execute(
-                            text(
-                                "SELECT 1 FROM roles "
-                                "WHERE code = :code AND is_deleted = false"
-                            ),
-                            {"code": code},
-                        )
-                    ).scalar()
-                    if exists is None:
-                        await conn.execute(
-                            text(
-                                "INSERT INTO roles "
-                                "(uid, code, name, is_builtin, created_by, updated_by) "
-                                "VALUES (:uid, :code, :name, true, :actor, :actor)"
-                            ),
-                            {
-                                "uid": seed_uid,
-                                "code": code,
-                                "name": name,
-                                "actor": _SYSTEM_ACTOR_UID,
-                            },
-                        )
         finally:
             await test_engine.dispose()
 
@@ -252,9 +220,9 @@ async def test_callback_central_unreachable_redirects_error(client: AsyncClient)
     assert resp.headers["location"] == f"{FRONTEND_URL}/login?error=exchange_error"
 
 
-# ── 首次登入建 user(role=viewer)/ 重複登入不重建 ───────────────────────
+# ── 首次登入建 user(role=member)/ 重複登入不重建 ───────────────────────
 @respx.mock
-async def test_first_sso_login_creates_viewer_user(
+async def test_first_sso_login_creates_member_user(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     _mock_central_ok()
@@ -262,24 +230,9 @@ async def test_first_sso_login_creates_viewer_user(
     async with session_factory() as session:
         stmt = select(User).where(User.sso_subject == CENTRAL_USER["userId"])
         user = (await session.execute(stmt)).scalar_one()
-        assert user.role == "viewer"
+        assert user.role == "member"
         assert user.password_hash is None
         assert user.username == CENTRAL_USER["email"]
-
-
-@respx.mock
-async def test_first_sso_login_links_viewer_role(
-    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    """task-002:SSO 首次登入建立之使用者,roles 關聯 code = viewer(字串 dual-write 同值)。"""
-    _mock_central_ok()
-    await _sso_login(client)
-    async with session_factory() as session:
-        stmt = select(User).where(User.sso_subject == CENTRAL_USER["userId"])
-        user = (await session.execute(stmt)).scalar_one()
-        assert user.role_ref is not None
-        assert user.role_ref.code == "viewer"
-        assert user.role == "viewer"
 
 
 @respx.mock
@@ -296,7 +249,7 @@ async def test_repeat_sso_login_does_not_recreate_user(
         rows = (await session.execute(stmt)).scalars().all()
         assert len(rows) == 1
         assert rows[0].uid == first.uid
-        assert rows[0].role == "viewer"
+        assert rows[0].role == "member"
 
 
 @respx.mock
@@ -333,7 +286,7 @@ async def test_sso_me_returns_local_role_and_central_user(client: AsyncClient) -
     assert body["success"] is True
     data = body["data"]
     assert data["provider"] == "sso"
-    assert data["role"] == "viewer"
+    assert data["role"] == "member"
     assert data["username"] == CENTRAL_USER["email"]
     assert data["sso_user"]["user_id"] == CENTRAL_USER["userId"]
 
@@ -500,7 +453,7 @@ async def test_general_api_with_sso_token_revalidates_central(client: AsyncClien
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["provider"] == "sso"
-    assert data["role"] == "viewer"
+    assert data["role"] == "member"
 
 
 @respx.mock

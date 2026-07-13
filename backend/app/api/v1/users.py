@@ -32,7 +32,7 @@ async def list_users(
 @router.patch(
     "/{uid}/role",
     response_model=ApiResponse[UserListItemResponse],
-    summary="指派使用者角色(admin 專用;自降防呆 + 稽核 + dual-write)",
+    summary="指派使用者角色(admin 專用;自降防呆 + 稽核)",
 )
 async def assign_user_role(
     uid: UUID,

@@ -1,4 +1,4 @@
-"""同步觸發 API:逐表 / 全量鏡像來源 → hub(admin;viewer 403)。
+"""同步觸發 API:逐表 / 全量鏡像來源 → hub(admin;member 403)。
 
 - `POST /sync/table`(admin):body {schema, table} → enqueue 單表 mirror_sync。
 - `POST /sync/all`(admin):enqueue 全量 mirror_sync(worker 端 DS 優先)。

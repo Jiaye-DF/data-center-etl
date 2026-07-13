@@ -6,9 +6,9 @@
 - GET /schedules/schemas(各 schema 摘要:表數 / 已啟用排程數)
 - PATCH /schedules/{uid}(cron / 啟停 / 描述;invalid cron 400;404)
 - POST /schedules/{uid}/enable、/disable
-- POST /schedules/batch-enabled(admin 回影響筆數;viewer 403)
+- POST /schedules/batch-enabled(admin 回影響筆數;member 403)
 - 已移除端點:POST /schedules(create)、DELETE /schedules/{uid} → 404/405
-- 未登入 401、viewer 寫入 403
+- 未登入 401、member 寫入 403
 """
 
 import asyncio
@@ -278,21 +278,21 @@ async def _insert_log(
         await session.commit()
 
 
-# ── 未登入 / viewer 權限 ────────────────────────────────────────────────
+# ── 未登入 / member 權限 ────────────────────────────────────────────────
 async def test_list_requires_login_401(client: AsyncClient) -> None:
     resp = await client.get("/api/v1/schedules", params={"schema": "DS"})
     assert resp.status_code == 401
     _assert_shell(resp.json(), success=False, response_code=401)
 
 
-async def test_viewer_all_endpoints_forbidden_403(
+async def test_member_all_endpoints_forbidden_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """RBAC 收緊(task-003):schedules 全端點 admin-only,viewer 讀寫皆 403。"""
-    await _login_as(client, session_factory, "viewer")
+    """RBAC 收緊(task-003):schedules 全端點 admin-only,member 讀寫皆 403。"""
+    await _login_as(client, session_factory, "member")
     await _snapshot(session_factory, schema="DS", table="GAT_FILE")
     uid = await _bind_schedule(session_factory, schema="DS", table="GAT_FILE")
-    # 讀取類一律 403(v1.4.0 前為 200,權限收緊後不再開放 viewer)
+    # 讀取類一律 403(v1.4.0 前為 200,權限收緊後不再開放 member)
     resp = await client.get("/api/v1/schedules", params={"schema": "DS"})
     assert resp.status_code == 403
     _assert_shell(resp.json(), success=False, response_code=403)

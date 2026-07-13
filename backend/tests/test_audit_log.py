@@ -1,7 +1,7 @@
 """R-PII-003 audit_logs 稽核測試(真實 PostgreSQL 測試 DB)。
 
 涵蓋:登入成功寫 login_success、登入失敗寫 login_failed(獨立 session,
-不因 401 rollback 消失)、viewer 打 GET /audit-logs 403、
+不因 401 rollback 消失)、member 打 GET /audit-logs 403、
 admin 讀到分頁結果(最新在前 + action 過濾)。
 """
 
@@ -225,10 +225,10 @@ async def test_login_failed_audit_survives_rollback(
 
 
 # ── 查詢 API:權限與分頁 ────────────────────────────────────────────────
-async def test_viewer_get_audit_logs_403(
+async def test_member_get_audit_logs_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    await _login_as(client, session_factory, "viewer")
+    await _login_as(client, session_factory, "member")
     resp = await client.get("/api/v1/audit-logs")
     assert resp.status_code == 403
     _assert_shell(resp.json(), success=False, response_code=403)

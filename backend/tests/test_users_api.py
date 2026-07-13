@@ -1,7 +1,7 @@
 """task-003 角色列表 / 使用者清單 / 角色指派 API 測試(真實 PostgreSQL 測試 DB)。
 
 涵蓋:GET /roles(已登入可讀)、GET /users(admin only + 分頁 + eager load 角色)、
-PATCH /users/{uid}/role(admin only + 自降防呆 + 稽核 + 即時生效 + dual-write)。
+PATCH /users/{uid}/role(admin only + 自降防呆 + 稽核 + 即時生效)。
 """
 
 import os
@@ -141,27 +141,25 @@ async def test_roles_requires_login(client: AsyncClient) -> None:
     assert resp.status_code == 401
 
 
-async def test_viewer_can_read_roles(
+async def test_member_can_read_roles(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    await _create_user(session_factory, "vera", "vera-password-123", "viewer")
+    await _create_user(session_factory, "vera", "vera-password-123", "member")
     await _login(client, "vera", "vera-password-123")
     resp = await client.get("/api/v1/roles")
     assert resp.status_code == 200
     body = resp.json()
     assert body["success"] is True
     codes = sorted(item["code"] for item in body["data"]["items"])
-    assert codes == ["admin", "viewer"]
-    assert {"uid", "code", "name", "description", "is_builtin"} <= body["data"]["items"][
-        0
-    ].keys()
+    assert codes == ["admin", "member"]
+    assert {"code", "name", "description"} <= body["data"]["items"][0].keys()
 
 
 # ── GET /users ──────────────────────────────────────────────────────────
-async def test_viewer_hits_users_list_403(
+async def test_member_hits_users_list_403(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    await _create_user(session_factory, "vera", "vera-password-123", "viewer")
+    await _create_user(session_factory, "vera", "vera-password-123", "member")
     await _login(client, "vera", "vera-password-123")
     resp = await client.get("/api/v1/users")
     assert resp.status_code == 403
@@ -171,7 +169,7 @@ async def test_admin_lists_users_with_provider_and_role(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _create_user(session_factory, "adam", "adam-password-123", "admin")
-    await _create_user(session_factory, "vera", "vera-password-123", "viewer")
+    await _create_user(session_factory, "vera", "vera-password-123", "member")
     await _login(client, "adam", "adam-password-123")
     resp = await client.get("/api/v1/users")
     assert resp.status_code == 200
@@ -182,15 +180,15 @@ async def test_admin_lists_users_with_provider_and_role(
     by_username = {row["username"]: row for row in body["data"]["items"]}
     assert by_username["adam"]["role"] == "admin"
     assert by_username["adam"]["provider"] == "local"
-    assert by_username["vera"]["role"] == "viewer"
+    assert by_username["vera"]["role"] == "member"
 
 
 # ── PATCH /users/{uid}/role ────────────────────────────────────────────
-async def test_viewer_cannot_assign_role(
+async def test_member_cannot_assign_role(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    target = await _create_user(session_factory, "riser", "riser-password-123", "viewer")
-    await _create_user(session_factory, "vera", "vera-password-123", "viewer")
+    target = await _create_user(session_factory, "riser", "riser-password-123", "member")
+    await _create_user(session_factory, "vera", "vera-password-123", "member")
     await _login(client, "vera", "vera-password-123")
     resp = await client.patch(
         f"/api/v1/users/{target.uid}/role", json={"role": "admin"}
@@ -201,14 +199,14 @@ async def test_viewer_cannot_assign_role(
 async def test_admin_assigns_role_effective_next_request(
     app: FastAPI, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """升級 viewer → admin 後,該使用者下一請求即以新角色判定(即時生效);
-    反向降回 viewer 後同請求 403(不發新 token / 不強制重登)。
+    """升級 member → admin 後,該使用者下一請求即以新角色判定(即時生效);
+    反向降回 member 後同請求 403(不發新 token / 不強制重登)。
 
     admin / riser 各自獨立登入 session(各自獨立 cookie jar),同一 app 實例
     (同一 DB),模擬「admin 指派角色時,riser 沿用既有登入不重登」的真實情境。
     """
     await _create_user(session_factory, "adam", "adam-password-123", "admin")
-    riser = await _create_user(session_factory, "riser", "riser-password-123", "viewer")
+    riser = await _create_user(session_factory, "riser", "riser-password-123", "member")
 
     async with _new_client(app) as riser_client, _new_client(app) as admin_client:
         await _login(riser_client, "riser", "riser-password-123")
@@ -233,18 +231,16 @@ async def test_admin_assigns_role_effective_next_request(
             ).scalar_one()
             assert log.target_uid == riser.uid
 
-        # dual-write:deprecated 字串欄位同步
+        # DB 角色字串已更新
         async with session_factory() as session:
             row = (
                 await session.execute(select(User).where(User.uid == riser.uid))
             ).scalar_one()
             assert row.role == "admin"
-            assert row.role_ref is not None
-            assert row.role_ref.code == "admin"
 
-        # 反向降回 viewer 後同請求 403
+        # 反向降回 member 後同請求 403
         resp = await admin_client.patch(
-            f"/api/v1/users/{riser.uid}/role", json={"role": "viewer"}
+            f"/api/v1/users/{riser.uid}/role", json={"role": "member"}
         )
         assert resp.status_code == 200, resp.text
         assert (await riser_client.post("/api/v1/admin-only-probe")).status_code == 403
@@ -255,7 +251,7 @@ async def test_admin_cannot_demote_self(
 ) -> None:
     admin = await _create_user(session_factory, "adam", "adam-password-123", "admin")
     await _login(client, "adam", "adam-password-123")
-    resp = await client.patch(f"/api/v1/users/{admin.uid}/role", json={"role": "viewer"})
+    resp = await client.patch(f"/api/v1/users/{admin.uid}/role", json={"role": "member"})
     assert resp.status_code == 403
     body = resp.json()
     assert body["success"] is False
@@ -266,7 +262,7 @@ async def test_assign_unknown_role_code_404(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _create_user(session_factory, "adam", "adam-password-123", "admin")
-    target = await _create_user(session_factory, "riser", "riser-password-123", "viewer")
+    target = await _create_user(session_factory, "riser", "riser-password-123", "member")
     await _login(client, "adam", "adam-password-123")
     resp = await client.patch(
         f"/api/v1/users/{target.uid}/role", json={"role": "ghost-role"}

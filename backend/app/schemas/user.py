@@ -10,7 +10,7 @@ class UserListItemResponse(BaseModel):
         default=None, description="顯示名稱(SSO 姓名;無則前端 fallback 帳號)"
     )
     provider: str = Field(description='登入來源:"local" | "sso"')
-    role: str = Field(description="角色 code(admin / viewer)")
+    role: str = Field(description="角色 code(admin / member)")
 
 
 class UserListResponse(BaseModel):
@@ -22,5 +22,5 @@ class UserListResponse(BaseModel):
 
 class RoleAssignRequest(BaseModel):
     role: str = Field(
-        min_length=1, max_length=50, description="目標角色 code(如 admin / viewer)"
+        min_length=1, max_length=20, description="目標角色 code(admin / member)"
     )

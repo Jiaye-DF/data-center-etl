@@ -2,13 +2,11 @@ import { baseApi } from '@/lib/api/baseApi'
 import { unwrap, type ApiEnvelope } from '@/types/api'
 import type { AuthProvider, UserRole } from '@/lib/api/authApi'
 
-/** 角色下拉選項(供指派 UI 使用) */
+/** 角色下拉選項(供指派 UI 使用;後端固定回 admin / member) */
 export interface RoleOption {
-  uid: string
   code: string
   name: string
   description: string | null
-  is_builtin: boolean
 }
 
 export interface UserListItem {

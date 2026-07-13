@@ -16,7 +16,7 @@ class UserResponse(BaseModel):
     display_name: str | None = Field(
         default=None, description="顯示名稱(SSO 姓名;無則前端 fallback 帳號)"
     )
-    role: str = Field(description="角色:admin(可寫)/ viewer(唯讀)")
+    role: str = Field(description="角色:admin(可寫)/ member(唯讀)")
     provider: str = Field(
         default="local",
         description='登入來源(模式 B 分流依據;08-df-sso.md):"local" | "sso"',
