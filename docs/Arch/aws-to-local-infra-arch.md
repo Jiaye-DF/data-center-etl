@@ -7,7 +7,7 @@
 > **章節導覽（依 Phase 分類）**
 > - **總覽**：〈I〉目標 ·〈II〉端到端架構圖
 > - **Phase 1 · 基礎建設**：〈III〉VPC 網路拓撲 ·〈IV〉Security Group 資料流 ·〈V〉Phase 1 流程圖
-> - **Phase 2 · ETL（Glue Catalog + 自架 Taskiq）**：〈VI〉Glue 前置：VPC Endpoint 問題與解法 ·〈VII〉VPC Endpoint 總表與 SG 策略 ·〈VIII〉Glue Crawler + Data Catalog（Lake Formation）·〈IX〉Phase 2 流程圖 ·〈X〉自架排程項目（Taskiq + Redis）
+> - **Phase 2 · ETL**：〈VI〉Glue 前置：VPC Endpoint 問題與解法 ·〈VII〉VPC Endpoint 總表與 SG 策略 ·〈VIII〉Glue Crawler + Data Catalog（Lake Formation）·〈IX〉Phase 2 流程圖 ·〈X〉自架排程項目（Taskiq + Redis）
 > - **跨階段 / 參考**：〈XI〉整體 AWS 設施 ·〈XII〉設施關聯圖 ·〈XIII〉名詞解說（一）·〈XIV〉名詞解說（二）
 > - **附錄**：A Phase 1 關鍵參數 · B Oracle 最小權限 SQL · C Troubleshooting 速查
 
