@@ -236,13 +236,16 @@
         <a href="#sg"><i>IV</i><span>Security Group 資料流</span></a>
         <a href="#sop"><i>V</i><span>Phase 1 流程圖</span></a>
         <div class="sb-group">Phase 2 · ETL（Catalog + 自架 Taskiq）</div>
-        <a href="#vpce"><i>VI</i><span>Glue 前置 VPC Endpoints</span></a>
-        <a href="#crawler"><i>VII</i><span>Glue Crawler + Lake Formation</span></a>
-        <a href="#sop2"><i>VIII</i><span>Phase 2 流程圖（Catalog → 自架 Taskiq）</span></a>
+        <a href="#vpce"><i>VI</i><span>Glue 前置：VPC Endpoint 問題與解法</span></a>
+        <a href="#vpce2"><i>VII</i><span>VPC Endpoint 總表與 SG 策略</span></a>
+        <a href="#crawler"><i>VIII</i><span>Glue Crawler + Lake Formation</span></a>
+        <a href="#sop2"><i>IX</i><span>Phase 2 流程圖（Catalog → 自架 Taskiq）</span></a>
+        <a href="#sched"><i>X</i><span>自架排程項目（Taskiq + Redis）</span></a>
         <div class="sb-group">跨階段 · 參考</div>
-        <a href="#infra"><i>IX</i><span>整體 AWS 設施</span></a>
-        <a href="#relmap"><i>X</i><span>設施關聯圖</span></a>
-        <a href="#glossary"><i>XI</i><span>名詞解說</span></a>
+        <a href="#infra"><i>XI</i><span>整體 AWS 設施</span></a>
+        <a href="#relmap"><i>XII</i><span>設施關聯圖</span></a>
+        <a href="#glossary"><i>XIII</i><span>名詞解說（一）網路 · 遷移</span></a>
+        <a href="#glossary2"><i>XIV</i><span>名詞解說（二）ETL · 分析 · 安全</span></a>
       </nav>
     </div>
   </aside>
@@ -302,7 +305,7 @@
       <dt>Data Hub / Center</dt><dd>讀取 ETL-Hub 對外供應資料的應用層（EC2）。</dd>
       <dt>EC2</dt><dd>虛擬主機，執行 Data Hub / Center 運算。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
   </div>
 </section>
 
@@ -330,27 +333,27 @@
     <div class="mermaid">
 flowchart TB
   subgraph ONPREM["🏢 On-Premise 企業內網"]
-    ERP["ERP / BPM / HRM<br/>Oracle 1521 · SQL Server 1433"]
+    ERP["ERP / BPM / HRM<br/>Oracle · SQL Server"]
     BIZ["各業務系統<br/>(資料消費端)"]
   end
 
-  subgraph AWS["☁️ AWS VPC 10.0.0.0/16 (ap-northeast-1)"]
+  subgraph AWS["☁️ AWS VPC (ap-northeast-1)"]
     VGW{{"VGW (VPN 落地)"}}
 
     subgraph Z1["Phase 1–2 ｜ 遷移落地（Full Load + CDC）"]
       direction LR
-      DMS["DMS Replication Instance<br/>Full Load + CDC"]
-      KDS["Kinesis Data Streams<br/>（CDC 異動 event log）"]
-      LMB["Lambda<br/>（消費 event → 寫入 DB）"]
-      RAW[("DB: Raw-Data-Replication<br/>（RDS PostgreSQL）")]
-      CDCDB[("DB: erp_cdc_event_logs<br/>（同座 RDS · 異動事件）")]
+      DMS["DMS Replication Instance"]
+      KDS["Kinesis Data Streams"]
+      LMB["Lambda (CDC Consumer)"]
+      RAW[("RDS ｜ Raw-Data-Replication")]
+      CDCDB[("RDS ｜ erp_cdc_event_logs")]
     end
 
     subgraph Z2["Phase 2 ｜ ETL（Catalog + 自架 Taskiq）"]
       direction LR
-      GLUE["Glue Crawler + Data Catalog<br/>（建立 Metadata）"]
-      SCHED["Taskiq Scheduler"] --> REDIS["Redis<br/>（broker）"] --> WORKER["Taskiq Worker<br/>（Docker / Coolify on EC2）"]
-      HUB[("RDS ETL-Hub<br/>PostgreSQL")]
+      GLUE["Glue Crawler + Data Catalog"]
+      SCHED["Taskiq Scheduler"] --> REDIS["Redis"] --> WORKER["Taskiq Worker"]
+      HUB[("RDS ｜ ETL-Hub")]
     end
 
     EC2["EC2 ｜ Data Hub / Center"]
@@ -368,12 +371,12 @@ flowchart TB
     end
   end
 
-  ERP == "Site-to-Site VPN｜1521" ==> VGW
+  ERP == "Site-to-Site VPN" ==> VGW
   VGW --> DMS
-  DMS == "資料｜5432" ==> RAW
+  DMS == "資料" ==> RAW
   DMS == "異動紀錄（CDC event log）" ==> KDS
   KDS == "event source 觸發" ==> LMB
-  LMB == "寫入異動事件｜5432" ==> CDCDB
+  LMB == "寫入異動事件" ==> CDCDB
   RAW == "掃描 Metadata" ==> GLUE
   RAW == "讀取" ==> WORKER
   WORKER == "寫入" ==> HUB
@@ -410,7 +413,7 @@ flowchart TB
       <dt>RAG</dt><dd>檢索增強生成，降低 AI 幻覺（Phase 4）。</dd>
       <dt>MCP</dt><dd>AI Agent 標準化存取外部工具 / 資料的協定。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
   </div>
 </section>
 
@@ -424,30 +427,30 @@ flowchart TB
     <div class="mermaid">
 flowchart TB
   subgraph ONPREM["🏢 On-Premise 企業內網"]
-    ORA[("Oracle / 1521<br/>唯讀 User")]
+    ORA[("Oracle")]
   end
   subgraph AWS["☁️ AWS VPC 10.0.0.0/16 (ap-northeast-1)"]
     IGW{{"Internet Gateway"}}
     VGW{{"VGW (VPN)"}}
     subgraph PUB["Public Subnet 10.0.0.0/24"]
-      NAT["NAT Gateway<br/>私網對外更新"]
+      NAT["NAT Gateway"]
     end
     subgraph PRIV["Private Subnet 10.0.32.0/24 (AZ-a)"]
-      DMS["DMS Replication Instance<br/>dms.t3.medium / 50GB<br/>Task: Full Load + CDC"]
-      LMB["Lambda (CDC Consumer)<br/>VPC 內執行"]
+      DMS["DMS Replication Instance"]
+      LMB["Lambda (CDC Consumer)"]
     end
     subgraph DBG["DB Subnet Group (≥2 AZ)"]
-      subgraph RDSI["RDS 實例 db.t4g.small / 5432"]
+      subgraph RDSI["RDS 實例"]
         RAW[("DB: Raw-Data-Replication")]
         CDCDB[("DB: erp_cdc_event_logs")]
       end
       NETA["DB Subnet 10.0.33.0/24 (AZ-a)"]
       NETC["DB Subnet 10.0.34.0/24 (AZ-c)"]
     end
-    VPCE["VPC Endpoint<br/>(S3 Gateway + Kinesis Interface)"]
+    VPCE["VPC Endpoints"]
   end
 
-  KDS["Kinesis Data Streams<br/>（區域級 · CDC event log）"]
+  KDS["Kinesis Data Streams<br/>（區域級服務）"]
 
   ORA == "VPN｜TCP 1521" ==> VGW
   VGW --> DMS
@@ -506,7 +509,7 @@ AWS VPC 10.0.0.0/16                          用途：整體雲端私有網路
       <dt>DB Subnet Group</dt><dd>RDS 子網群組，須含 ≥2 AZ。</dd>
       <dt>VPC Endpoint</dt><dd>私網不繞公網存取 S3 等服務。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
   </div>
 </section>
 
@@ -561,7 +564,7 @@ flowchart LR
       <dt>NACL</dt><dd>子網層無狀態防火牆，排查連線問題的檢查項之一。</dd>
       <dt>CIDR</dt><dd>網段表示法，如公司 CIDR 選用來源。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
   </div>
 </section>
 
@@ -575,32 +578,32 @@ flowchart LR
 flowchart LR
   subgraph NET["① 網路層（順序不可跳）"]
     direction TB
-    VPC["1. VPC ｜ 10.0.0.0/16"]
-    SUB["2. Subnet<br/>Public 10.0.0.0/24 · Private 10.0.32.0/24(AZ-a)<br/>DB 10.0.33.0/24(AZ-a) · 10.0.34.0/24(AZ-c)"]
-    VPN["3. VGW + Site-to-Site VPN<br/>地端 ↔ 雲端 IPsec"]
-    RT["4. Route Table<br/>10.0.0.0/16→Local · 10.200/10.240→VGW（只增不刪）"]
-    SG["5. Security Group<br/>Oracle/DMS/Lambda/RDS 互引用 · 禁 0.0.0.0/0"]
+    VPC["1. VPC"]
+    SUB["2. Subnet<br/>Public · Private · DB"]
+    VPN["3. VGW + Site-to-Site VPN"]
+    RT["4. Route Table"]
+    SG["5. Security Group"]
     VPC --> SUB --> VPN --> RT --> SG
   end
   subgraph DBL["② 資料庫層"]
     direction TB
     DBG["DB Subnet Group（≥2 AZ）"]
-    RDS["6. RDS 實例<br/>PostgreSQL db.t4g.small · gp3 20GB · 5432 · Public=No<br/>DB: Raw-Data-Replication + erp_cdc_event_logs"]
+    RDS["6. RDS 實例<br/>Raw-Data-Replication + erp_cdc_event_logs"]
     DBG --> RDS
   end
   subgraph MIG["③ 遷移層"]
     direction TB
-    DMS["7. DMS Replication Instance<br/>dms.t3.medium · 50GB · Private Subnet"]
-    EP["8. Endpoints + 測試<br/>Source Oracle 1521(唯讀) · Target PostgreSQL 5432"]
-    TM["Table Mapping 白名單<br/>DS.* · M2201.*"]
-    TASK["9. Migration Task<br/>Full Load + CDC · LOB 32KB · Validation Off"]
+    DMS["7. DMS Replication Instance"]
+    EP["8. Endpoints + 連線測試"]
+    TM["Table Mapping 白名單"]
+    TASK["9. Migration Task<br/>Full Load + CDC"]
     DMS --> EP --> TM --> TASK
   end
   subgraph CDCL["④ CDC 事件層"]
     direction TB
-    KDS["10. Kinesis Data Streams<br/>DMS CDC Target · 承接異動 event log"]
-    LMB["11. Lambda (CDC Consumer)<br/>event source mapping · VPC 內<br/>寫入 erp_cdc_event_logs"]
-    VER["12. 驗證同步<br/>比對筆數 / 抽樣核對 / 異動事件落地"]
+    KDS["10. Kinesis Data Streams"]
+    LMB["11. Lambda (CDC Consumer)"]
+    VER["12. 驗證同步"]
     KDS --> LMB --> VER
   end
   SG ==> DBG
@@ -654,15 +657,15 @@ flowchart LR
       <dt>LOB</dt><dd>大型欄位；本架構 Limited LOB 32KB。</dd>
       <dt>gp3</dt><dd>通用型 SSD，可線上擴充（只增不減）。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
   </div>
 </section>
 
 <!-- Phase 2 · Glue 前置 VPC Endpoints -->
 <section id="vpce">
   <span class="ptag t2">Phase 2 · ETL / Glue</span>
-  <h2><span class="num">VI</span>Glue 前置作業：VPC Endpoints</h2>
-  <p class="lead">Phase 2 用 AWS Glue Crawler 建立來源 Metadata（寫入 Data Catalog）。Crawler 跑在 Private Subnet，呼叫 AWS API 會因無對外路由而失敗 → 用 <b>VPC Endpoint 走 AWS Backbone</b> 解決，而非開 NAT Gateway。（實際 ETL 轉換執行改自架 Taskiq + Redis，見〈VIII〉；自架 Worker 若需讀 Secrets Manager 等，可共用同一組 Endpoint。）</p>
+  <h2><span class="num">VI</span>Glue 前置：VPC Endpoint 問題與解法</h2>
+  <p class="lead">Phase 2 用 AWS Glue Crawler 建立來源 Metadata（寫入 Data Catalog）。Crawler 跑在 Private Subnet，呼叫 AWS API 會因無對外路由而失敗 → 用 <b>VPC Endpoint 走 AWS Backbone</b> 解決，而非開 NAT Gateway。（實際 ETL 轉換執行改自架 Taskiq + Redis，見〈IX〉〈X〉；自架 Worker 若需讀 Secrets Manager 等，可共用同一組 Endpoint。本節談問題與解法，Endpoint 總表 / SG 策略 / 命名規範見〈VII〉。）</p>
   <div class="namekey">
     <b>名稱分類</b>
     <span class="nk"><span class="sw svc"></span>AWS 服務 / 內建項目</span>
@@ -735,6 +738,31 @@ flowchart LR
     </tbody>
   </table>
 
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>STS</dt><dd>Security Token Service，發臨時憑證；AssumeRole 靠它。</dd>
+      <dt>AssumeRole</dt><dd>取得 IAM Role 的臨時權限；Glue 啟動時呼叫 STS 執行。</dd>
+      <dt>VPC Endpoint</dt><dd>Private Subnet 不繞公網、走 AWS Backbone 存取 AWS 服務。</dd>
+      <dt>NAT Gateway</dt><dd>私網「只出不進」對外上網；本架構刻意不用。</dd>
+      <dt>Private Subnet</dt><dd>無 <code>0.0.0.0/0</code> 路由的私有子網，Glue Worker 置於此。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
+  </div>
+</section>
+
+<!-- Phase 2 · VPC Endpoint 總表 / SG 策略 -->
+<section id="vpce2">
+  <span class="ptag t2">Phase 2 · ETL / Glue</span>
+  <h2><span class="num">VII</span>VPC Endpoint 總表與 SG 策略</h2>
+  <p class="lead">承〈VI〉的解法，把要建的 Endpoint、共用 Security Group、命名規範與整體設計原則收攏成可照做的清單。</p>
+  <div class="namekey">
+    <b>名稱分類</b>
+    <span class="nk"><span class="sw svc"></span>AWS 服務 / 內建項目</span>
+    <span class="nk"><span class="sw test"></span>測試名稱（正式環境要換）</span>
+    <span class="nk"><span class="sw cust"></span>自定義名稱（命名規範 / 專案取名）</span>
+  </div>
+
   <h3>VPC Endpoint 總表</h3>
   <p class="lead">Required 四項為 Glue 運行所需（Private DNS Enabled、佈於 Subnet-A / Subnet-C）；Optional 依後續服務需要再加。</p>
   <table>
@@ -800,23 +828,21 @@ flowchart LR
   <div class="terms">
     <div class="terms-h">📖 本頁名詞</div>
     <dl>
-      <dt>STS</dt><dd>Security Token Service，發臨時憑證；AssumeRole 靠它。</dd>
-      <dt>AssumeRole</dt><dd>取得 IAM Role 的臨時權限；Glue 啟動時呼叫 STS 執行。</dd>
-      <dt>VPC Endpoint</dt><dd>Private Subnet 不繞公網、走 AWS Backbone 存取 AWS 服務。</dd>
       <dt>Interface Endpoint</dt><dd>建 ENI + 吃 SG + Private DNS（STS / Secrets / Logs…）。</dd>
       <dt>Gateway Endpoint</dt><dd>S3 專用，改 Route Table、不建 ENI / 不吃 SG。</dd>
       <dt>ENI</dt><dd>Elastic Network Interface，Interface Endpoint 在子網內的網卡。</dd>
       <dt>Private DNS</dt><dd>讓 AWS 服務網域自動解析到 Endpoint 私有 IP。</dd>
-      <dt>NAT Gateway</dt><dd>私網「只出不進」對外上網；本架構刻意不用。</dd>
+      <dt>SG-VPCE-AWS-Services</dt><dd>所有 AWS Interface Endpoint 共用的 SG（Inbound 443 ← Glue SG）。</dd>
+      <dt>Prefix List</dt><dd>Gateway Endpoint 在 Route Table 自動加入的目的地清單（<code>pl-xxxx</code>）。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
   </div>
 </section>
 
 <!-- Phase 2 · Glue Crawler + Lake Formation -->
 <section id="crawler">
   <span class="ptag t2">Phase 2 · ETL / Glue</span>
-  <h2><span class="num">VII</span>Glue Crawler + Data Catalog（Lake Formation 權限）</h2>
+  <h2><span class="num">VIII</span>Glue Crawler + Data Catalog（Lake Formation 權限）</h2>
   <p class="lead">VPC Endpoint 到位、Glue Connection Ready 後，建 Crawler 掃描 RDS PostgreSQL，把 Metadata 寫入 Glue Data Catalog。此階段的關卡不在網路，而在 <b>Lake Formation 權限模型</b>。</p>
   <div class="namekey">
     <b>名稱分類</b>
@@ -836,16 +862,16 @@ flowchart LR
   <div class="diagram hero">
     <div class="mermaid">
 flowchart LR
-  CONN["Glue Connection ✅<br/>glue-connection-rds-erp-oracle-test-pg"]
-  CRAWLER["Glue Crawler<br/>crawler-rds-erp-oracle-test-pg"]
-  RDS[("RDS PostgreSQL<br/>erp_migration_test")]
-  CAT["Glue Data Catalog<br/>erp_migration_test_catalog"]
+  CONN["Glue Connection ✅"]
+  CRAWLER["Glue Crawler"]
+  RDS[("RDS PostgreSQL")]
+  CAT["Glue Data Catalog"]
   LF{{"Lake Formation<br/>權限閘"}}
 
   CONN --> CRAWLER
-  CRAWLER == "掃描 erp_migration_test/%" ==> RDS
+  CRAWLER == "掃描來源結構" ==> RDS
   CRAWLER == "寫入 Metadata" ==> CAT
-  LF -. "Describe / Create Table 攔截" .-> CRAWLER
+  LF -. "攔截" .-> CRAWLER
 
   classDef p fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
   classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
@@ -901,7 +927,7 @@ flowchart LR
   </table>
   <div class="callout warn"><span class="h">⚠ 不走刪 DB 重建那條路</span>刪除屬破壞性（且此 DB 已被 LF 管控要 <code>Drop</code> 權限）。<b>補 Database Grant 才是最小、最安全的修法</b>，補齊後根本不需要重建。</div>
 
-  <div class="callout ok"><span class="h">✅ 結果</span>補上 Database 層後重跑 Crawler → <code>Tables &gt; 0</code>，Metadata 建立成功 → 進入下一步 <b>ETL 轉換</b>（改自架 Taskiq + Redis，見〈VIII〉；不再走 Glue Visual ETL Job）。</div>
+  <div class="callout ok"><span class="h">✅ 結果</span>補上 Database 層後重跑 Crawler → <code>Tables &gt; 0</code>，Metadata 建立成功 → 進入下一步 <b>ETL 轉換</b>（改自架 Taskiq + Redis，見〈IX〉〈X〉；不再走 Glue Visual ETL Job）。</div>
 
   <h3>已排除（非主因）</h3>
   <p>Connection Test / <code class="n-svc">GetSecretValue</code> / <code class="n-svc">GetConnection</code> 全 Success，只證明「連得到 DB、拿得到憑證」，與「能否寫進 Glue Catalog」是兩條獨立授權鏈。以下皆已驗證正常，問題單純在 <b>Data Catalog 的 Lake Formation 授權鏈</b>：</p>
@@ -917,15 +943,15 @@ flowchart LR
       <dt>Data Lake Administrator</dt><dd>Lake Formation 最高權限者，可授權 / 撤銷各資源。</dd>
       <dt>Hybrid Access Mode</dt><dd>IAM 與 LF 授權並存的過渡模式；本案未使用。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
   </div>
 </section>
 
 <!-- Phase 2 · 流程圖 -->
 <section id="sop2">
   <span class="ptag t2">Phase 2 · ETL / Glue</span>
-  <h2><span class="num">VIII</span>Phase 2 流程圖</h2>
-  <p class="lead">依「① 網路前置（VPC Endpoints）→ ② Glue 連線 / 掃描 → ③ Lake Formation 權限 → ④ ETL 執行（自架 Taskiq + Redis）」四層，一次一步、完成驗證再下一步。關鍵設定對齊 Phase 2 實測。</p>
+  <h2><span class="num">IX</span>Phase 2 流程圖</h2>
+  <p class="lead">依「① 網路前置（VPC Endpoints）→ ② Glue 連線 / 掃描 → ③ Lake Formation 權限 → ④ ETL 執行（自架 Taskiq + Redis）」四層，一次一步、完成驗證再下一步。關鍵設定對齊 Phase 2 實測；自架排程的實作細節見〈X〉。</p>
   <div class="namekey">
     <b>名稱分類</b>
     <span class="nk"><span class="sw svc"></span>AWS 服務 / 內建項目</span>
@@ -938,30 +964,30 @@ flowchart LR
 flowchart LR
   subgraph EP["① 網路前置層（VPC Endpoints）"]
     direction TB
-    SGV["1. SG-VPCE-AWS-Services<br/>Inbound 443 ← SG-ETL-Glue"]
-    IEP["2. Interface Endpoints<br/>STS · Secrets Manager · CloudWatch Logs<br/>（Private DNS on · Subnet-A/C）"]
-    GEP["3. S3 Gateway Endpoint<br/>改 Route Table（Prefix List pl-xxxx）"]
+    SGV["1. SG-VPCE-AWS-Services"]
+    IEP["2. Interface Endpoints<br/>STS · Secrets Manager · CloudWatch Logs"]
+    GEP["3. S3 Gateway Endpoint"]
     SGV --> IEP --> GEP
   end
   subgraph GL["② Glue 連線 / 掃描層"]
     direction TB
-    CONN["4. Glue Connection<br/>PostgreSQL · 同 RDS VPC/Subnet · SG-ETL-Glue"]
-    GDB["5. Glue Database<br/>erp_migration_test_catalog"]
-    CR["6. Glue Crawler<br/>Include erp_migration_test/% · On-Demand"]
+    CONN["4. Glue Connection"]
+    GDB["5. Glue Database"]
+    CR["6. Glue Crawler"]
     CONN --> GDB --> CR
   end
   subgraph LF["③ Lake Formation 權限層"]
     direction TB
-    DBG["7. Grant Database<br/>Describe · Create Table · Alter"]
-    TBG["8. Grant Table / Column<br/>ALL_TABLES · ALL_COLUMNS"]
-    RUN["9. 執行 Crawler → 驗證<br/>Tables &gt; 0"]
+    DBG["7. Grant Database 權限"]
+    TBG["8. Grant Table / Column 權限"]
+    RUN["9. 執行 Crawler → 驗證"]
     DBG --> TBG --> RUN
   end
   subgraph ET["④ ETL 執行層（自架 Taskiq + Redis）"]
     direction TB
-    SCH["10. Taskiq Scheduler + Redis<br/>依 DB 排程定義派工"]
-    ETLJ["11. Taskiq Worker<br/>直連 RDS：Raw → 轉換 → ETL-Hub"]
-    DEP["12. Docker Compose + Coolify<br/>部署於 EC2"]
+    SCH["10. Taskiq Scheduler + Redis"]
+    ETLJ["11. Taskiq Worker"]
+    DEP["12. Docker Compose + Coolify"]
     SCH --> ETLJ
     DEP -. 承載 .-> ETLJ
   end
@@ -991,26 +1017,45 @@ flowchart LR
       <tr><td>7</td><td>Grant Database 權限</td><td>Lake Formation</td><td>Principal <code class="n-cust">Glue-ServiceRole-ERP-Hub</code>；Database <b>Describe + Create Table + Alter</b></td><td>讓 Crawler 進得了 Database 層（關鍵缺口）</td></tr>
       <tr><td>8</td><td>Grant Table / Column</td><td>Lake Formation</td><td><code class="n-svc">ALL_TABLES</code>（Describe/Select/Insert/Alter/Delete）、<code class="n-svc">ALL_COLUMNS</code>（Select）</td><td>讓 Crawler 建 / 改表 Metadata</td></tr>
       <tr><td>9</td><td>執行 Crawler + 驗證</td><td>Glue Crawler</td><td>On-Demand Run → 查 Data Catalog</td><td>確認 <code>Tables &gt; 0</code>、Metadata 建立成功</td></tr>
-      <tr><td>10</td><td>建自架排程</td><td>Taskiq Scheduler + Redis（已實作）</td><td><code class="n-cust">schedules</code> 表一表一排程；cron 以 Asia/Taipei (UTC+8) 解讀；到點派 <code class="n-cust">mirror_sync</code> 增量（詳見下方〈自架排程項目〉）</td><td>取代 EventBridge / Lambda 編排</td></tr>
+      <tr><td>10</td><td>建自架排程</td><td>Taskiq Scheduler + Redis（已實作）</td><td><code class="n-cust">schedules</code> 表一表一排程；cron 以 Asia/Taipei (UTC+8) 解讀；到點派 <code class="n-cust">mirror_sync</code> 增量（詳見〈X〉自架排程項目）</td><td>取代 EventBridge / Lambda 編排</td></tr>
       <tr><td>11</td><td>建 ETL Worker</td><td>Taskiq Worker（已實作）</td><td>純 Python 直連 RDS：讀 Raw → 轉換 → 寫 <code class="n-cust">ETL-Hub</code>；不依賴 Glue Job / Spark</td><td>Raw → ETL-Hub 清洗轉換</td></tr>
       <tr><td>12</td><td>容器化部署</td><td>Docker Compose + Coolify（後續）</td><td>image <code class="n-cust">etl_</code> prefix；Coolify 部署於 EC2，連 RDS 讀寫</td><td>自架 ETL 上線</td></tr>
     </tbody>
   </table>
 
-  <h3>自架排程項目（Taskiq + Redis，對齊 data-center-etl 現況）</h3>
-  <p class="lead">排程已改由<b>自架 Taskiq + Redis</b> 處理（不用 EventBridge / Lambda / Glue Trigger）。排程定義存於自有 DB <code class="n-cust">schedules</code> 表，Scheduler 每輪重讀 DB，啟停即時生效；到點依組合併派 <code class="n-cust">mirror_sync</code> 增量同步，與手動觸發共用 <code class="n-cust">etl_runs</code> 執行紀錄。</p>
+  <div class="callout ok"><span class="h">✅ 目前進度</span>Step 1–9 已完成並驗證（Crawler 成功建立 Metadata，<code>Tables &gt; 0</code>）；Step 10–11（自架 Taskiq + Redis 排程與 Worker，細節見〈X〉）已於本專案 <code>data-center-etl</code> 實作並以 Docker Compose 運行、部署於 Coolify 測試站；Step 12 部署至 AWS EC2 為下一步。ETL 執行不再走 Glue Job。詳見 <code>docs/Tasks/v1.1.0/propose-v1.1.0.md</code>。</div>
 
-  <div class="diagram">
+  <div class="terms">
+    <div class="terms-h">📖 本頁名詞</div>
+    <dl>
+      <dt>VPC Endpoint</dt><dd>Private Subnet 走 AWS Backbone 存取 AWS 服務（Interface / Gateway 兩型）。</dd>
+      <dt>Glue Connection</dt><dd>Glue 連 RDS 的連線設定，含 VPC / Subnet / SG。</dd>
+      <dt>Glue Crawler</dt><dd>掃描資料源結構，把 Metadata 寫入 Data Catalog。</dd>
+      <dt>Lake Formation</dt><dd>在 IAM 之上對 Catalog 的 Database / Table / Column 細粒度授權。</dd>
+      <dt>Taskiq + Redis</dt><dd>自架 ETL：Scheduler 依 DB 排程派工、Redis 作 broker、Worker 直連 RDS 完成轉換。</dd>
+      <dt>Coolify</dt><dd>自架 PaaS / CD，把容器化 ETL 部署於 EC2。</dd>
+    </dl>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
+  </div>
+</section>
+
+<!-- Phase 2 · 自架排程項目 -->
+<section id="sched">
+  <span class="ptag t2">Phase 2 · ETL / Glue</span>
+  <h2><span class="num">X</span>自架排程項目（Taskiq + Redis）</h2>
+  <p class="lead">承〈IX〉Step 10–11：排程已改由<b>自架 Taskiq + Redis</b> 處理（不用 EventBridge / Lambda / Glue Trigger）。排程定義存於自有 DB <code class="n-cust">schedules</code> 表，Scheduler 每輪重讀 DB，啟停即時生效；到點依組合併派 <code class="n-cust">mirror_sync</code> 增量同步，與手動觸發共用 <code class="n-cust">etl_runs</code> 執行紀錄。對齊本專案 <code>data-center-etl</code> 現況。</p>
+
+  <div class="diagram hero">
     <div class="mermaid">
 flowchart LR
-  UI["排程管理 UI<br/>簡易模式：每 N 分 / 每 N 時 / 每日 / 每週<br/>＋進階 cron 模式"] --> SDB[("schedules 表<br/>一表一排程 · Asia/Taipei")]
-  SDB --> SRC["DbScheduleSource<br/>每輪自 DB 重讀<br/>啟停即時生效"]
-  SRC --> GRP["同 cron + schema<br/>分組合併派工"]
-  GRP --> RED["Redis<br/>broker"]
-  MAN["手動觸發<br/>（各檢視同步按鈕）"] -.-> RED
-  RED --> WK["Taskiq Worker<br/>mirror_sync 增量同步"]
+  UI["排程管理 UI"] --> SDB[("schedules 表<br/>一表一排程")]
+  SDB --> SRC["DbScheduleSource<br/>熱載入"]
+  SRC --> GRP["分組合併派工"]
+  GRP --> RED["Redis"]
+  MAN["手動觸發"] -.-> RED
+  RED --> WK["Taskiq Worker<br/>mirror_sync"]
   WK --> HUB[("ETL-Hub")]
-  WK --> RUNS[("etl_runs<br/>執行紀錄<br/>schedule / manual 同軌")]
+  WK --> RUNS[("etl_runs<br/>執行紀錄")]
 
   classDef ui fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
   classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
@@ -1035,29 +1080,27 @@ flowchart LR
     </tbody>
   </table>
 
-  <div class="callout ok"><span class="h">✅ 目前進度</span>Step 1–9 已完成並驗證（Crawler 成功建立 Metadata，<code>Tables &gt; 0</code>）；Step 10–11（自架 Taskiq + Redis 排程與 Worker，如上表）已於本專案 <code>data-center-etl</code> 實作並以 Docker Compose 運行、部署於 Coolify 測試站；Step 12 部署至 AWS EC2 為下一步。ETL 執行不再走 Glue Job。詳見 <code>docs/Tasks/v1.1.0/propose-v1.1.0.md</code>。</div>
+  <div class="callout"><span class="h">部署現況</span>Scheduler / Worker / Redis 已於本專案 <code>data-center-etl</code> 以 Docker Compose 運行、部署於 Coolify 測試站；搬上 AWS EC2 為〈IX〉Step 12。</div>
 
   <div class="terms">
     <div class="terms-h">📖 本頁名詞</div>
     <dl>
-      <dt>VPC Endpoint</dt><dd>Private Subnet 走 AWS Backbone 存取 AWS 服務（Interface / Gateway 兩型）。</dd>
-      <dt>Glue Connection</dt><dd>Glue 連 RDS 的連線設定，含 VPC / Subnet / SG。</dd>
-      <dt>Glue Crawler</dt><dd>掃描資料源結構，把 Metadata 寫入 Data Catalog。</dd>
-      <dt>Lake Formation</dt><dd>在 IAM 之上對 Catalog 的 Database / Table / Column 細粒度授權。</dd>
-      <dt>Taskiq + Redis</dt><dd>自架 ETL：Scheduler 依 DB 排程派工、Redis 作 broker、Worker 直連 RDS 完成轉換（取代 Glue Job + EventBridge / Lambda）。</dd>
+      <dt>Taskiq</dt><dd>Python 分散式任務佇列：Scheduler 依 DB 排程派工、Worker 執行同步。</dd>
+      <dt>Redis</dt><dd>Taskiq 的 broker（訊息佇列），排程與手動觸發皆經此派工。</dd>
+      <dt>DbScheduleSource</dt><dd>自訂 ScheduleSource：每輪自 DB 重讀啟用中排程，新增 / 啟停免重啟。</dd>
       <dt>一表一排程</dt><dd>每張來源表對應一筆排程（未刪除範圍內唯一）；同 cron + schema 合併派工。</dd>
       <dt>mirror_sync</dt><dd>Worker 的增量同步任務：讀 Raw → 增量轉換 → 寫 ETL-Hub；排程 / 手動觸發同軌。</dd>
       <dt>etl_runs</dt><dd>同步執行紀錄表，<code>trigger_type</code> 分 schedule / manual，供 UI 檢視歷史。</dd>
-      <dt>Coolify</dt><dd>自架 PaaS / CD，把容器化 ETL 部署於 EC2。</dd>
+      <dt>Schedule Coverage</dt><dd>排程涵蓋率檢視：盤點哪些表已排程 / 未排程，避免漏排。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
   </div>
 </section>
 
 <!-- 設施 -->
 <section id="infra">
   <span class="ptag tr">跨階段 · 參考</span>
-  <h2><span class="num">IX</span>整體使用到的 AWS 設施</h2>
+  <h2><span class="num">XI</span>整體使用到的 AWS 設施</h2>
   <p class="lead">只給系統方向，落地實際必須的設施一併納入規劃。</p>
 
   <h3>網路 / 連線</h3>
@@ -1135,14 +1178,14 @@ flowchart LR
       <dt>VPC Endpoint</dt><dd>私網不繞公網存取 S3 等服務。</dd>
       <dt>Route Table</dt><dd>決定封包流向（Local / VGW / NAT，只增不刪既有）。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
   </div>
 </section>
 
 <!-- 設施關聯圖 -->
 <section id="relmap">
   <span class="ptag tr">跨階段 · 參考</span>
-  <h2><span class="num">X</span>設施關聯圖</h2>
+  <h2><span class="num">XII</span>設施關聯圖</h2>
   <p class="lead">各 AWS 設施之間的關係:包含 / 套用 / 授權 / 提供帳密 / 加密 / 監控 / 讀寫。線條配色:<b style="color:#1f6feb">藍=資料流</b>、<b style="color:#64748b">灰=基礎連線</b>、<b style="color:#8b5cf6">紫=安全治理(SG / IAM / KMS / CloudWatch)</b>。</p>
   <div class="diagram hero">
     <div class="mermaid">
@@ -1176,7 +1219,7 @@ flowchart TB
   end
 
   subgraph REGION["區域級服務"]
-    KDS["Kinesis Data Streams<br/>(CDC 異動 event log)"]
+    KDS["Kinesis Data Streams"]
     GLUE["AWS Glue Crawler + Catalog"]
     S3["S3 Data Lake"]
     ATH["Athena"]
@@ -1274,15 +1317,15 @@ flowchart TB
       <dt>CloudWatch</dt><dd>Logs / Metrics / Alarms 監控告警。</dd>
       <dt>CloudTrail</dt><dd>記錄 API 操作軌跡供稽核。</dd>
     </dl>
-    <a href="#glossary" class="terms-more">→ 完整名詞見〈XI〉</a>
+    <a href="#glossary" class="terms-more">→ 完整名詞見〈XIII〉〈XIV〉</a>
   </div>
 </section>
 
 <!-- 名詞解說 -->
 <section id="glossary">
   <span class="ptag tr">跨階段 · 參考</span>
-  <h2><span class="num">XI</span>名詞解說</h2>
-  <p class="lead">本架構所有名詞的完整索引；各頁底部另有「📖 本頁名詞」就地速查。</p>
+  <h2><span class="num">XIII</span>名詞解說（一）網路 · Glue 前置 · 遷移</h2>
+  <p class="lead">名詞完整索引上半：網路 / 連線、VPC Endpoint 與 Glue 前置、遷移 / 資料庫。ETL 執行、分析 / AI、安全維運與專案自訂命名見〈XIV〉；各頁底部另有「📖 本頁名詞」就地速查。</p>
 
   <h3>網路 / 連線</h3>
   <table>
@@ -1346,6 +1389,15 @@ flowchart TB
       <tr><td><b>gp3</b></td><td>SSD 儲存類型</td><td>RDS 通用型 SSD,支援線上擴充容量(只增不減)。</td></tr>
     </tbody>
   </table>
+
+  <a href="#glossary2" class="terms-more" style="display:inline-block;margin-top:14px">→ 下半（ETL · 分析 · 安全 · 命名）見〈XIV〉</a>
+</section>
+
+<!-- 名詞解說（二） -->
+<section id="glossary2">
+  <span class="ptag tr">跨階段 · 參考</span>
+  <h2><span class="num">XIV</span>名詞解說（二）ETL · 分析 · 安全 · 命名</h2>
+  <p class="lead">名詞完整索引下半：轉換 / 編排 / 運算、分析 / AI、安全 / 維運、專案自訂命名。上半（網路 · Glue 前置 · 遷移）見〈XIII〉。</p>
 
   <h3>轉換 / 編排 / 運算</h3>
   <table>

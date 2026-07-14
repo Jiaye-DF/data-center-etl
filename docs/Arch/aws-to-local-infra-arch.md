@@ -2,13 +2,14 @@
 
 > **性質**：長期架構規劃，核心交付為**架構圖**。以原始系統方向為骨幹，整合 Phase 1 實測成果，並補齊整體會用到的 AWS 設施與 Phase 2–4 未來規劃。
 > **區域**：AWS 東京 `ap-northeast-1`（AZ 1a / 1c）。
-> 架構圖報告版（可縮放 / 可列印）：[`aws-to-local-infra-arch.html`](aws-to-local-infra-arch.html)
+> 架構圖報告版（分頁閱讀 / 可縮放 / 可列印）：[`aws-to-local-infra-arch.html`](aws-to-local-infra-arch.html) — 章節編號與本檔一致。
 
 > **章節導覽（依 Phase 分類）**
 > - **總覽**：〈I〉目標 ·〈II〉端到端架構圖
-> - **Phase 1 · 基礎建設**：〈III〉VPC 網路拓撲（含 SG）·〈VI〉Phase 1 關鍵參數 ·〈VII〉Phase 1 流程圖
-> - **Phase 2 · ETL（Glue Catalog + 自架 Taskiq）**：〈VIII〉Glue 前置：VPC Endpoints ·〈IX〉Glue Crawler + Data Catalog（Lake Formation 權限）·〈X〉Phase 2 流程圖（Catalog 保留 → ETL 執行改自架 Taskiq + Redis）
-> - **跨階段 / 參考**：〈IV〉整體 AWS 設施 ·〈V〉設施關聯圖 ·〈XI〉名詞解說
+> - **Phase 1 · 基礎建設**：〈III〉VPC 網路拓撲 ·〈IV〉Security Group 資料流 ·〈V〉Phase 1 流程圖
+> - **Phase 2 · ETL（Glue Catalog + 自架 Taskiq）**：〈VI〉Glue 前置：VPC Endpoint 問題與解法 ·〈VII〉VPC Endpoint 總表與 SG 策略 ·〈VIII〉Glue Crawler + Data Catalog（Lake Formation）·〈IX〉Phase 2 流程圖 ·〈X〉自架排程項目（Taskiq + Redis）
+> - **跨階段 / 參考**：〈XI〉整體 AWS 設施 ·〈XII〉設施關聯圖 ·〈XIII〉名詞解說（一）·〈XIV〉名詞解說（二）
+> - **附錄**：A Phase 1 關鍵參數 · B Oracle 最小權限 SQL · C Troubleshooting 速查
 
 ---
 
@@ -18,7 +19,7 @@
 
 ### 系統架構流程
 
-1. 地端資料透過 **Migration**（DMS）移轉至 AWS RDS（名為 **Raw-Data-Replication**）；CDC 階段改由 DMS 把異動 event log 寫入 **Kinesis Data Streams**，再由 **Lambda** 消費事件寫回 Raw-Data-Replication
+1. 地端資料透過 **Migration**（DMS）移轉至 AWS RDS（名為 **Raw-Data-Replication**）；CDC 階段改由 DMS 把異動 event log 寫入 **Kinesis Data Streams**，再由 **Lambda** 消費事件寫回同座 RDS 的 **erp_cdc_event_logs**
 2. 以 **AWS Glue Crawler / Data Catalog** 建立來源 Metadata；實際 ETL 轉換改由**自架 Taskiq + Redis（Docker Compose，Coolify 部署於 EC2）**執行，把 Raw 轉換寫回 RDS（名為 **ETL-Hub**）
 3. **Data Hub** 讀取 ETL-Hub 的資料供各業務系統應用
 4. **AWS EC2** 設置（Data Hub / Center 運算）
@@ -44,27 +45,27 @@
 ```mermaid
 flowchart TB
   subgraph ONPREM["On-Premise 企業內網"]
-    ERP["ERP / BPM / HRM<br/>Oracle 1521 · SQL Server 1433"]
+    ERP["ERP / BPM / HRM<br/>Oracle · SQL Server"]
     BIZ["各業務系統 (資料消費端)"]
   end
 
-  subgraph AWS["AWS VPC 10.0.0.0/16 (ap-northeast-1)"]
+  subgraph AWS["AWS VPC (ap-northeast-1)"]
     VGW{{"VGW (VPN 落地)"}}
 
     subgraph Z1["Phase 1–2 ｜ 遷移落地（Full Load + CDC）"]
       direction LR
-      DMS["DMS Replication Instance<br/>Full Load + CDC"]
-      KDS["Kinesis Data Streams<br/>（CDC 異動 event log）"]
-      LMB["Lambda<br/>（消費 event → 寫入 DB）"]
-      RAW[("DB: Raw-Data-Replication<br/>（RDS PostgreSQL）")]
-      CDCDB[("DB: erp_cdc_event_logs<br/>（同座 RDS · 異動事件）")]
+      DMS["DMS Replication Instance"]
+      KDS["Kinesis Data Streams"]
+      LMB["Lambda (CDC Consumer)"]
+      RAW[("RDS ｜ Raw-Data-Replication")]
+      CDCDB[("RDS ｜ erp_cdc_event_logs")]
     end
 
     subgraph Z2["Phase 2 ｜ ETL（Catalog + 自架 Taskiq）"]
       direction LR
-      GLUE["Glue Crawler + Data Catalog<br/>（建立 Metadata）"]
-      SCHED["Taskiq Scheduler"] --> REDIS["Redis<br/>（broker）"] --> WORKER["Taskiq Worker<br/>（Docker / Coolify on EC2）"]
-      HUB[("RDS ETL-Hub<br/>PostgreSQL")]
+      GLUE["Glue Crawler + Data Catalog"]
+      SCHED["Taskiq Scheduler"] --> REDIS["Redis"] --> WORKER["Taskiq Worker"]
+      HUB[("RDS ｜ ETL-Hub")]
     end
 
     EC2["EC2 ｜ Data Hub / Center"]
@@ -82,9 +83,9 @@ flowchart TB
     end
   end
 
-  ERP == "Site-to-Site VPN｜1521" ==> VGW --> DMS
-  DMS == "資料｜5432" ==> RAW
-  DMS == "異動紀錄（CDC event log）" ==> KDS == "event source 觸發" ==> LMB == "寫入｜5432" ==> CDCDB
+  ERP == "Site-to-Site VPN" ==> VGW --> DMS
+  DMS == "資料" ==> RAW
+  DMS == "異動紀錄（CDC event log）" ==> KDS == "event source 觸發" ==> LMB == "寫入" ==> CDCDB
   RAW == "掃描 Metadata" ==> GLUE
   RAW == "讀取" ==> WORKER == "寫入" ==> HUB
   HUB == "讀取 ETL-Hub" ==> EC2 == "供應" ==> BIZ
@@ -96,12 +97,12 @@ flowchart TB
 
 ## III、Phase 1 VPC 網路拓撲（實測成果）
 
-本期已驗證：`Oracle → VPN → DMS → Raw-Data-Replication(RDS)` Full Load；CDC 擴充後 DMS 另把**異動紀錄**推送 `Kinesis → Lambda → erp_cdc_event_logs`。每個 CIDR / 元件標示用途。
+本期已驗證：`Oracle → VPN → DMS → Raw-Data-Replication(RDS)` Full Load；CDC 擴充後 DMS 另把**異動紀錄**推送 `Kinesis → Lambda → erp_cdc_event_logs`。每個 CIDR / 元件標示用途。關鍵參數見〈附錄 A〉。
 
 ```mermaid
 flowchart TB
   subgraph ONPREM["On-Premise 企業內網"]
-    ORA[("Oracle / 1521<br/>唯讀 User")]
+    ORA[("Oracle")]
   end
 
   subgraph AWS["AWS VPC 10.0.0.0/16 (ap-northeast-1)"]
@@ -109,24 +110,24 @@ flowchart TB
     VGW{{"VGW (VPN)"}}
 
     subgraph PUB["Public Subnet 10.0.0.0/24"]
-      NAT["NAT Gateway<br/>(私網對外更新用)"]
+      NAT["NAT Gateway"]
     end
     subgraph PRIV["Private Subnet 10.0.32.0/24 (AZ-a)"]
-      DMS["DMS Replication Instance<br/>dms.t3.medium / 50GB<br/>Task: Full Load + CDC"]
-      LMB["Lambda (CDC Consumer)<br/>VPC 內執行"]
+      DMS["DMS Replication Instance"]
+      LMB["Lambda (CDC Consumer)"]
     end
     subgraph DBG["DB Subnet Group (≥2 AZ)"]
-      subgraph RDSI["RDS 實例 db.t4g.small / 5432"]
+      subgraph RDSI["RDS 實例"]
         RAW[("DB: Raw-Data-Replication")]
         CDCDB[("DB: erp_cdc_event_logs")]
       end
       NETA["DB Subnet 10.0.33.0/24 (AZ-a)"]
       NETC["DB Subnet 10.0.34.0/24 (AZ-c)"]
     end
-    VPCE["VPC Endpoint (S3 Gateway + Kinesis Interface)"]
+    VPCE["VPC Endpoints"]
   end
 
-  KDS["Kinesis Data Streams<br/>(區域級 · CDC event log)"]
+  KDS["Kinesis Data Streams<br/>(區域級服務)"]
 
   ORA == "VPN｜TCP 1521" ==> VGW --> DMS
   DMS == "資料｜TCP 5432" ==> RAW
@@ -168,7 +169,11 @@ AWS VPC 10.0.0.0/16                          用途：整體雲端私有網路
             └─ DB: erp_cdc_event_logs        ← Lambda 寫入的異動事件紀錄
 ```
 
-### Security Group 資料流（方向）
+---
+
+## IV、Security Group 資料流（方向）
+
+以 SG 互相引用取代固定 IP；嚴禁 `0.0.0.0/0`。
 
 ```mermaid
 flowchart LR
@@ -176,6 +181,7 @@ flowchart LR
   DMS["DMS SG"]
   LMB["Lambda SG"]
   RDS[("RDS SG")]
+  KEP["Kinesis Interface Endpoint"]
   CORP["公司 CIDR (選用)"]
 
   DMS -- "Outbound 1521 →" --> ORA
@@ -184,14 +190,382 @@ flowchart LR
   RDS -- "Inbound 5432 ← DMS SG" --> DMS
   LMB -- "Outbound 5432 →" --> RDS
   RDS -- "Inbound 5432 ← Lambda SG" --> LMB
+  LMB -- "Outbound 443 →" --> KEP
   CORP -- "Inbound 5432" --> RDS
 ```
 
-> Lambda 另需 Outbound 443 → Kinesis Interface Endpoint（VPC 內執行才需要）。
+| SG | 方向 | Port | 來源 / 目標 |
+| --- | --- | --- | --- |
+| Oracle | Inbound | 1521 | DMS SG |
+| DMS | Outbound | 1521 | Oracle Host |
+| DMS | Outbound | 5432 | RDS SG |
+| RDS | Inbound | 5432 | DMS SG |
+| Lambda | Outbound | 5432 | RDS SG（寫 `erp_cdc_event_logs`） |
+| Lambda | Outbound | 443 | Kinesis Interface Endpoint |
+| RDS | Inbound | 5432 | Lambda SG |
+| RDS | Inbound | 5432 | 公司 CIDR（選用） |
 
 ---
 
-## IV、整體使用到的 AWS 設施（清單）
+## V、Phase 1 流程圖
+
+依「網路層 → 資料庫層 → 遷移層 → CDC 事件層」四層，一次一步、完成驗證再下一步。每一步的關鍵設定對齊〈附錄 A、Phase 1 關鍵參數〉。
+
+```mermaid
+flowchart LR
+  subgraph NET["① 網路層（順序不可跳）"]
+    direction TB
+    VPC["1. VPC"]
+    SUB["2. Subnet<br/>Public · Private · DB"]
+    VPN["3. VGW + Site-to-Site VPN"]
+    RT["4. Route Table"]
+    SG["5. Security Group"]
+    VPC --> SUB --> VPN --> RT --> SG
+  end
+  subgraph DBL["② 資料庫層"]
+    direction TB
+    DBG["DB Subnet Group（≥2 AZ）"]
+    RDS["6. RDS 實例<br/>Raw-Data-Replication + erp_cdc_event_logs"]
+    DBG --> RDS
+  end
+  subgraph MIG["③ 遷移層"]
+    direction TB
+    DMS["7. DMS Replication Instance"]
+    EP["8. Endpoints + 連線測試"]
+    TM["Table Mapping 白名單"]
+    TASK["9. Migration Task<br/>Full Load + CDC"]
+    DMS --> EP --> TM --> TASK
+  end
+  subgraph CDCL["④ CDC 事件層"]
+    direction TB
+    KDS["10. Kinesis Data Streams"]
+    LMB["11. Lambda (CDC Consumer)"]
+    VER["12. 驗證同步"]
+    KDS --> LMB --> VER
+  end
+  SG ==> DBG
+  RDS ==> DMS
+  TASK ==> KDS
+```
+
+### 逐步明細
+
+| # | 步驟 | 元件 / 服務 | 關鍵設定 | 目的 |
+| --- | --- | --- | --- | --- |
+| 1 | 建 VPC | VPC | `10.0.0.0/16` | 整體雲端私有網路容器 |
+| 2 | 切 Subnet | Public / Private / DB Subnet | Public `10.0.0.0/24`、Private `10.0.32.0/24`(AZ-a)、DB `10.0.33.0/24`(AZ-a)+`10.0.34.0/24`(AZ-c) | 分層隔離;DB 跨 2 AZ 供 RDS 高可用 |
+| 3 | 建 VGW + VPN | VGW / Site-to-Site VPN | IPsec、對接地端閘道 | 地端 ↔ 雲端加密通道 |
+| 4 | 設 Route Table | Route Table | `10.0.0.0/16`→Local、`10.200.0.0/16`+`10.240.0.0/16`→VGW | 導向地端網段(**只增不刪**既有) |
+| 5 | 設 Security Group | SG(Oracle / DMS / Lambda / RDS) | Oracle In 1521←DMS;DMS Out 1521→Oracle、5432→RDS;Lambda Out 5432→RDS、443→Kinesis Endpoint;RDS In 5432←DMS SG + Lambda SG;**禁 `0.0.0.0/0`** | 執行個體層防火牆,以 SG 互引取代固定 IP |
+| 6 | 建 RDS | RDS 實例 + DB Subnet Group | PostgreSQL `db.t4g.small`、gp3 20GB(只增不減)、Single-AZ(Dev)、Public Access=No;建兩個 DB:`Raw-Data-Replication`、`erp_cdc_event_logs` | 原始複製落地 + 異動事件紀錄 |
+| 7 | 建 DMS 主機 | DMS Replication Instance | `dms.t3.medium`、50GB、置於 Private Subnet | 執行遷移的運算資源 |
+| 8 | 建 Endpoints + 測試 | Source / Target Endpoint | Oracle 1521 唯讀 User(非 SYS/SYSTEM)、Target PostgreSQL 5432;先 Test connection | 建立來源 / 目標連線並驗通 |
+| 9 | 建 Migration Task | DMS Task + Table Mapping | Full Load + CDC / Limited LOB 32KB / Validation Off;白名單 `DS.*`、`M2201.*` | 全量複製 + 持續擷取異動 |
+| 10 | 建 Kinesis Stream | Kinesis Data Streams | 作為 DMS CDC 的 Target Endpoint;DMS IAM Role 需 `kinesis:PutRecord*`;KMS 加密 | 承接來源異動的 event log |
+| 11 | 建 Lambda Consumer | Lambda + Event Source Mapping | 置於 VPC(Private Subnet)、掛 Lambda SG;批次消費 Kinesis;寫入 `erp_cdc_event_logs` | 把異動事件落地成可查詢的紀錄 |
+| 12 | 驗證同步 | — | 比對來源 / 目標筆數、抽樣核對欄位;確認異動事件寫入 `erp_cdc_event_logs`、Kinesis IteratorAge 無累積 | 確認落地正確、資料無漏 |
+
+> Oracle Endpoint 若報 `dba_registry` 錯誤 → 套〈附錄 B、Oracle 最小權限 SQL〉。
+
+---
+
+## VI、Phase 2 ｜ Glue 前置：VPC Endpoint 問題與解法
+
+> **Phase 2 · ETL / Glue** — 建立 AWS Glue 的前置作業。Endpoint 總表 / SG 策略 / 命名規範見〈VII〉；ETL 執行改自架 Taskiq + Redis，見〈IX〉〈X〉。
+
+> **名稱分類說明**（HTML 報告版以顏色區分，對應如下）：
+> - 🔵 **AWS 服務 / 內建項目**：AWS 產品或服務內建值，固定不變 — 例：`STS`、`Secrets Manager`、`Lake Formation`、`ALL_TABLES`、`IAMAllowedPrincipals`。
+> - 🟠 **測試名稱**：綁本次測試 / 專案代號，正式環境須依命名規範重命名 — 例：`erp_migration_test_catalog`、`crawler-rds-erp-oracle-test-pg`、`RT-ERP-Hub-Test-DB`、`DS.*`。
+> - 🟣 **自定義名稱**：專案自訂但非測試專屬的命名（規範 / 角色 / 概念名）— 例：`SG-ETL-Glue`、`vpce-sts`、`Glue-ServiceRole-ERP-Hub`、`Raw-Data-Replication`、`ETL-Hub`。
+
+Phase 2 用 AWS Glue Crawler 建立來源 Metadata（寫入 Data Catalog）。Crawler 跑在 Private Subnet，呼叫 AWS API 會因無對外路由而失敗 → 用 **VPC Endpoint 走 AWS Backbone** 解決，而非開 NAT Gateway。（自架 Worker 若需讀 Secrets Manager 等 AWS API，可共用同一組 Endpoint。）
+
+### 問題：Glue Connection 失敗
+
+建立 Glue Connection 時報：
+
+```
+Failed to assume customer's role
+Verify that your VPC has access to STS
+```
+
+根因：Glue Worker 在 Private Subnet；Route Table 只有 `local` + VGW（`10.200/10.240`→地端），**沒有 `0.0.0.0/0`** → 連不到 `sts.ap-northeast-1.amazonaws.com` → AssumeRole 失敗。
+
+### 解法：VPC Endpoint（不用 NAT Gateway）
+
+企業 Data Center 是 Private Network，不希望 Private Subnet 透過 NAT 對外上網 → 改走 AWS Backbone。
+
+```mermaid
+flowchart LR
+  subgraph PRIV["Private Subnet（無 0.0.0.0/0）"]
+    GLUE["Glue Worker"]
+  end
+  subgraph VPCEP["VPC Endpoints｜AWS Backbone"]
+    direction TB
+    STS["STS Interface"]
+    SM["Secrets Manager Interface"]
+    LOG["CloudWatch Logs Interface"]
+    S3E["S3 Gateway"]
+  end
+  GLUE == "HTTPS 443" ==> STS
+  GLUE == "HTTPS 443" ==> SM
+  GLUE == "HTTPS 443" ==> LOG
+  GLUE == "Route Table" ==> S3E
+```
+
+| 對照 | NAT Gateway | VPC Endpoint（採用） |
+| --- | --- | --- |
+| 路徑 | 經公網對外 | AWS 內部 Backbone |
+| 對外暴露面 | 私網可連整個 Internet | 只到指定 AWS 服務 |
+| 符合 Private First | ✗ | ✓ |
+
+### 建置步驟（實作除錯紀錄）
+
+逐一補齊缺的 Endpoint，每補一個就往前推進一個錯誤，直到全部到位。
+
+| Step | 動作 | 結果 / 錯誤 |
+| --- | --- | --- |
+| 1 | 建 Glue Connection（PostgreSQL；同 RDS 的 VPC、Private Subnet-A/C；初期先用 RDS SG） | 建立連線設定 |
+| 2 | 測試連線 | ❌ `Failed to assume customer's role / access to STS` — 私網無法連 sts |
+| 3 | 建 **STS** Interface Endpoint（Private DNS on、Subnet-A/C、SG-VPCE-AWS-Services） | 可 AssumeRole |
+| 4 | 再測 | ❌ `Unable to connect to Secrets Manager` — Glue 憑證存在 Secrets Manager |
+| 5 | 建 **Secrets Manager** Interface Endpoint（設定同 STS） | 可讀連線憑證 |
+| 6 | 建 **CloudWatch Logs** Interface Endpoint（Glue Crawler 寫執行日誌） | 可寫執行 log |
+| 7 | 建 **S3** _Gateway_ Endpoint（不是 Interface！改 Route Table `RT-ERP-Hub-Test-DB`，AWS 自動加 Prefix List `pl-xxxx`） | 可存取 S3 |
+| 8 | 建共用 `SG-VPCE-AWS-Services`（Inbound 443 ← Glue SG；Outbound All） | Endpoint 流量放行 |
+| 9 | 核對 VPC Endpoint 總表（見〈VII〉） | 4 個到位 |
+| 10 | 回 Glue 測試連線 | ✅ `Connection is ready for you to use` |
+
+> 四個 Endpoint 的角色：到位後 Glue 才能完整 AssumeRole（STS）→ 讀憑證（Secrets Manager）→ 寫日誌（CloudWatch Logs）→ 存取 S3，並連上 PostgreSQL RDS。
+
+---
+
+## VII、Phase 2 ｜ VPC Endpoint 總表與 SG 策略
+
+> **Phase 2 · ETL / Glue** — 承〈VI〉的解法，把要建的 Endpoint、共用 Security Group、命名規範與整體設計原則收攏成可照做的清單。
+
+### VPC Endpoint 總表
+
+Required 四項為 Glue 運行所需（Private DNS Enabled、佈於 Subnet-A / Subnet-C）；Optional 依後續服務需要再加。
+
+| 類別 | 服務 | 型態 | 命名 |
+| --- | --- | --- | --- |
+| Required | STS | Interface | `vpce-sts` |
+| Required | Secrets Manager | Interface | `vpce-secretsmanager` |
+| Required | CloudWatch Logs | Interface | `vpce-cloudwatchlogs` |
+| Required | S3 | Gateway | `vpce-s3` |
+| Optional | KMS | Interface | — |
+| Optional | ECR API / ECR DKR | Interface | —（容器映像） |
+| Optional | SSM | Interface | — |
+
+- **Interface Endpoint**：建 ENI、吃 SG、走 Private DNS（STS / Secrets / Logs / KMS / ECR）。
+- **Gateway Endpoint**（S3 專用）：不建 ENI、不吃 SG、改 Route Table（AWS 自動加 Prefix List `pl-xxxx` → Gateway Endpoint）。
+
+### Security Group 策略（Role-Based）
+
+以角色切 SG，而非每個 App 一個。新增 `SG-VPCE-AWS-Services` 給所有 AWS Interface Endpoint 共用（STS / Secrets / Logs / KMS / ECR），因為都走 HTTPS 443 與 AWS API 通訊 → 共用降低維護成本。
+
+- **Inbound**：HTTPS 443，Source = `SG-ETL-Glue`（未來 DMS / Taskiq 可加入）
+- **Outbound**：All Traffic
+
+### 命名規範
+
+- **Security Group**：`SG-DB-RDS`、`SG-ETL-Glue`、`SG-ETL-DMS`、`SG-APP-Taskiq`、`SG-VPCE-AWS-Services`
+- **VPC Endpoint**：`vpce-sts`、`vpce-secretsmanager`、`vpce-cloudwatchlogs`、`vpce-s3`
+
+### Glue Workflow（規劃）
+
+`Glue Connection → Database → Crawler → Data Catalog →（ETL 執行改自架 Taskiq + Redis）→ ETL-Hub → S3 → Athena → Redshift → AI Platform → Data Hub`
+
+### 設計原則
+
+- **Private First**：核心服務全部署於 Private Subnet。
+- **Least Privilege**：Security Group 依角色切分，非全服務共用。
+- **AWS Backbone**：透過 VPC Endpoint 存取 AWS API，不繞 NAT Gateway。
+- **Scalable**：後續 Athena / Redshift / EMR / ECS / Lambda / AI Platform 免重設計 VPC。
+
+---
+
+## VIII、Phase 2 ｜ Glue Crawler + Data Catalog（Lake Formation 權限）
+
+> **Phase 2 · ETL / Glue** — VPC Endpoint 到位、Glue Connection Ready 後，建 Crawler 掃描 RDS PostgreSQL，把 Metadata 寫入 Glue Data Catalog。此階段的關卡不在網路，而在 **Lake Formation 權限模型**。
+
+Glue Workflow 推進到 `Glue Connection ✅ → Crawler → Data Catalog`：讓 Crawler 掃 `erp_migration_test`，把表結構寫入 Glue Database `erp_migration_test_catalog`。
+
+### 目標流程
+
+```mermaid
+flowchart LR
+  CONN["Glue Connection ✅"]
+  CRAWLER["Glue Crawler"]
+  RDS[("RDS PostgreSQL")]
+  CAT["Glue Data Catalog"]
+  LF{{"Lake Formation（權限閘）"}}
+
+  CONN --> CRAWLER
+  CRAWLER == "掃描來源結構" ==> RDS
+  CRAWLER == "寫入 Metadata" ==> CAT
+  LF -. 攔截 .-> CRAWLER
+```
+
+### 問題：Crawler 卡 Lake Formation 權限
+
+Crawler 執行後持續報：
+
+```
+Insufficient Lake Formation permission(s):
+Required Describe on erp_migration_test_ds_aaa_file
+(Database: erp_migration_test_catalog)
+```
+
+Glue Catalog `Tables = 0` — 一張 Metadata 都沒建成。
+
+### 錯誤演進（逐階段推進）
+
+每修正一層，錯誤就往前推一步，逐步逼近真正的缺口。
+
+| 階段 | 錯誤訊息 | 真正原因 |
+| --- | --- | --- |
+| 1 | `Crawler cannot be started / Verify the permissions in the IAM role` | **不是 IAM** — 是 Glue Connection 用錯 Subnet |
+| 2 | `Required Describe on erp_migration_test_catalog` | 缺 **Database** 層權限 |
+| 3 | `Required Describe on erp_migration_test_ds_aaa_file` | 開始檢查 **Table** 層權限 |
+| 4 | 刪 Database → `Required Drop on erp_migration_test_catalog` | 鐵證：該 DB 已由 **Lake Formation 接管** |
+
+### 根因：Database 已被 Lake Formation 接管
+
+1. **「Use only IAM access control」預設不回溯**：只對「設定啟用後新建、且仍持有 `IAMAllowedPrincipals`」的資源生效；既有 DB 不受惠。
+2. **明確 Grant 會移除 `IAMAllowedPrincipals`**：一旦對該 DB 的 Table/Column 下明確 LF Grant，Lake Formation 就把 `IAMAllowedPrincipals` 移除 → 資源翻轉成「LF 管控」→ 所有 principal（含 Crawler）都要明確 LF 授權。
+3. **只 Grant 了 Table + Column，缺 Database 層**（Describe + Create Table）→ Crawler 第一關就進不了。
+
+> 第四階段刪 DB 需 `Required Drop`，正是「DB 已被 LF 接管、連 Data Lake Admin 都要明確授權」的鐵證。
+
+### Crawler 授權檢查順序
+
+```mermaid
+flowchart LR
+  A["Database<br/>Describe"] --> B["Database<br/>Create_Table"] --> C["Table<br/>Describe / Alter"] --> D["寫入 / 更新<br/>Metadata"]
+```
+
+第一關 Database Describe 過不了，錯誤會往下傳到正在處理的 table，所以看到的是「table 的 Required Describe」，但真正缺口在 Database 層。
+
+### 解法：Lake Formation 三層權限模型（非破壞性）
+
+對 Principal `Glue-ServiceRole-ERP-Hub` 補齊三層 Grant，**不刪 DB**：
+
+| Resource | 名稱 | Permissions |
+| --- | --- | --- |
+| **Database** | `erp_migration_test_catalog` | Describe · Create Table · Alter |
+| **Table** | `ALL_TABLES` | Describe · Select · Insert · Alter · Delete（Drop 選用） |
+| **Column** | `ALL_COLUMNS` | Select |
+
+> ⚠️ 不走「刪 DB 讓預設重建」那條路：刪除屬破壞性（且此 DB 已被 LF 管控要 `Drop` 權限）。**補 Database Grant 才是最小、最安全的修法**，補齊後根本不需要重建。
+
+### 結果
+
+補上 Database 層後重跑 Crawler → `Tables > 0`，Metadata 建立成功 → 進入下一步 **ETL 轉換**（改自架 Taskiq + Redis，見〈IX〉〈X〉；不再走 Glue Visual ETL Job）。
+
+### 已排除（非主因）
+
+`IAM` / `Secrets Manager` / `VPC` / `Route Table` / `Security Group` / `Glue Connection` / `PostgreSQL Authentication` / `Hybrid Access Mode` — 皆已驗證正常。Connection Test / `GetSecretValue` / `GetConnection` 全 Success 只證明「連得到 DB、拿得到憑證」，與「能否寫進 Glue Catalog」是兩條獨立授權鏈；問題單純在 **Data Catalog 的 Lake Formation 授權鏈**。
+
+---
+
+## IX、Phase 2 流程圖
+
+> **Phase 2 · ETL / Glue** — 承接 Phase 1 落地的 Raw-Data-Replication，把 Glue 前置到 Crawler 建 Metadata 的完整順序整理成流程圖。做法與 Phase 1 一致：一次一步、完成驗證再下一步。自架排程的實作細節見〈X〉。
+
+依「① 網路前置（VPC Endpoints）→ ② Glue 連線 / 掃描 → ③ Lake Formation 權限 → ④ ETL 轉換」四層推進。
+
+```mermaid
+flowchart LR
+  subgraph EP["① 網路前置層（VPC Endpoints）"]
+    direction TB
+    SGV["1. SG-VPCE-AWS-Services"]
+    IEP["2. Interface Endpoints<br/>STS · Secrets Manager · CloudWatch Logs"]
+    GEP["3. S3 Gateway Endpoint"]
+    SGV --> IEP --> GEP
+  end
+  subgraph GL["② Glue 連線 / 掃描層"]
+    direction TB
+    CONN["4. Glue Connection"]
+    GDB["5. Glue Database"]
+    CR["6. Glue Crawler"]
+    CONN --> GDB --> CR
+  end
+  subgraph LF["③ Lake Formation 權限層"]
+    direction TB
+    DBG["7. Grant Database 權限"]
+    TBG["8. Grant Table / Column 權限"]
+    RUN["9. 執行 Crawler → 驗證"]
+    DBG --> TBG --> RUN
+  end
+  subgraph ET["④ ETL 執行層（自架 Taskiq + Redis）"]
+    direction TB
+    SCH["10. Taskiq Scheduler + Redis"]
+    ETLJ["11. Taskiq Worker"]
+    DEP["12. Docker Compose + Coolify"]
+    SCH --> ETLJ
+    DEP -. 承載 .-> ETLJ
+  end
+  GEP ==> CONN
+  CR ==> DBG
+  RUN ==> SCH
+```
+
+### 逐步明細
+
+| # | 步驟 | 元件 / 服務 | 關鍵設定 | 目的 |
+| --- | --- | --- | --- | --- |
+| 1 | 建共用 SG | SG-VPCE-AWS-Services | Inbound `443` ← `SG-ETL-Glue`；Outbound All | 放行 Glue → Endpoint 流量 |
+| 2 | 建 Interface Endpoints | STS / Secrets Manager / CloudWatch Logs | Private DNS on、佈於 Subnet-A/C、掛 `SG-VPCE-AWS-Services` | 私網走 Backbone：AssumeRole / 讀憑證 / 寫 log |
+| 3 | 建 S3 Gateway Endpoint | S3（Gateway） | 改 Route Table `RT-ERP-Hub-Test-DB`（自動加 Prefix List `pl-xxxx`） | 私網存取 S3 不繞公網 |
+| 4 | 建 Glue Connection + 測試 | Glue Connection（PostgreSQL） | 同 RDS VPC、Private Subnet-A/C、`SG-ETL-Glue`；先 Test connection | 建立並驗通 Glue → RDS 連線 |
+| 5 | 建 Glue Database | Data Catalog Database | `erp_migration_test_catalog` | Crawler 寫入 Metadata 的目標 |
+| 6 | 建 Glue Crawler | Glue Crawler | Source PostgreSQL、Include `erp_migration_test/%`、IAM Role `Glue-ServiceRole-ERP-Hub`、On-Demand | 掃描來源結構 |
+| 7 | Grant Database 權限 | Lake Formation | Principal `Glue-ServiceRole-ERP-Hub`；Database **Describe + Create Table + Alter** | 讓 Crawler 進得了 Database 層（關鍵缺口） |
+| 8 | Grant Table / Column | Lake Formation | `ALL_TABLES`（Describe/Select/Insert/Alter/Delete）、`ALL_COLUMNS`（Select） | 讓 Crawler 建 / 改表 Metadata |
+| 9 | 執行 Crawler + 驗證 | Glue Crawler | On-Demand Run → 查 Data Catalog | 確認 `Tables > 0`、Metadata 建立成功 |
+| 10 | 建自架排程 | Taskiq Scheduler + Redis（已實作） | `schedules` 表一表一排程；cron 以 Asia/Taipei (UTC+8) 解讀；到點派 `mirror_sync` 增量（詳見〈X〉） | 取代 EventBridge / Lambda 編排 |
+| 11 | 建 ETL Worker | Taskiq Worker（已實作） | 純 Python 直連 RDS：讀 Raw → 轉換 → 寫 `ETL-Hub`；不依賴 Glue Job / Spark | Raw → ETL-Hub 清洗轉換 |
+| 12 | 容器化部署 | Docker Compose + Coolify（後續） | image `etl_` prefix；Coolify 部署於 EC2，連 RDS 讀寫 | 自架 ETL 上線 |
+
+> **目前進度**：Step 1–9 已完成並驗證 — Crawler 與 Data Catalog 已產出，`Tables > 0`、Metadata 建立成功；Step 10–11（自架 Taskiq + Redis 排程與 Worker，細節見〈X〉）已於本專案 `data-center-etl` 實作並以 Docker Compose 運行、部署於 Coolify 測試站；Step 12 部署至 AWS EC2 為下一步。ETL 執行不再走 Glue Job。詳見 `docs/Tasks/v1.1.0/propose-v1.1.0.md`。
+
+---
+
+## X、Phase 2 ｜ 自架排程項目（Taskiq + Redis）
+
+> **Phase 2 · ETL / Glue** — 承〈IX〉Step 10–11。排程已改由**自架 Taskiq + Redis** 處理（不用 EventBridge / Lambda / Glue Trigger）。排程定義存於自有 DB `schedules` 表，Scheduler 每輪重讀 DB，啟停即時生效；到點依組合併派 `mirror_sync` 增量同步，與手動觸發共用 `etl_runs` 執行紀錄。對齊本專案 `data-center-etl` 現況。
+
+```mermaid
+flowchart LR
+  UI["排程管理 UI"] --> SDB[("schedules 表<br/>一表一排程")]
+  SDB --> SRC["DbScheduleSource<br/>熱載入"]
+  SRC --> GRP["分組合併派工"]
+  GRP --> RED["Redis"]
+  MAN["手動觸發"] -.-> RED
+  RED --> WK["Taskiq Worker<br/>mirror_sync"]
+  WK --> HUB[("ETL-Hub")]
+  WK --> RUNS[("etl_runs<br/>執行紀錄")]
+```
+
+| # | 排程項目 | 實作方式 | 說明 |
+| --- | --- | --- | --- |
+| 1 | 排程定義表 | `schedules`（PostgreSQL） | **一表一排程**：`source_schema` + `source_table` 未刪除範圍內唯一；含 `cron_expr`、`is_enabled` 啟停、軟刪除 |
+| 2 | 時區約定 | cron 一律 Asia/Taipei（UTC+8） | 固定 +8 offset 解讀，不依賴系統 tzdata |
+| 3 | 排程 UI | 簡易模式 + 進階 cron | 簡易模式支援**每 N 分鐘 / 每 N 小時 / 每日 / 每週**（自由輸入含前端驗證）；夜間時段預設全停用 |
+| 4 | 排程來源熱載入 | `DbScheduleSource`（自訂 ScheduleSource） | Scheduler 每輪自 DB 重讀啟用中排程，**新增 / 啟停即時生效**，免重啟容器 |
+| 5 | 派工合併 | 依 `(cron_expr, source_schema)` 分組 | 同組合併派**一發** `mirror_sync`，`tables` 帶該組全部來源表，降低重複派工 |
+| 6 | 訊息傳遞 | Redis broker | Scheduler 到點派工經 Redis 佇列傳遞至 Worker |
+| 7 | 同步執行 | `mirror_sync`（增量） | Worker 直連 RDS：讀 Raw → 增量轉換 → 寫 ETL-Hub |
+| 8 | 執行紀錄 | `etl_runs` / `etl_run_logs` | `trigger_type` 分 `schedule` / `manual`，排程與手動觸發**同軌**留痕 |
+| 9 | 排程涵蓋率 | Schedule Coverage 檢視 | 盤點哪些表已排程 / 未排程，避免漏排 |
+
+> **部署現況**：Scheduler / Worker / Redis 已於本專案 `data-center-etl` 以 Docker Compose 運行、部署於 Coolify 測試站；搬上 AWS EC2 為〈IX〉Step 12。
+
+---
+
+## XI、整體使用到的 AWS 設施（清單）
 
 > 只給系統方向，但實際落地必須的設施一併納入規劃。
 
@@ -206,7 +580,7 @@ flowchart LR
 | VGW + Site-to-Site VPN | 地端 ↔ 雲端 | 1 |
 | Route Table（Local / VGW / NAT） | 路由（只增不刪既有） | 1 |
 | Security Group（Oracle / DMS / RDS / EC2 / Glue） | 流量控管（禁 `0.0.0.0/0`） | 1 |
-| VPC Endpoint（S3 Gateway） | 私網存取 S3 不繞公網 | 1–3 |
+| VPC Endpoint（STS / Secrets / Logs Interface + S3 Gateway） | Private Subnet 走 Backbone 存取 AWS API | 2 |
 | VPC Endpoint（Kinesis Interface） | VPC 內 Lambda 私網讀取 Kinesis stream，不繞公網 / 免 NAT | 2 |
 
 ### 遷移 / 資料
@@ -250,9 +624,11 @@ flowchart LR
 | CloudWatch（Logs / Metrics / Alarms） | DMS / Kinesis（IteratorAge）/ Lambda / Glue / RDS 監控告警 |
 | CloudTrail | API 稽核 |
 
+> ⚠ **影響正式環境**：Route Table 與 Security Group 屬共享資源；新增前確認不影響既有正式流量，任何 Route 移除或 SG 開 `0.0.0.0/0` 需人類負責人複核。
+
 ---
 
-## V、設施關聯圖
+## XII、設施關聯圖
 
 各 AWS 設施之間的關係：包含 / 套用 / 授權 / 提供帳密 / 加密 / 監控 / 讀寫。線條配色：**藍=資料流**、**灰=基礎連線**、**紫=安全治理（SG / IAM / KMS / CloudWatch）**。
 
@@ -287,7 +663,7 @@ flowchart TB
   end
 
   subgraph REGION["區域級服務"]
-    KDS["Kinesis Data Streams<br/>(CDC 異動 event log)"]
+    KDS["Kinesis Data Streams"]
     GLUE["AWS Glue Crawler + Catalog"]
     S3["S3 Data Lake"]
     ATH["Athena"]
@@ -351,367 +727,20 @@ flowchart TB
   linkStyle 20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41 stroke:#8b5cf6,stroke-width:1.5px
 ```
 
-> 各階段範圍對照見〈IV、整體使用到的 AWS 設施〉的 Phase 欄。
+### 各階段範圍對照
 
----
-
-## VI、Phase 1 關鍵參數（實測）
-
-- **VPC/Subnet**：VPC `10.0.0.0/16`；Private `10.0.32.0/24`(AZ-a)；DB `10.0.33.0/24`(AZ-a)、`10.0.34.0/24`(AZ-c)。DB Subnet Group ≥2 AZ。
-- **Route Table**：`10.0.0.0/16`→Local、`10.200.0.0/16`→VGW、`10.240.0.0/16`→VGW（**只增不移除**）。
-- **Security Group**：Oracle In 1521←DMS；DMS Out 1521→Oracle / 5432→RDS；RDS In 5432←DMS SG + Lambda SG（+公司 CIDR 選用）；Lambda Out 5432→RDS / 443→Kinesis Endpoint。**禁 `0.0.0.0/0`**。
-- **RDS**：PostgreSQL `db.t4g.small`、gp3 20GB（只增不減）、Single-AZ(Dev)、Public Access=No；同實例兩個 DB：`Raw-Data-Replication`（DMS 直寫）、`erp_cdc_event_logs`（Lambda 寫入）。
-- **DMS**：`dms.t3.medium`/50GB/Private Subnet；Task = Full Load + CDC / Drop tables / Limited LOB 32KB / Validation Off；資料 → RDS，異動紀錄 → Kinesis。
-- **Kinesis / Lambda**：Kinesis Data Streams 承接 CDC event log；Lambda 以 event source mapping 批次消費，寫入 `erp_cdc_event_logs`。
-- **Oracle Endpoint**：1521 / 唯讀 User（非 SYS/SYSTEM）；`dba_registry` 錯誤 → 套最小權限 SQL（見附錄）。
-- **Table Mapping**：白名單只含 `DS.*`、`M2201.*`，不同步其他 Schema。
-
----
-
-## VII、Phase 1 流程圖
-
-依「網路底層 → 資料庫 → 遷移」三層,一次一步、完成驗證再下一步。每一步的關鍵設定對齊〈VI、Phase 1 關鍵參數〉。
-
-```mermaid
-flowchart LR
-  subgraph NET["① 網路層（順序不可跳）"]
-    direction TB
-    VPC["1. VPC ｜ 10.0.0.0/16"]
-    SUB["2. Subnet<br/>Public 10.0.0.0/24 · Private 10.0.32.0/24(AZ-a)<br/>DB 10.0.33.0/24(AZ-a) · 10.0.34.0/24(AZ-c)"]
-    VPN["3. VGW + Site-to-Site VPN<br/>地端 ↔ 雲端 IPsec"]
-    RT["4. Route Table<br/>10.0.0.0/16→Local · 10.200/10.240→VGW（只增不刪）"]
-    SG["5. Security Group<br/>Oracle/DMS/Lambda/RDS 互引用 · 禁 0.0.0.0/0"]
-    VPC --> SUB --> VPN --> RT --> SG
-  end
-  subgraph DBL["② 資料庫層"]
-    direction TB
-    DBG["DB Subnet Group（≥2 AZ）"]
-    RDS["6. RDS 實例<br/>PostgreSQL db.t4g.small · gp3 20GB · 5432 · Public=No<br/>DB: Raw-Data-Replication + erp_cdc_event_logs"]
-    DBG --> RDS
-  end
-  subgraph MIG["③ 遷移層"]
-    direction TB
-    DMS["7. DMS Replication Instance<br/>dms.t3.medium · 50GB · Private Subnet"]
-    EP["8. Endpoints + 測試<br/>Source Oracle 1521(唯讀) · Target PostgreSQL 5432"]
-    TM["Table Mapping 白名單<br/>DS.* · M2201.*"]
-    TASK["9. Migration Task<br/>Full Load + CDC · LOB 32KB · Validation Off"]
-    VER["12. 驗證同步<br/>比對筆數 / 抽樣核對 / 異動事件落地"]
-    DMS --> EP --> TM --> TASK
-  end
-  subgraph CDCL["④ CDC 事件層"]
-    direction TB
-    KDS["10. Kinesis Data Streams<br/>DMS CDC Target · 承接異動 event log"]
-    LMB["11. Lambda (CDC Consumer)<br/>event source mapping · VPC 內 · 寫 erp_cdc_event_logs"]
-    KDS --> LMB
-  end
-  SG ==> DBG
-  RDS ==> DMS
-  TASK ==> KDS
-  LMB ==> VER
-```
-
-### 逐步明細
-
-| # | 步驟 | 元件 / 服務 | 關鍵設定 | 目的 |
-| --- | --- | --- | --- | --- |
-| 1 | 建 VPC | VPC | `10.0.0.0/16` | 整體雲端私有網路容器 |
-| 2 | 切 Subnet | Public / Private / DB Subnet | Public `10.0.0.0/24`、Private `10.0.32.0/24`(AZ-a)、DB `10.0.33.0/24`(AZ-a)+`10.0.34.0/24`(AZ-c) | 分層隔離;DB 跨 2 AZ 供 RDS 高可用 |
-| 3 | 建 VGW + VPN | VGW / Site-to-Site VPN | IPsec、對接地端閘道 | 地端 ↔ 雲端加密通道 |
-| 4 | 設 Route Table | Route Table | `10.0.0.0/16`→Local、`10.200.0.0/16`+`10.240.0.0/16`→VGW | 導向地端網段(**只增不刪**既有) |
-| 5 | 設 Security Group | SG(Oracle / DMS / Lambda / RDS) | Oracle In 1521←DMS;DMS Out 1521→Oracle、5432→RDS;Lambda Out 5432→RDS、443→Kinesis Endpoint;RDS In 5432←DMS SG + Lambda SG;**禁 `0.0.0.0/0`** | 執行個體層防火牆,以 SG 互引取代固定 IP |
-| 6 | 建 RDS | RDS 實例 + DB Subnet Group | PostgreSQL `db.t4g.small`、gp3 20GB(只增不減)、Single-AZ(Dev)、Public Access=No;建兩個 DB:`Raw-Data-Replication`、`erp_cdc_event_logs` | 原始複製落地 + 異動事件紀錄 |
-| 7 | 建 DMS 主機 | DMS Replication Instance | `dms.t3.medium`、50GB、置於 Private Subnet | 執行遷移的運算資源 |
-| 8 | 建 Endpoints + 測試 | Source / Target Endpoint | Oracle 1521 唯讀 User(非 SYS/SYSTEM)、Target PostgreSQL 5432;先 Test connection | 建立來源 / 目標連線並驗通 |
-| 9 | 建 Migration Task | DMS Task + Table Mapping | Full Load + CDC / Limited LOB 32KB / Validation Off;白名單 `DS.*`、`M2201.*` | 全量複製 + 持續擷取異動 |
-| 10 | 建 Kinesis Stream | Kinesis Data Streams | 作為 DMS CDC 的 Target Endpoint;DMS IAM Role 需 `kinesis:PutRecord*`;KMS 加密 | 承接來源異動的 event log |
-| 11 | 建 Lambda Consumer | Lambda + Event Source Mapping | 置於 VPC(Private Subnet)、掛 Lambda SG;批次消費 Kinesis;寫入 `erp_cdc_event_logs` | 把異動事件落地成可查詢的紀錄 |
-| 12 | 驗證同步 | — | 比對來源 / 目標筆數、抽樣核對欄位;確認異動事件寫入 `erp_cdc_event_logs`、Kinesis IteratorAge 無累積 | 確認落地正確、資料無漏 |
-
----
-
-## 附錄 — Oracle 最小權限 SQL
-
-```sql
--- 請以具 DBA 權限者執行;&DMS_USER 換成實際唯讀帳號
-GRANT CREATE SESSION   TO &DMS_USER;
-GRANT SELECT ANY TABLE TO &DMS_USER;
-GRANT SELECT ON SYS.V_$DATABASE      TO &DMS_USER;
-GRANT SELECT ON SYS.DBA_REGISTRY     TO &DMS_USER;   -- 解決 dba_registry 錯誤
-GRANT SELECT ON SYS.DBA_TABLES       TO &DMS_USER;
-GRANT SELECT ON SYS.DBA_TAB_COLUMNS  TO &DMS_USER;
-GRANT SELECT ON SYS.DBA_OBJECTS      TO &DMS_USER;
-GRANT SELECT ON SYS.DBA_CONSTRAINTS  TO &DMS_USER;
-GRANT SELECT ON SYS.DBA_INDEXES      TO &DMS_USER;
-```
-
-## Troubleshooting（速查）
-
-- **Connection Timeout**：DNS → Test-NetConnection 5432 → Security Group → Route Table → VPN CIDR → NACL。
-- **Endpoint Test Failed**：Oracle → Network → Security Group → Permission → Version。
-
----
-
-## VIII、Phase 2 ｜ Glue 前置：VPC Endpoints
-
-> **Phase 2 · ETL / Glue** — 建立 AWS Glue 的前置作業。
-
-> **名稱分類說明**(HTML 報告版以顏色區分,對應如下):
-> - 🔵 **AWS 服務 / 內建項目**:AWS 產品或服務內建值,固定不變 — 例:`STS`、`Secrets Manager`、`Lake Formation`、`ALL_TABLES`、`IAMAllowedPrincipals`。
-> - 🟠 **測試名稱**:綁本次測試 / 專案代號,正式環境須依命名規範重命名 — 例:`erp_migration_test_catalog`、`crawler-rds-erp-oracle-test-pg`、`RT-ERP-Hub-Test-DB`、`DS.*`。
-> - 🟣 **自定義名稱**:專案自訂但非測試專屬的命名(規範 / 角色 / 概念名)— 例:`SG-ETL-Glue`、`vpce-sts`、`Glue-ServiceRole-ERP-Hub`、`Raw-Data-Replication`、`ETL-Hub`。
-
-Phase 2 用 AWS Glue Crawler 建立來源 Metadata(寫入 Data Catalog)。Crawler 跑在 Private Subnet,呼叫 AWS API 會因無對外路由而失敗 → 用 **VPC Endpoint 走 AWS Backbone** 解決,而非開 NAT Gateway。(實際 ETL 轉換執行改自架 Taskiq + Redis,見〈X〉;自架 Worker 若需讀 Secrets Manager 等 AWS API,可共用同一組 Endpoint。)
-
-### 問題：Glue Connection 失敗
-
-建立 Glue Connection 時報:
-
-```
-Failed to assume customer's role
-Verify that your VPC has access to STS
-```
-
-根因:Glue Worker 在 Private Subnet;Route Table 只有 `local` + VGW(`10.200/10.240`→地端),**沒有 `0.0.0.0/0`** → 連不到 `sts.ap-northeast-1.amazonaws.com` → AssumeRole 失敗。
-
-### 解法：VPC Endpoint（不用 NAT Gateway）
-
-企業 Data Center 是 Private Network,不希望 Private Subnet 透過 NAT 對外上網 → 改走 AWS Backbone。
-
-```mermaid
-flowchart LR
-  subgraph PRIV["Private Subnet（無 0.0.0.0/0）"]
-    GLUE["Glue Worker"]
-  end
-  subgraph VPCEP["VPC Endpoints｜AWS Backbone"]
-    direction TB
-    STS["STS Interface"]
-    SM["Secrets Manager Interface"]
-    LOG["CloudWatch Logs Interface"]
-    S3E["S3 Gateway"]
-  end
-  GLUE == "HTTPS 443" ==> STS
-  GLUE == "HTTPS 443" ==> SM
-  GLUE == "HTTPS 443" ==> LOG
-  GLUE == "Route Table" ==> S3E
-```
-
-### 建置步驟（實作除錯紀錄）
-
-逐一補齊缺的 Endpoint,每補一個就往前推進一個錯誤,直到全部到位。
-
-| Step | 動作 | 結果 / 錯誤 |
+| Phase | 範圍 | 主要元件 |
 | --- | --- | --- |
-| 1 | 建 Glue Connection(PostgreSQL;同 RDS 的 VPC、Private Subnet-A/C;初期先用 RDS SG) | 建立連線設定 |
-| 2 | 測試連線 | ❌ `Failed to assume customer's role / access to STS` — 私網無法連 sts |
-| 3 | 建 **STS** Interface Endpoint(Private DNS on、Subnet-A/C、SG-VPCE-AWS-Services) | 可 AssumeRole |
-| 4 | 再測 | ❌ `Unable to connect to Secrets Manager` — Glue 憑證存在 Secrets Manager |
-| 5 | 建 **Secrets Manager** Interface Endpoint(設定同 STS) | 可讀連線憑證 |
-| 6 | 建 **CloudWatch Logs** Interface Endpoint(Glue Crawler 寫執行日誌) | 可寫執行 log |
-| 7 | 建 **S3** _Gateway_ Endpoint(不是 Interface!改 Route Table `RT-ERP-Hub-Test-DB`,AWS 自動加 Prefix List `pl-xxxx`) | 可存取 S3 |
-| 8 | 建共用 `SG-VPCE-AWS-Services`(Inbound 443 ← Glue SG;Outbound All) | Endpoint 流量放行 |
-| 9 | 核對 VPC Endpoint 總表(見下) | 4 個到位 |
-| 10 | 回 Glue 測試連線 | ✅ `Connection is ready for you to use` |
+| Phase 1 | 基礎建設 + Full Load | VPC · VPN · Route Table · Security Group · Oracle · RDS · DMS |
+| Phase 2 | CDC + ETL（Catalog + 自架 Taskiq） | VPC Endpoints · CDC · Kinesis · Lambda（CDC Consumer）· Glue Crawler / Catalog · Taskiq + Redis · Coolify on EC2 · ETL-Hub |
+| Phase 3 | 資料湖 + 分析 | S3 Data Lake · Athena · Redshift · AI Data Hub |
+| Phase 4 | AI 平台 | AI Knowledge Base · RAG · MCP · Agent Platform |
 
-> 四個 Endpoint 的角色:到位後 Glue 才能完整 AssumeRole(STS)→ 讀憑證(Secrets Manager)→ 寫日誌(CloudWatch Logs)→ 存取 S3,並連上 PostgreSQL RDS。
-
-| 對照 | NAT Gateway | VPC Endpoint（採用） |
-| --- | --- | --- |
-| 路徑 | 經公網對外 | AWS 內部 Backbone |
-| 對外暴露面 | 私網可連整個 Internet | 只到指定 AWS 服務 |
-| 符合 Private First | ✗ | ✓ |
-
-### VPC Endpoint 總表
-
-Required 四項為 Glue 運行所需(Private DNS Enabled、佈於 Subnet-A / Subnet-C);Optional 依後續服務需要再加。
-
-| 類別 | 服務 | 型態 | 命名 |
-| --- | --- | --- | --- |
-| Required | STS | Interface | `vpce-sts` |
-| Required | Secrets Manager | Interface | `vpce-secretsmanager` |
-| Required | CloudWatch Logs | Interface | `vpce-cloudwatchlogs` |
-| Required | S3 | Gateway | `vpce-s3` |
-| Optional | KMS | Interface | — |
-| Optional | ECR API / ECR DKR | Interface | —（容器映像） |
-| Optional | SSM | Interface | — |
-
-- **Interface Endpoint**:建 ENI、吃 SG、走 Private DNS(STS / Secrets / Logs / KMS / ECR)。
-- **Gateway Endpoint**(S3 專用):不建 ENI、不吃 SG、改 Route Table(AWS 自動加 Prefix List `pl-xxxx` → Gateway Endpoint)。
-
-### Security Group 策略（Role-Based）
-
-以角色切 SG,而非每個 App 一個。新增 `SG-VPCE-AWS-Services` 給所有 AWS Interface Endpoint 共用(STS / Secrets / Logs / KMS / ECR),因為都走 HTTPS 443 與 AWS API 通訊 → 共用降低維護成本。
-
-- **Inbound**:HTTPS 443,Source = `SG-ETL-Glue`(未來 DMS / Taskiq 可加入)
-- **Outbound**:All Traffic
-
-規劃 SG 清單:`SG-DB-RDS`、`SG-ETL-Glue`、`SG-ETL-DMS`、`SG-APP-Taskiq`、`SG-VPCE-AWS-Services`。
-
-### 命名規範
-
-- **Security Group**:`SG-DB-RDS`、`SG-ETL-Glue`、`SG-ETL-DMS`、`SG-APP-Taskiq`、`SG-VPCE-AWS-Services`
-- **VPC Endpoint**:`vpce-sts`、`vpce-secretsmanager`、`vpce-cloudwatchlogs`、`vpce-s3`
-
-### Glue Workflow（規劃）
-
-`Glue Connection → Database → Crawler → Data Catalog →（ETL 執行改自架 Taskiq + Redis）→ ETL-Hub → S3 → Athena → Redshift → AI Platform → Data Hub`
-
-### 設計原則
-
-- **Private First**:核心服務全部署於 Private Subnet。
-- **Least Privilege**:Security Group 依角色切分,非全服務共用。
-- **AWS Backbone**:透過 VPC Endpoint 存取 AWS API,不繞 NAT Gateway。
-- **Scalable**:後續 Athena / Redshift / EMR / ECS / Lambda / AI Platform 免重設計 VPC。
+> 各設施的 Phase 歸屬另見〈XI、整體使用到的 AWS 設施〉的 Phase 欄。
 
 ---
 
-## IX、Phase 2 ｜ Glue Crawler + Data Catalog（Lake Formation 權限）
-
-> **Phase 2 · ETL / Glue** — VPC Endpoint 到位、Glue Connection Ready 後,建 Crawler 掃描 RDS PostgreSQL,把 Metadata 寫入 Glue Data Catalog。此階段的關卡不在網路,而在 **Lake Formation 權限模型**。
-
-Glue Workflow 推進到 `Glue Connection ✅ → Crawler → Data Catalog`:讓 Crawler 掃 `erp_migration_test`,把表結構寫入 Glue Database `erp_migration_test_catalog`。
-
-### 目標流程
-
-```mermaid
-flowchart LR
-  CONN["Glue Connection ✅<br/>glue-connection-rds-erp-oracle-test-pg"]
-  CRAWLER["Glue Crawler<br/>crawler-rds-erp-oracle-test-pg"]
-  RDS[("RDS PostgreSQL<br/>erp_migration_test")]
-  CAT["Glue Data Catalog<br/>erp_migration_test_catalog"]
-  LF{{"Lake Formation<br/>權限閘（Describe / Create Table）"}}
-
-  CONN --> CRAWLER
-  CRAWLER == "掃描 erp_migration_test/%" ==> RDS
-  CRAWLER == "寫入 Metadata" ==> CAT
-  LF -. 攔截 .-> CRAWLER
-```
-
-### 問題:Crawler 卡 Lake Formation 權限
-
-Crawler 執行後持續報:
-
-```
-Insufficient Lake Formation permission(s):
-Required Describe on erp_migration_test_ds_aaa_file
-(Database: erp_migration_test_catalog)
-```
-
-Glue Catalog `Tables = 0` — 一張 Metadata 都沒建成。
-
-### 錯誤演進(逐階段推進)
-
-每修正一層,錯誤就往前推一步,逐步逼近真正的缺口。
-
-| 階段 | 錯誤訊息 | 真正原因 |
-| --- | --- | --- |
-| 1 | `Crawler cannot be started / Verify the permissions in the IAM role` | **不是 IAM** — 是 Glue Connection 用錯 Subnet |
-| 2 | `Required Describe on erp_migration_test_catalog` | 缺 **Database** 層權限 |
-| 3 | `Required Describe on erp_migration_test_ds_aaa_file` | 開始檢查 **Table** 層權限 |
-| 4 | 刪 Database → `Required Drop on erp_migration_test_catalog` | 鐵證:該 DB 已由 **Lake Formation 接管** |
-
-### 根因:Database 已被 Lake Formation 接管
-
-1. **「Use only IAM access control」預設不回溯**:只對「設定啟用後新建、且仍持有 `IAMAllowedPrincipals`」的資源生效;既有 DB 不受惠。
-2. **明確 Grant 會移除 `IAMAllowedPrincipals`**:一旦對該 DB 的 Table/Column 下明確 LF Grant,Lake Formation 就把 `IAMAllowedPrincipals` 移除 → 資源翻轉成「LF 管控」→ 所有 principal(含 Crawler)都要明確 LF 授權。
-3. **只 Grant 了 Table + Column,缺 Database 層**(Describe + Create Table)→ Crawler 第一關就進不了。
-
-> 第四階段刪 DB 需 `Required Drop`,正是「DB 已被 LF 接管、連 Data Lake Admin 都要明確授權」的鐵證。
-
-### Crawler 授權檢查順序
-
-```mermaid
-flowchart LR
-  A["Database<br/>Describe"] --> B["Database<br/>Create_Table"] --> C["Table<br/>Describe / Alter"] --> D["寫入 / 更新<br/>Metadata"]
-```
-
-第一關 Database Describe 過不了,錯誤會往下傳到正在處理的 table,所以看到的是「table 的 Required Describe」,但真正缺口在 Database 層。
-
-### 解法:Lake Formation 三層權限模型(非破壞性)
-
-對 Principal `Glue-ServiceRole-ERP-Hub` 補齊三層 Grant,**不刪 DB**:
-
-| Resource | 名稱 | Permissions |
-| --- | --- | --- |
-| **Database** | `erp_migration_test_catalog` | Describe · Create Table · Alter |
-| **Table** | `ALL_TABLES` | Describe · Select · Insert · Alter · Delete（Drop 選用） |
-| **Column** | `ALL_COLUMNS` | Select |
-
-> ⚠️ 不走「刪 DB 讓預設重建」那條路:刪除屬破壞性(且此 DB 已被 LF 管控要 `Drop` 權限)。**補 Database Grant 才是最小、最安全的修法**,補齊後根本不需要重建。
-
-### 結果
-
-補上 Database 層後重跑 Crawler → `Tables > 0`,Metadata 建立成功 → 進入下一步 **ETL 轉換**(改自架 Taskiq + Redis,見〈X〉;不再走 Glue Visual ETL Job)。
-
-### 已排除(非主因)
-
-`IAM` / `Secrets Manager` / `VPC` / `Route Table` / `Security Group` / `Glue Connection` / `PostgreSQL Authentication` / `Hybrid Access Mode` — 皆已驗證正常。Connection Test / `GetSecretValue` / `GetConnection` 全 Success 只證明「連得到 DB、拿得到憑證」,與「能否寫進 Glue Catalog」是兩條獨立授權鏈;問題單純在 **Data Catalog 的 Lake Formation 授權鏈**。
-
----
-
-## X、Phase 2 流程圖
-
-> **Phase 2 · ETL / Glue** — 承接 Phase 1 落地的 Raw-Data-Replication,把 Glue 前置到 Crawler 建 Metadata 的完整順序整理成流程圖。做法與 Phase 1 一致:一次一步、完成驗證再下一步。
-
-依「① 網路前置(VPC Endpoints)→ ② Glue 連線 / 掃描 → ③ Lake Formation 權限 → ④ ETL 轉換」四層推進。
-
-```mermaid
-flowchart LR
-  subgraph EP["① 網路前置層（VPC Endpoints）"]
-    direction TB
-    SGV["1. SG-VPCE-AWS-Services<br/>Inbound 443 ← SG-ETL-Glue"]
-    IEP["2. Interface Endpoints<br/>STS · Secrets Manager · CloudWatch Logs<br/>（Private DNS on · Subnet-A/C）"]
-    GEP["3. S3 Gateway Endpoint<br/>改 Route Table（Prefix List pl-xxxx）"]
-    SGV --> IEP --> GEP
-  end
-  subgraph GL["② Glue 連線 / 掃描層"]
-    direction TB
-    CONN["4. Glue Connection<br/>PostgreSQL · 同 RDS VPC/Subnet · SG-ETL-Glue"]
-    GDB["5. Glue Database<br/>erp_migration_test_catalog"]
-    CR["6. Glue Crawler<br/>Include erp_migration_test/% · On-Demand"]
-    CONN --> GDB --> CR
-  end
-  subgraph LF["③ Lake Formation 權限層"]
-    direction TB
-    DBG["7. Grant Database<br/>Describe · Create Table · Alter"]
-    TBG["8. Grant Table / Column<br/>ALL_TABLES · ALL_COLUMNS"]
-    RUN["9. 執行 Crawler → 驗證<br/>Tables > 0"]
-    DBG --> TBG --> RUN
-  end
-  subgraph ET["④ ETL 執行層（自架 Taskiq + Redis）"]
-    direction TB
-    SCH["10. Taskiq Scheduler + Redis<br/>依 DB 排程定義派工"]
-    ETLJ["11. Taskiq Worker<br/>直連 RDS：Raw → 轉換 → ETL-Hub"]
-    DEP["12. Docker Compose + Coolify<br/>部署於 EC2"]
-    SCH --> ETLJ
-    DEP -. 承載 .-> ETLJ
-  end
-  GEP ==> CONN
-  CR ==> DBG
-  RUN ==> SCH
-```
-
-### 逐步明細
-
-| # | 步驟 | 元件 / 服務 | 關鍵設定 | 目的 |
-| --- | --- | --- | --- | --- |
-| 1 | 建共用 SG | SG-VPCE-AWS-Services | Inbound `443` ← `SG-ETL-Glue`;Outbound All | 放行 Glue → Endpoint 流量 |
-| 2 | 建 Interface Endpoints | STS / Secrets Manager / CloudWatch Logs | Private DNS on、佈於 Subnet-A/C、掛 `SG-VPCE-AWS-Services` | 私網走 Backbone:AssumeRole / 讀憑證 / 寫 log |
-| 3 | 建 S3 Gateway Endpoint | S3(Gateway) | 改 Route Table `RT-ERP-Hub-Test-DB`(自動加 Prefix List `pl-xxxx`) | 私網存取 S3 不繞公網 |
-| 4 | 建 Glue Connection + 測試 | Glue Connection(PostgreSQL) | 同 RDS VPC、Private Subnet-A/C、`SG-ETL-Glue`;先 Test connection | 建立並驗通 Glue → RDS 連線 |
-| 5 | 建 Glue Database | Data Catalog Database | `erp_migration_test_catalog` | Crawler 寫入 Metadata 的目標 |
-| 6 | 建 Glue Crawler | Glue Crawler | Source PostgreSQL、Include `erp_migration_test/%`、IAM Role `Glue-ServiceRole-ERP-Hub`、On-Demand | 掃描來源結構 |
-| 7 | Grant Database 權限 | Lake Formation | Principal `Glue-ServiceRole-ERP-Hub`;Database **Describe + Create Table + Alter** | 讓 Crawler 進得了 Database 層(關鍵缺口) |
-| 8 | Grant Table / Column | Lake Formation | `ALL_TABLES`(Describe/Select/Insert/Alter/Delete)、`ALL_COLUMNS`(Select) | 讓 Crawler 建 / 改表 Metadata |
-| 9 | 執行 Crawler + 驗證 | Glue Crawler | On-Demand Run → 查 Data Catalog | 確認 `Tables > 0`、Metadata 建立成功 |
-| 10 | 建自架排程 | Taskiq Scheduler + Redis(後續) | 依自有 DB 排程定義到點派工;Redis 作 broker | 取代 EventBridge / Lambda 編排 |
-| 11 | 建 ETL Worker | Taskiq Worker(後續) | 純 Python 直連 RDS:讀 Raw → 轉換 → 寫 `ETL-Hub`;不依賴 Glue Job / Spark | Raw → ETL-Hub 清洗轉換 |
-| 12 | 容器化部署 | Docker Compose + Coolify(後續) | image `etl_` prefix;Coolify 部署於 EC2,連 RDS 讀寫 | 自架 ETL 上線 |
-
-> **目前進度**:Step 1–9 已完成並驗證 — Crawler 與 Data Catalog 已產出,`Tables > 0`、Metadata 建立成功;Step 10–12(自架 Taskiq + Redis ETL,Docker Compose / Coolify 部署於 EC2)為下一步,ETL 執行不再走 Glue Job。詳見 `docs/Tasks/v1.1.0/propose-v1.1.0.md`。
-
----
-
-## XI、名詞解說
+## XIII、名詞解說（一）網路 · Glue 前置 · 遷移
 
 ### 網路 / 連線
 
@@ -720,30 +749,36 @@ flowchart LR
 | VPC | Virtual Private Cloud | AWS 私有虛擬網路（`10.0.0.0/16`），隔離所有資源 |
 | CIDR | 網段表示法 | 如 `10.0.32.0/24`，劃分子網範圍 |
 | AZ | Availability Zone | 區域內物理隔離機房（東京 1a / 1c） |
-| Subnet | 子網 | Public（對外）/ Private（DMS）/ DB（RDS） |
+| Subnet | 子網 | Public（對外）/ Private（DMS / Glue）/ DB（RDS） |
 | IGW | Internet Gateway | VPC 對公網入口（僅 Public 用） |
-| NAT Gateway | 網路位址轉換閘道 | 私網「只出不進」連外 |
+| NAT Gateway | 網路位址轉換閘道 | 私網「只出不進」連外；Phase 2 刻意改用 VPC Endpoint 不開 NAT |
 | VGW | Virtual Private Gateway | VPC 端 VPN 落地閘道 |
 | Site-to-Site VPN | 站對站 VPN | 地端 ↔ AWS IPsec 加密通道 |
 | Route Table | 路由表 | 決定封包流向（只增不刪既有） |
 | Security Group | 安全群組 | 執行個體層防火牆（方向 + Port + 來源） |
 | NACL | Network ACL | 子網層無狀態防火牆 |
-| VPC Endpoint | VPC 端點 | 私網不繞公網存取 S3 / STS 等 AWS 服務(走 AWS Backbone) |
+| VPC Endpoint | VPC 端點 | 私網不繞公網存取 S3 / STS 等 AWS 服務（走 AWS Backbone） |
 
 ### VPC Endpoint / Glue 前置（Phase 2）
 
 | 名詞 | 全稱 / 類型 | 說明 |
 | --- | --- | --- |
-| STS | Security Token Service | 發放臨時安全憑證;AssumeRole 靠它換取角色權限 |
-| AssumeRole | 取得角色臨時憑證 | 服務(如 Glue)啟動時向 STS 換取 IAM Role 臨時權限 |
-| Interface Endpoint | VPC 端點(ENI 型) | 建 ENI、吃 SG、走 Private DNS(STS / Secrets / Logs 等) |
-| Gateway Endpoint | VPC 端點(路由型) | S3 專用,改 Route Table、不建 ENI / 不吃 SG |
-| ENI | Elastic Network Interface | 彈性網卡;Interface Endpoint 在子網內的網路介面 |
+| STS | Security Token Service | 發放臨時安全憑證；AssumeRole 靠它換取角色權限 |
+| AssumeRole | 取得角色臨時憑證 | 服務（如 Glue）啟動時向 STS 換取 IAM Role 臨時權限 |
+| Interface Endpoint | VPC 端點（ENI 型） | 建 ENI、吃 SG、走 Private DNS（STS / Secrets / Logs 等） |
+| Gateway Endpoint | VPC 端點（路由型） | S3 專用，改 Route Table、不建 ENI / 不吃 SG |
+| Prefix List | 目的地清單 | Gateway Endpoint 由 AWS 自動加入 Route Table 的 `pl-xxxx` |
+| ENI | Elastic Network Interface | 彈性網卡；Interface Endpoint 在子網內的網路介面 |
 | Private DNS | 私有 DNS 解析 | 讓 AWS 服務網域自動解析到 Endpoint 私有 IP |
-| Glue Connection | Glue 連線設定 | Glue 連 RDS / 資料源,含 VPC / Subnet / SG |
-| Glue Crawler | 爬蟲 | 掃描資料源結構,寫入 Data Catalog |
-| ECR | Elastic Container Registry | 容器映像倉庫;跑容器化任務時需要(選用) |
-| SSM | Systems Manager | 參數 / 遠端管理(選用 Endpoint) |
+| SG-VPCE-AWS-Services | 共用 SG（專案自訂） | 所有 AWS Interface Endpoint 共用（Inbound 443 ← Glue SG） |
+| Glue Connection | Glue 連線設定 | Glue 連 RDS / 資料源，含 VPC / Subnet / SG |
+| Glue Crawler | 爬蟲 | 掃描資料源結構，寫入 Data Catalog |
+| Lake Formation | 資料湖權限治理 | 在 IAM 之上對 Glue Catalog 的 Database / Table / Column 做細粒度授權 |
+| IAMAllowedPrincipals | LF 相容群組 | 資源持有它時退回 IAM-only；被移除即翻轉成 LF 強制授權 |
+| Data Lake Administrator | 資料湖管理員 | Lake Formation 最高權限者，可授權 / 撤銷各資源 |
+| Hybrid Access Mode | 混合授權模式 | IAM 與 Lake Formation 授權並存的過渡模式；本案未使用 |
+| ECR | Elastic Container Registry | 容器映像倉庫；跑容器化任務時需要（選用） |
+| SSM | Systems Manager | 參數 / 遠端管理（選用 Endpoint） |
 
 ### 遷移 / 資料庫
 
@@ -765,20 +800,26 @@ flowchart LR
 | Multi-AZ | 多可用區部署 | 另一 AZ 待命副本，自動切換 |
 | gp3 | SSD 儲存類型 | 通用型 SSD，可線上擴充（只增不減） |
 
+---
+
+## XIV、名詞解說（二）ETL · 分析 · 安全 · 命名
+
 ### 轉換 / 編排 / 運算
 
 | 名詞 | 全稱 / 類型 | 說明 |
 | --- | --- | --- |
-| AWS Glue | 無伺服器 ETL | Crawler / Data Catalog 建立來源 Metadata（本案 ETL 轉換改自架,不用 Glue Job） |
+| AWS Glue | 無伺服器 ETL | Crawler / Data Catalog 建立來源 Metadata（本案 ETL 轉換改自架，不用 Glue Job） |
 | ETL | Extract-Transform-Load | 擷取 → 轉換 → 載入 |
 | Data Catalog | 資料目錄 | Glue 維護的表結構 / 中繼資料 |
-| Lake Formation | 資料湖權限治理 | 在 IAM 之上對 Glue Catalog 的 Database / Table / Column 做細粒度授權 |
-| IAMAllowedPrincipals | LF 相容群組 | 資源持有它時退回 IAM-only;被移除即翻轉成 LF 強制授權 |
-| Data Lake Administrator | 資料湖管理員 | Lake Formation 最高權限者,可授權 / 撤銷各資源 |
-| Taskiq | Python 分散式任務佇列 | 自架 ETL 的排程(scheduler)與執行(worker);取代 Glue Job + EventBridge / Lambda |
-| Redis | 記憶體資料存儲 | Taskiq 的 broker(訊息佇列);排程派工經此傳遞 |
-| Docker Compose | 容器編排 | 一鍵起跑自架 ETL 各服務(worker / scheduler / redis 等) |
-| Coolify | 自架 PaaS / CD | 把容器化 ETL 部署於 EC2,管理發布 |
+| Taskiq | Python 分散式任務佇列 | 自架 ETL 的排程（scheduler）與執行（worker）；取代 Glue Job + EventBridge / Lambda |
+| Redis | 記憶體資料存儲 | Taskiq 的 broker（訊息佇列）；排程派工經此傳遞 |
+| DbScheduleSource | 自訂 ScheduleSource | Scheduler 每輪自 DB 重讀啟用中排程，新增 / 啟停免重啟容器 |
+| 一表一排程 | 排程模型（專案自訂） | 每張來源表對應一筆排程（未刪除範圍內唯一）；同 cron + schema 合併派工 |
+| mirror_sync | Worker 任務 | 增量同步：讀 Raw → 增量轉換 → 寫 ETL-Hub；排程 / 手動觸發同軌 |
+| etl_runs / etl_run_logs | 執行紀錄表 | `trigger_type` 分 schedule / manual，供 UI 檢視歷史 |
+| Schedule Coverage | 排程涵蓋率檢視 | 盤點哪些表已排程 / 未排程，避免漏排 |
+| Docker Compose | 容器編排 | 一鍵起跑自架 ETL 各服務（worker / scheduler / redis 等） |
+| Coolify | 自架 PaaS / CD | 把容器化 ETL 部署於 EC2，管理發布 |
 | EC2 | Elastic Compute Cloud | 虛擬主機（Data Hub / Center + 承載自架 ETL 容器） |
 
 ### 分析 / AI
@@ -810,3 +851,36 @@ flowchart LR
 | erp_cdc_event_logs | 與 Raw-Data-Replication 同一座 RDS 實例的另一個 DB；存放 Lambda 由 Kinesis 消費而來的來源異動事件紀錄 |
 | ETL-Hub | 經 ETL（自架 Taskiq）轉換後的 RDS，供業務 / 分析使用 |
 | Data Hub / Center | 讀取 ETL-Hub 對外供應資料的應用層（EC2） |
+
+---
+
+## 附錄 A — Phase 1 關鍵參數（實測）
+
+- **VPC/Subnet**：VPC `10.0.0.0/16`；Private `10.0.32.0/24`(AZ-a)；DB `10.0.33.0/24`(AZ-a)、`10.0.34.0/24`(AZ-c)。DB Subnet Group ≥2 AZ。
+- **Route Table**：`10.0.0.0/16`→Local、`10.200.0.0/16`→VGW、`10.240.0.0/16`→VGW（**只增不移除**）。
+- **Security Group**：Oracle In 1521←DMS；DMS Out 1521→Oracle / 5432→RDS；RDS In 5432←DMS SG + Lambda SG（+公司 CIDR 選用）；Lambda Out 5432→RDS / 443→Kinesis Endpoint。**禁 `0.0.0.0/0`**。
+- **RDS**：PostgreSQL `db.t4g.small`、gp3 20GB（只增不減）、Single-AZ(Dev)、Public Access=No；同實例兩個 DB：`Raw-Data-Replication`（DMS 直寫）、`erp_cdc_event_logs`（Lambda 寫入）。
+- **DMS**：`dms.t3.medium`/50GB/Private Subnet；Task = Full Load + CDC / Drop tables / Limited LOB 32KB / Validation Off；資料 → RDS，異動紀錄 → Kinesis。
+- **Kinesis / Lambda**：Kinesis Data Streams 承接 CDC event log；Lambda 以 event source mapping 批次消費，寫入 `erp_cdc_event_logs`。
+- **Oracle Endpoint**：1521 / 唯讀 User（非 SYS/SYSTEM）；`dba_registry` 錯誤 → 套〈附錄 B〉最小權限 SQL。
+- **Table Mapping**：白名單只含 `DS.*`、`M2201.*`，不同步其他 Schema。
+
+## 附錄 B — Oracle 最小權限 SQL
+
+```sql
+-- 請以具 DBA 權限者執行;&DMS_USER 換成實際唯讀帳號
+GRANT CREATE SESSION   TO &DMS_USER;
+GRANT SELECT ANY TABLE TO &DMS_USER;
+GRANT SELECT ON SYS.V_$DATABASE      TO &DMS_USER;
+GRANT SELECT ON SYS.DBA_REGISTRY     TO &DMS_USER;   -- 解決 dba_registry 錯誤
+GRANT SELECT ON SYS.DBA_TABLES       TO &DMS_USER;
+GRANT SELECT ON SYS.DBA_TAB_COLUMNS  TO &DMS_USER;
+GRANT SELECT ON SYS.DBA_OBJECTS      TO &DMS_USER;
+GRANT SELECT ON SYS.DBA_CONSTRAINTS  TO &DMS_USER;
+GRANT SELECT ON SYS.DBA_INDEXES      TO &DMS_USER;
+```
+
+## 附錄 C — Troubleshooting（速查）
+
+- **Connection Timeout**：DNS → Test-NetConnection 5432 → Security Group → Route Table → VPN CIDR → NACL。
+- **Endpoint Test Failed**：Oracle → Network → Security Group → Permission → Version。
