@@ -46,3 +46,6 @@ etl_pkg.zip
 # DB 備份 / dump(含帳密雜湊等敏感資料,禁進版控)
 .backup/
 *.dump
+
+# 架構報告
+docs/Arch/ai-data-hub.html
