@@ -8,9 +8,9 @@
 | 002 | 英文草稿匯入 RDS + 複核輔助腳本(A2) | done(worker: claude-C) | ✗ | 001 | `backend/scripts/seed_semantic_mappings.py` / `backend/tests/test_seed_semantic_mappings.py` |
 | 003 | 自有 DB mapping 副本表 + 同步回流與 cache 失效(A5) | done(worker: claude-D) | ✗ | 001 | `backend/alembic/versions/v150_add_semantic_mappings_copy.py` / `backend/app/models/semantic_mapping.py` / `backend/app/models/__init__.py` / `backend/app/repositories/semantic_mapping_repo.py` / `backend/app/worker/tasks.py` / `backend/tests/test_semantic_mapping_sync.py` |
 | 004 | 資料查詢 JSON API + confirmed 英文 key 轉換(A3) | done(worker: claude-E) | ✗ | 003 | `backend/app/api/v1/datasets.py` / `backend/app/services/data_query_service.py` / `backend/app/schemas/data_query.py` / `backend/tests/test_data_query_api.py` |
-| 005 | 語意化 view 產生器 — 各帳套 `<schema>_en`(A4) | in_progress(worker: claude-F) | ✗ | 003 | `backend/app/etl/view_generator.py` / `backend/tests/test_view_generator.py` |
+| 005 | 語意化 view 產生器 — 各帳套 `<schema>_en`(A4) | done(worker: claude-F) | ✗ | 003 | `backend/app/etl/view_generator.py` / `backend/tests/test_view_generator.py` |
 | 006 | 字典擴充 — GAE fallback + GAQ04/05 選項值(B1+B3) | done(worker: claude-B) | ✓ | — | `backend/app/etl/dictionary.py` / `backend/tests/test_dictionary.py` |
-| 007 | B2 後端 — 快照加 GAT06 模組欄位 + API 模組篩選 | pending | ✗ | 003, 004 | `backend/alembic/versions/v150_add_module_code_to_rds_table_meta.py` / `backend/app/models/rds_table_meta.py` / `backend/app/services/snapshot_service.py` / `backend/app/api/v1/datasets.py` / `backend/app/schemas/dataset.py` / `backend/tests/test_snapshot_module_code.py` |
+| 007 | B2 後端 — 快照加 GAT06 模組欄位 + API 模組篩選 | in_progress(worker: claude-G) | ✗ | 003, 004 | `backend/alembic/versions/v150_add_module_code_to_rds_table_meta.py` / `backend/app/models/rds_table_meta.py` / `backend/app/services/snapshot_service.py` / `backend/app/api/v1/datasets.py` / `backend/app/schemas/dataset.py` / `backend/tests/test_snapshot_module_code.py` |
 | 008 | B2 前端 — 資料集頁模組分類/篩選 UI | pending | ✗ | 007 | `frontend/src/lib/api/datasetApi.ts` / `frontend/src/components/datasets/DatasetBrowser.tsx` |
 | 009 | 端到端收口驗證 — 樣本表複核鏈路 + 承諾覆核 | pending | ✗ | 002, 004, 005, 006, 007, 008 | `docs/Tasks/v1.5.0/verification-v1.5.0.md`(新) |
 

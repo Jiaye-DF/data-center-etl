@@ -24,6 +24,7 @@ from app.core import redis as cache
 from app.core.config import get_settings
 from app.core.db import AsyncSessionLocal
 from app.core.logging import setup_logging
+from app.etl import view_generator
 from app.etl.comments import quote_ident
 from app.etl.engine import (
     DbRunStore,
@@ -276,13 +277,8 @@ async def _fetch_semantic_mapping_rows() -> list[SemanticMappingRow] | None:
 async def regenerate_views_if_changed(
     session: AsyncSession, repo: SemanticMappingRepository
 ) -> None:
-    """view 重生掛點(task-005 實作本體):語意映射副本重灌完成後呼叫。
-
-    現階段為 no-op 佔位,僅預留呼叫點與參數介面(session / repo 供依 confirmed
-    映射差異重建對外查詢 view);task-005 補完差異偵測與 view DDL 產生邏輯。
-    """
-    # TODO(task-005):依 confirmed 映射變動重建 view(diff → CREATE OR REPLACE VIEW)
-    return None
+    """view 重生掛點:語意映射副本重灌完成後呼叫,委派 view_generator 實作本體(task-005)。"""
+    await view_generator.regenerate_views_if_changed(session, repo)
 
 
 @broker.task(task_name="mirror_sync")

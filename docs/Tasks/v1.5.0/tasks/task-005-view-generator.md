@@ -1,7 +1,7 @@
 ---
 id: task-005
 title: 語意化 view 產生器 — 各帳套 <schema>_en(A4)
-status: pending
+status: done
 parallel: false
 depends_on: [task-003]
 affected_files:
@@ -25,9 +25,9 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_view_generator.py` 全綠(含:confirmed 表產 view / draft 不產、欄位交集為空跳過、view SELECT alias=english_name、重跑冪等)
-- [ ] `grep -n "DROP TABLE" app/etl/view_generator.py` 零命中
-- [ ] ruff + mypy 全綠
+- [x] `cd backend && uv run pytest tests/test_view_generator.py` 全綠(含:confirmed 表產 view / draft 不產、欄位交集為空跳過、view SELECT alias=english_name、重跑冪等)
+- [x] `grep -n "DROP TABLE" app/etl/view_generator.py` 零命中
+- [x] ruff + mypy 全綠
 
 ## 必讀檔(Just-in-time)
 
