@@ -16,6 +16,8 @@ export interface TableSummary {
   row_count: number
   /** 業務資料中文名(快照時 JOIN DS 字典 GAT_FILE 落地,非即時查 RDS);無對應則為 null */
   business_name: string | null
+  /** ERP 模組代碼(快照時 JOIN DS 字典 GAT06 落地);字典缺對應則為 null(未分類) */
+  module_code: string | null
   /** 此筆 metadata 擷取時間(ISO,naive UTC+8);尚未快照為 null */
   snapshot_at: string | null
   /** 最近一次 RDS 同步時間(ISO,naive UTC+8);尚未同步為 null */
@@ -71,6 +73,8 @@ export interface ListTablesParams extends TableFilters {
   schema: string
   page: number
   pageSize: number
+  /** ERP 模組代碼精準篩選;空字串=不篩。「未分類」(module_code=null)後端不支援,由呼叫端不帶此參數改前端過濾 */
+  module: string
 }
 
 export const datasetApi = baseApi
@@ -101,6 +105,7 @@ export const datasetApi = baseApi
           keywordExact,
           rowMin,
           rowMax,
+          module,
         }) => ({
           url: `/datasets/${dataset}/tables`,
           params: {
@@ -110,7 +115,7 @@ export const datasetApi = baseApi
             rows,
             synced,
             transformed,
-            // 截止日 / 關鍵字 / 筆數區間僅在有值時帶上;精準等值一併帶 keyword_exact
+            // 截止日 / 關鍵字 / 筆數區間 / 模組僅在有值時帶上;精準等值一併帶 keyword_exact
             ...(syncedBefore !== '' ? { synced_before: syncedBefore } : {}),
             ...(transformedBefore !== ''
               ? { transformed_before: transformedBefore }
@@ -118,6 +123,7 @@ export const datasetApi = baseApi
             ...(keyword !== '' ? { keyword, keyword_exact: keywordExact } : {}),
             ...(rowMin !== '' ? { row_min: rowMin } : {}),
             ...(rowMax !== '' ? { row_max: rowMax } : {}),
+            ...(module !== '' ? { module } : {}),
           },
         }),
         providesTags: (_result, _error, { dataset }) => [

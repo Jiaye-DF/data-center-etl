@@ -1,7 +1,7 @@
 ---
 id: task-008
 title: B2 前端 — 資料集頁模組分類/篩選 UI
-status: pending
+status: done
 parallel: false
 depends_on: [task-007]
 affected_files:
@@ -22,9 +22,9 @@ estimated_hours: 2
 
 ## Acceptance
 
-- [ ] `cd frontend && npm run lint` + `npm run typecheck`(或 `tsc --noEmit`)全綠
-- [ ] `npm run build` 成功
-- [ ] docker compose 手測:資料集頁選任一模組 → 表清單僅剩該模組;切回「全部」復原;null 模組表出現在「未分類」
+- [x] `cd frontend && npm run lint` + `npm run typecheck`(或 `tsc --noEmit`)全綠
+- [x] `npm run build` 成功
+- [ ] docker compose 手測:資料集頁選任一模組 → 表清單僅剩該模組;切回「全部」復原;null 模組表出現在「未分類」(無頭環境無法驗證,留待 task-009 收口人工執行)
 
 ## 必讀檔(Just-in-time)
 
