@@ -134,3 +134,64 @@ async def test_check_accepts_draft_and_confirmed(target_engine: AsyncEngine) -> 
             _INSERT_SQL,
             {"t": "AAA_FILE", "c": "AAA02", "e": "account name", "s": "confirmed"},
         )
+
+
+_UPDATED_AT_TYPE_SQL = text(
+    "SELECT data_type FROM information_schema.columns"
+    " WHERE table_schema = :schema AND table_name = :table AND column_name = 'updated_at'"
+)
+
+
+async def test_updated_at_is_naive_timestamp(target_engine: AsyncEngine) -> None:
+    """updated_at 一律 naive timestamp(MSSQL datetime2 等價;user 決議 2026-07-20)。"""
+    async with target_engine.begin() as conn:
+        await ensure_semantic_schema(conn)
+
+    async with target_engine.connect() as conn:
+        row = (
+            await conn.execute(
+                _UPDATED_AT_TYPE_SQL,
+                {"schema": SEMANTIC_SCHEMA, "table": SEMANTIC_TABLE},
+            )
+        ).first()
+    assert row is not None
+    assert row[0] == "timestamp without time zone"
+
+
+async def test_ensure_migrates_legacy_timestamptz(target_engine: AsyncEngine) -> None:
+    """舊版 timestamptz 欄位:ensure 冪等轉為 naive timestamp 且既有資料保留。"""
+    async with target_engine.begin() as conn:
+        await ensure_semantic_schema(conn)
+        # 模擬舊版部署狀態:把欄位改回 timestamptz(僅測試用;非破壞性型別轉換)
+        await conn.execute(
+            text(
+                f"ALTER TABLE {_QUALIFIED} ALTER COLUMN updated_at TYPE timestamptz"
+                " USING (updated_at AT TIME ZONE 'Asia/Taipei')"
+            )
+        )
+        await conn.execute(
+            _INSERT_SQL,
+            {"t": "LEGACY_FILE", "c": "L01", "e": "legacy col", "s": "draft"},
+        )
+
+    async with target_engine.begin() as conn:
+        await ensure_semantic_schema(conn)
+
+    async with target_engine.connect() as conn:
+        type_row = (
+            await conn.execute(
+                _UPDATED_AT_TYPE_SQL,
+                {"schema": SEMANTIC_SCHEMA, "table": SEMANTIC_TABLE},
+            )
+        ).first()
+        data_row = (
+            await conn.execute(
+                text(
+                    f"SELECT updated_at FROM {_QUALIFIED}"
+                    " WHERE table_name = 'LEGACY_FILE' AND column_name = 'L01'"
+                )
+            )
+        ).first()
+    assert type_row is not None and type_row[0] == "timestamp without time zone"
+    assert data_row is not None and data_row[0] is not None
+    assert data_row[0].tzinfo is None

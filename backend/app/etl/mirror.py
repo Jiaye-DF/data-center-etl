@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, time
 from typing import Any
 
 from sqlalchemy import text
@@ -24,6 +25,7 @@ from app.etl.comments import quote_ident, quote_literal
 from app.etl.dictionary import fetch_column_comments, fetch_table_comment
 from app.etl.reader import DEFAULT_BATCH_SIZE, RDS_SOURCE_DB_ENV, rds_database_url
 from app.etl.writer import RDS_TARGET_DB_ENV
+from app.utils.datetime import to_tw
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +35,15 @@ DS_SCHEMA = "DS"
 
 @dataclass(frozen=True)
 class MirrorColumn:
-    """來源欄位的鏡像規格:欄名 + 重建後的目標 DDL 型別片段(如 `VARCHAR(10)`)。"""
+    """來源欄位的鏡像規格:欄名 + 重建後的目標 DDL 型別片段(如 `VARCHAR(10)`)。
+
+    tz_aware:來源為帶時區型別(timestamptz/timetz)— 目標一律建 naive(datetime2 等價,
+    user 決議 2026-07-20),寫入時值需轉 UTC+8 naive。
+    """
 
     name: str
     type_sql: str
+    tz_aware: bool = False
 
 
 @dataclass(frozen=True)
@@ -156,14 +163,16 @@ def source_type_to_ddl(row: Mapping[str, Any]) -> str:
             return "DOUBLE PRECISION"
         case "date":
             return "DATE"
+        # 時間型別通則(user 決議 2026-07-20):RDS PG 目標端一律 naive(MSSQL datetime2 等價),
+        # 帶時區來源在 DDL 正規化為無時區,值於 write_mirror 轉 UTC+8 naive
         case "timestamp without time zone":
             return "TIMESTAMP"
         case "timestamp with time zone":
-            return "TIMESTAMPTZ"
+            return "TIMESTAMP"
         case "time without time zone":
             return "TIME"
         case "time with time zone":
-            return "TIMETZ"
+            return "TIME"
         case "bytea":
             return "BYTEA"
         case "uuid":
@@ -175,6 +184,19 @@ def source_type_to_ddl(row: Mapping[str, Any]) -> str:
         case _:
             logger.warning("未知來源型別 %r → 保守落 TEXT", data_type)
             return "TEXT"
+
+
+def _to_naive_tw(value: object) -> object:
+    """帶時區時間值轉 UTC+8 naive(目標端一律 datetime2 等價的無時區型別)。
+
+    datetime 先換算 Asia/Taipei 再去 tzinfo;time 無日期資訊無法換算時區,僅去 tzinfo;
+    其餘值(含 NULL)原樣通過。
+    """
+    if isinstance(value, datetime):
+        return to_tw(value).replace(tzinfo=None)
+    if isinstance(value, time) and value.tzinfo is not None:
+        return value.replace(tzinfo=None)
+    return value
 
 
 def build_comment_statements(
@@ -233,12 +255,20 @@ async def write_mirror(
     col_list = ", ".join(quote_ident(c) for c in colnames)
     placeholders = ", ".join(f":c{i}" for i in range(len(colnames)))
     insert_sql = text(f"INSERT INTO {qualified} ({col_list}) VALUES ({placeholders})")
+    # 帶時區來源欄:目標已建為 naive(datetime2 等價),寫入值需先轉 UTC+8 naive
+    tz_cols = {c.name for c in columns if c.tz_aware}
     written = 0
     async for batch in row_batches:
         if not batch:
             continue
         params = [
-            {f"c{i}": row.get(col) for i, col in enumerate(colnames)} for row in batch
+            {
+                f"c{i}": (
+                    _to_naive_tw(row.get(col)) if col in tz_cols else row.get(col)
+                )
+                for i, col in enumerate(colnames)
+            }
+            for row in batch
         ]
         await conn.execute(insert_sql, params)
         written += len(batch)
@@ -303,7 +333,11 @@ class MirrorEngine:
             ).mappings().all()
         ]
         return [
-            MirrorColumn(name=str(r["column_name"]), type_sql=source_type_to_ddl(r))
+            MirrorColumn(
+                name=str(r["column_name"]),
+                type_sql=source_type_to_ddl(r),
+                tz_aware="with time zone" in str(r["data_type"]),
+            )
             for r in rows
         ]
 

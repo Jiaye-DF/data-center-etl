@@ -56,12 +56,15 @@ _INSERT_SQL = text(
     f"INSERT INTO {_QUALIFIED} (table_name, column_name, english_name, zh_name, status)"
     " VALUES (:t, :c, :e, :z, 'draft')"
 )
+# updated_at 為 naive timestamp(datetime2 等價);RDS 系統時鐘為 UTC,需轉出 UTC+8 本地值
 _UPDATE_DRAFT_SQL = text(
-    f"UPDATE {_QUALIFIED} SET english_name = :e, zh_name = :z, updated_at = now()"
+    f"UPDATE {_QUALIFIED} SET english_name = :e, zh_name = :z,"
+    " updated_at = (now() AT TIME ZONE 'Asia/Taipei')"
     " WHERE table_name = :t AND column_name = :c"
 )
 _CONFIRM_TABLE_SQL = text(
-    f"UPDATE {_QUALIFIED} SET status = 'confirmed', updated_at = now() WHERE table_name = :t"
+    f"UPDATE {_QUALIFIED} SET status = 'confirmed',"
+    " updated_at = (now() AT TIME ZONE 'Asia/Taipei') WHERE table_name = :t"
 )
 
 
