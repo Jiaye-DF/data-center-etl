@@ -22,7 +22,9 @@ from app.schemas.rawdata import (
     SnapshotRefreshResponse,
     TableListResponse,
 )
+from app.schemas.data_query import DataQueryResponse
 from app.schemas.response import ApiResponse
+from app.services.data_query_service import DataQueryService
 from app.services.snapshot_service import SnapshotService, TableFilters
 
 router = APIRouter()
@@ -109,6 +111,30 @@ async def schema_summary(
     _user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[SchemaStatSummary]:
     data = await SnapshotService(db).list_summary(dataset, schema)
+    return success(data=data)
+
+
+@router.get(
+    "/{dataset}/tables/{schema_name}/{table_name}/rows",
+    response_model=ApiResponse[DataQueryResponse],
+    summary="查指定表資料列(key 轉 confirmed 英文語意名;未 confirmed 欄不出現)",
+)
+async def query_table_rows(
+    dataset: Dataset,
+    schema_name: str,
+    table_name: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_admin)],
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ApiResponse[DataQueryResponse]:
+    data = await DataQueryService(db).query_rows(
+        dataset=dataset,
+        schema_name=schema_name,
+        table_name=table_name,
+        limit=limit,
+        offset=offset,
+    )
     return success(data=data)
 
 

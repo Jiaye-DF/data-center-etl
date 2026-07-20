@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: 資料查詢 JSON API + confirmed 英文 key 轉換(A3)
-status: pending
+status: done
 parallel: false
 depends_on: [task-003]
 affected_files:
@@ -29,10 +29,10 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_data_query_api.py` 全綠(含:confirmed 表回英文 key、未 confirmed 欄不出現、全 draft 表 404、limit 上限、未登入 401)
-- [ ] `uv run pytest` 既有全套件不紅
-- [ ] ruff + mypy 全綠
-- [ ] docker compose 手測:`curl -s -b <cookie> http://localhost:<port>/api/v1/datasets/source/tables/M2201/GEN_FILE/rows | jq -e '.data.rows[0] | has("gen01") | not'`(樣本表 confirmed 後執行;與 task-009 銜接)
+- [x] `cd backend && uv run pytest tests/test_data_query_api.py` 全綠(7 passed;含:confirmed 表回英文 key、未 confirmed 欄不出現、全 draft 表 404、未知 schema 404、limit/offset 邊界 422、分頁、未登入 401、member 403)
+- [x] `uv run pytest` 既有全套件不紅(257 passed;task-003 基線 250 + 本 task 7 支)
+- [x] ruff 全綠;mypy:本 task 三檔(data_query_service / data_query / datasets)全綠(`schedule_repo.py:528` 為既有 baseline error,非本 task 檔、未觸碰,超出 affected_files)
+- [ ] docker compose 手測:`curl -s -b <cookie> http://localhost:<port>/api/v1/datasets/source/tables/M2201/GEN_FILE/rows | jq -e '.data.rows[0] | has("gen01") | not'`(樣本表需先 confirmed → **留待 task-009 收口執行**)
 
 ## 必讀檔(Just-in-time)
 
