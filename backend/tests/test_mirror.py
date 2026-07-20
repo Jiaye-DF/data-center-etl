@@ -103,6 +103,9 @@ def test_source_type_to_ddl_preserves_length_and_precision() -> None:
     assert source_type_to_ddl(row(data_type="integer")) == "INTEGER"
     assert source_type_to_ddl(row(data_type="bigint")) == "BIGINT"
     assert source_type_to_ddl(row(data_type="timestamp without time zone")) == "TIMESTAMP"
+    # 時間型別通則(2026-07-20):帶時區來源一律正規化為 naive(datetime2 等價)
+    assert source_type_to_ddl(row(data_type="timestamp with time zone")) == "TIMESTAMP"
+    assert source_type_to_ddl(row(data_type="time with time zone")) == "TIME"
     assert source_type_to_ddl(row(data_type="date")) == "DATE"
     # 未知型別保守落 TEXT(不 raise)
     assert source_type_to_ddl(row(data_type="some_exotic_type")) == "TEXT"

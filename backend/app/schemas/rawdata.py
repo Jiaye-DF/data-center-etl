@@ -18,10 +18,21 @@ class SchemaListResponse(BaseModel):
     items: list[SchemaSummary] = Field(description="非系統 schema 清單")
 
 
+class ModuleListResponse(BaseModel):
+    """指定 schema 下 distinct ERP 模組代碼清單(AD-115:整 schema 聚合,非單頁)。"""
+
+    modules: list[str] = Field(description="distinct ERP 模組代碼(排序;不含未分類)")
+    has_unclassified: bool = Field(description="該 schema 是否存在未分類(module_code IS NULL)的表")
+
+
 class TableSummary(BaseModel):
     name: str = Field(description="表名")
     business_name: str | None = Field(
         default=None, description="業務資料名稱(中文,快照時 JOIN GAT_FILE 落地;缺對應為 null)"
+    )
+    module_code: str | None = Field(
+        default=None,
+        description="ERP 模組代碼(GAT_FILE.GAT06,快照時 JOIN 落地;字典缺對應為 null)",
     )
     column_count: int = Field(description="欄位數")
     row_count: int = Field(

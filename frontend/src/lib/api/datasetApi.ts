@@ -16,6 +16,8 @@ export interface TableSummary {
   row_count: number
   /** 業務資料中文名(快照時 JOIN DS 字典 GAT_FILE 落地,非即時查 RDS);無對應則為 null */
   business_name: string | null
+  /** ERP 模組代碼(快照時 JOIN DS 字典 GAT06 落地);字典缺對應則為 null(未分類) */
+  module_code: string | null
   /** 此筆 metadata 擷取時間(ISO,naive UTC+8);尚未快照為 null */
   snapshot_at: string | null
   /** 最近一次 RDS 同步時間(ISO,naive UTC+8);尚未同步為 null */
@@ -29,6 +31,12 @@ export interface DatasetTableListData {
   total: number
   page: number
   page_size: number
+}
+
+/** 指定 schema 下 distinct ERP 模組代碼(全 schema 聚合,排序,不含未分類) */
+export interface ModuleListData {
+  modules: string[]
+  has_unclassified: boolean
 }
 
 /** 資料總筆數篩選:全部 / 僅有資料(>0)/ 僅空表(=0) */
@@ -71,6 +79,8 @@ export interface ListTablesParams extends TableFilters {
   schema: string
   page: number
   pageSize: number
+  /** ERP 模組代碼精準篩選;空字串=不篩。哨符值 `__unclassified__` 篩 module_code IS NULL(未分類) */
+  module: string
 }
 
 export const datasetApi = baseApi
@@ -85,6 +95,20 @@ export const datasetApi = baseApi
         transformResponse: (
           response: ApiEnvelope<{ items: SchemaSummary[] }>,
         ): SchemaSummary[] => unwrap(response).items,
+      }),
+      // AD-115:模組下拉選項改由後端全 schema distinct 聚合(非單頁聚合)
+      listSchemaModules: build.query<
+        ModuleListData,
+        { dataset: Dataset; schema: string }
+      >({
+        query: ({ dataset, schema }) =>
+          `/datasets/${dataset}/schemas/${schema}/modules`,
+        providesTags: (_result, _error, { dataset }) => [
+          { type: 'DatasetTable', id: dataset },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<ModuleListData>,
+        ): ModuleListData => unwrap(response),
       }),
       listDatasetTables: build.query<DatasetTableListData, ListTablesParams>({
         query: ({
@@ -101,6 +125,7 @@ export const datasetApi = baseApi
           keywordExact,
           rowMin,
           rowMax,
+          module,
         }) => ({
           url: `/datasets/${dataset}/tables`,
           params: {
@@ -110,7 +135,7 @@ export const datasetApi = baseApi
             rows,
             synced,
             transformed,
-            // 截止日 / 關鍵字 / 筆數區間僅在有值時帶上;精準等值一併帶 keyword_exact
+            // 截止日 / 關鍵字 / 筆數區間 / 模組僅在有值時帶上;精準等值一併帶 keyword_exact
             ...(syncedBefore !== '' ? { synced_before: syncedBefore } : {}),
             ...(transformedBefore !== ''
               ? { transformed_before: transformedBefore }
@@ -118,6 +143,7 @@ export const datasetApi = baseApi
             ...(keyword !== '' ? { keyword, keyword_exact: keywordExact } : {}),
             ...(rowMin !== '' ? { row_min: rowMin } : {}),
             ...(rowMax !== '' ? { row_max: rowMax } : {}),
+            ...(module !== '' ? { module } : {}),
           },
         }),
         providesTags: (_result, _error, { dataset }) => [
@@ -160,6 +186,7 @@ export const datasetApi = baseApi
 
 export const {
   useListDatasetSchemasQuery,
+  useListSchemaModulesQuery,
   useListDatasetTablesQuery,
   useDatasetSchemaSummaryQuery,
   useRefreshDatasetSnapshotMutation,

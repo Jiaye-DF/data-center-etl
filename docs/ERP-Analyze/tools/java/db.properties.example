@@ -1,0 +1,6 @@
+# Q2.java 連線設定範本:複製為 db.properties 後填入實際值(db.properties 已被 .gitignore 排除)
+# 實際帳密見原 erp-data-analyze 專案 DB-INFO.md 或向 IT 索取
+url=jdbc:oracle:thin:@10.200.206.130:1521:toptest
+user=<帳號>
+password=<密碼>
+sysdba=false
