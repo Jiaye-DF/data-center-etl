@@ -17,13 +17,14 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, update
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core import redis as cache
 from app.core.config import get_settings
 from app.core.db import AsyncSessionLocal
 from app.core.logging import setup_logging
+from app.etl.comments import quote_ident
 from app.etl.engine import (
     DbRunStore,
     EtlTableConfig,
@@ -31,9 +32,16 @@ from app.etl.engine import (
     mask_secrets,
 )
 from app.etl.mirror import MirrorEngine, TableStat, stat_changed
+from app.etl.reader import rds_database_url
+from app.etl.semantic_schema import SEMANTIC_SCHEMA, SEMANTIC_TABLE
+from app.etl.writer import RDS_TARGET_DB_ENV
 from app.models.rds_table_meta import Dataset, RdsTableMeta
 from app.repositories.rds_table_meta_repo import RdsTableMetaRepository
-from app.utils.datetime import db_now, now_tw
+from app.repositories.semantic_mapping_repo import (
+    SemanticMappingRepository,
+    SemanticMappingRow,
+)
+from app.utils.datetime import db_now, now_tw, to_tw
 from app.worker.broker import broker
 
 # worker / scheduler 入口(taskiq 以本模組啟動):未組態時 root logger 預設 WARNING,
@@ -207,6 +215,76 @@ async def _mark_meta_synced(
     await session.flush()
 
 
+# ── task-003:語意映射副本整表重灌(RDS → 自有 DB 單向,propose A5)──────────
+# semantic_mappings 位於目標 RDS(與 mirror 目標庫同實例,見 app/etl/semantic_schema.py),
+# 小表免增量,同步 job 完成階段整表讀出後交 repo.replace_all 重灌。
+
+_SEMANTIC_MAPPINGS_EXISTS_SQL = text(
+    "SELECT 1 FROM information_schema.tables WHERE table_schema = :schema AND table_name = :table"
+)
+
+
+async def _fetch_semantic_mapping_rows() -> list[SemanticMappingRow] | None:
+    """讀 RDS 目標端 `erp_metadata.semantic_mappings` 全量。
+
+    來源表不存在(尚未跑 task-001 建置 / 環境未備妥)→ graceful 回 None,
+    呼叫端略過本輪副本重灌(log warning,不 fail job)。
+    """
+    engine = create_async_engine(rds_database_url(RDS_TARGET_DB_ENV))
+    try:
+        async with engine.connect() as conn:
+            exists = (
+                await conn.execute(
+                    _SEMANTIC_MAPPINGS_EXISTS_SQL,
+                    {"schema": SEMANTIC_SCHEMA, "table": SEMANTIC_TABLE},
+                )
+            ).first()
+            if exists is None:
+                return None
+            qualified = f"{quote_ident(SEMANTIC_SCHEMA)}.{quote_ident(SEMANTIC_TABLE)}"
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT table_name, column_name, english_name, zh_name,"
+                        f" status, updated_by, updated_at FROM {qualified}"
+                    )
+                )
+            ).mappings().all()
+    finally:
+        await engine.dispose()
+
+    return [
+        SemanticMappingRow(
+            table_name=str(row["table_name"]),
+            column_name=str(row["column_name"]),
+            english_name=str(row["english_name"]),
+            zh_name=None if row["zh_name"] is None else str(row["zh_name"]),
+            status=str(row["status"]),
+            source_updated_by=(
+                None if row["updated_by"] is None else str(row["updated_by"])
+            ),
+            source_updated_at=(
+                None
+                if row["updated_at"] is None
+                else to_tw(row["updated_at"]).replace(tzinfo=None)
+            ),
+        )
+        for row in rows
+    ]
+
+
+async def regenerate_views_if_changed(
+    session: AsyncSession, repo: SemanticMappingRepository
+) -> None:
+    """view 重生掛點(task-005 實作本體):語意映射副本重灌完成後呼叫。
+
+    現階段為 no-op 佔位,僅預留呼叫點與參數介面(session / repo 供依 confirmed
+    映射差異重建對外查詢 view);task-005 補完差異偵測與 view DDL 產生邏輯。
+    """
+    # TODO(task-005):依 confirmed 映射變動重建 view(diff → CREATE OR REPLACE VIEW)
+    return None
+
+
 @broker.task(task_name="mirror_sync")
 async def mirror_sync(
     schema: str | None = None,
@@ -227,6 +305,8 @@ async def mirror_sync(
     - 單表失敗不中斷整輪:錯誤明細(含 stack trace,機密遮罩)寫入該表 log,續跑下一表;
       任一表失敗 → run 總狀態 failed(對齊既有 run 收尾慣例)。
     - 同步後失效 datasets:source:* 快取(對齊 snapshot_service 失效用法)。
+    - task-003:同步完成後另整表重灌語意映射副本(RDS `erp_metadata.semantic_mappings`
+      → 自有 DB `semantic_mappings`,單向);來源表不存在 graceful 略過(不 fail run)。
     """
     async with AsyncSessionLocal() as session:
         store = RunStateTracker(make_store(session))
@@ -341,6 +421,30 @@ async def mirror_sync(
             )
             # 同步改動 source 快照的同步時間 / row_count → 失效原始資料管理清單快取
             await cache.delete_pattern(cache.cache_key("datasets", Dataset.SOURCE.value, "*"))
+
+            # task-003:同步 job 完成階段 — 語意映射副本整表重灌(RDS → 自有 DB 單向)
+            # 本步驟為附加同步(非主鏡像流程一部分):graceful 範圍涵蓋來源表不存在、
+            # 連線層失敗(缺 env / 連線失敗)、寫入異常等任何情況,一律 log warning 略過,
+            # 不得讓其失敗波及本輪主鏡像同步已完成的 run 結果。
+            try:
+                mapping_rows = await _fetch_semantic_mapping_rows()
+                if mapping_rows is None:
+                    logger.warning(
+                        "RDS erp_metadata.semantic_mappings 不存在,略過語意映射副本重灌"
+                    )
+                else:
+                    semantic_repo = SemanticMappingRepository(session)
+                    await semantic_repo.replace_all(
+                        mapping_rows, actor_uid=SYSTEM_ACTOR_UID
+                    )
+                    await cache.delete_pattern(cache.cache_key("semantic-mappings", "*"))
+                    # view 重生掛點(task-005 實作本體,現階段 no-op 佔位)
+                    await regenerate_views_if_changed(session, semantic_repo)
+            except Exception:
+                logger.warning(
+                    "語意映射副本重灌失敗,略過本輪(不影響主鏡像同步結果)", exc_info=True
+                )
+
             return {
                 "run_pid": run_pid,
                 "status": status,

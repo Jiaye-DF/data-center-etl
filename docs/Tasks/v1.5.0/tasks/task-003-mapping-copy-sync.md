@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: 自有 DB mapping 副本表 + 同步回流與 cache 失效(A5)
-status: pending
+status: done
 parallel: false
 depends_on: [task-001]
 affected_files:
@@ -28,10 +28,10 @@ RDS `erp_metadata.semantic_mappings` 為唯一事實來源;ETL 同步 job 末端
 
 ## Acceptance
 
-- [ ] `cd backend && uv run alembic upgrade head` 後 `uv run alembic downgrade -1` round-trip OK,再 upgrade 回 head
-- [ ] `uv run pytest tests/test_semantic_mapping_sync.py` 全綠(含:整表重灌後副本=來源、來源缺表 graceful、cache 失效被呼叫)
-- [ ] `uv run pytest` 既有全套件不紅
-- [ ] ruff + mypy 全綠(上列 affected python 檔)
+- [x] `cd backend && uv run alembic upgrade head` 後 `uv run alembic downgrade -1` round-trip OK,再 upgrade 回 head
+- [x] `uv run pytest tests/test_semantic_mapping_sync.py` 全綠(含:整表重灌後副本=來源、來源缺表 graceful、cache 失效被呼叫)
+- [x] `uv run pytest` 既有全套件不紅(250 passed)
+- [x] ruff + mypy 全綠(上列 affected python 檔)
 
 ## 必讀檔(Just-in-time)
 
