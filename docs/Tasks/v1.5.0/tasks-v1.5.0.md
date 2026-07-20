@@ -1,6 +1,6 @@
 # Tasks v1.5.0
 
-> 狀態:待認領(已完成 0/9)
+> 狀態:全數完成(已完成 9/9,2026-07-20;驗證紀錄 verification-v1.5.0.md)
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
@@ -12,7 +12,7 @@
 | 006 | 字典擴充 — GAE fallback + GAQ04/05 選項值(B1+B3) | done(worker: claude-B) | ✓ | — | `backend/app/etl/dictionary.py` / `backend/tests/test_dictionary.py` |
 | 007 | B2 後端 — 快照加 GAT06 模組欄位 + API 模組篩選 | done(worker: claude-G) | ✗ | 003, 004 | `backend/alembic/versions/v150_add_module_code_to_rds_table_meta.py` / `backend/app/models/rds_table_meta.py` / `backend/app/services/snapshot_service.py` / `backend/app/api/v1/datasets.py` / `backend/app/schemas/rawdata.py`(拆解誤植 dataset.py,實際檔名) / `backend/app/repositories/rds_table_meta_repo.py`(分層規則必經,worker 揭露補記) / `backend/app/etl/dictionary.py`(純新增 fetch_table_modules) / `backend/tests/test_snapshot_module_code.py` |
 | 008 | B2 前端 — 資料集頁模組分類/篩選 UI | done(worker: claude-H) | ✗ | 007 | `frontend/src/lib/api/datasetApi.ts` / `frontend/src/components/datasets/DatasetBrowser.tsx` |
-| 009 | 端到端收口驗證 — 樣本表複核鏈路 + 承諾覆核 | in_progress(worker: claude-I) | ✗ | 002, 004, 005, 006, 007, 008 | `docs/Tasks/v1.5.0/verification-v1.5.0.md`(新) |
+| 009 | 端到端收口驗證 — 樣本表複核鏈路 + 承諾覆核 | done(worker: claude-I) | ✗ | 002, 004, 005, 006, 007, 008 | `docs/Tasks/v1.5.0/verification-v1.5.0.md`(新) |
 
 ## 拆解摘要
 

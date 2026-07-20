@@ -1,7 +1,7 @@
 ---
 id: task-009
 title: 端到端收口驗證 — 樣本表複核鏈路 + 對外承諾覆核 + 驗證紀錄
-status: pending
+status: done
 parallel: false
 depends_on: [task-002, task-004, task-005, task-006, task-007, task-008]
 estimated_hours: 2
@@ -27,9 +27,15 @@ affected_files:
 
 ## Acceptance
 
-- [ ] `[ -f docs/Tasks/v1.5.0/verification-v1.5.0.md ]` 且逐條含實測結果(指令 + 輸出摘要),無「未執行」空條目
-- [ ] 上列 2/3/4/5/6 全數通過(7 允許記錄前置未成;8/9 全綠)
-- [ ] 對外承諾四條逐一覆核並在驗證紀錄標注 ✅/⚠️(⚠️ 需附原因與後續)
+- [x] `[ -f docs/Tasks/v1.5.0/verification-v1.5.0.md ]` 且逐條含實測結果(指令 + 輸出摘要),無「未執行」空條目
+- [x] 上列 2/3/4/5/6 全數通過(7 允許記錄前置未成;8/9 全綠)— 實測 7 之 DMS 前置已達成,缺漏欄數精確驗證為 65(≤65)
+- [x] 對外承諾四條逐一覆核並在驗證紀錄標注 ✅/⚠️(⚠️ 需附原因與後續)— 四條全數 ✅
+
+## 執行備註(收口)
+
+- 樣本表由 `GEN_FILE` 改為 `M2201.BMA_FILE`:`GEN_FILE`/`GEM_FILE` 實體表位於 `DS` schema,而 `view_generator` 設計上排除 `DS` 不進 view 產生迴圈,若用 `GEN_FILE` 將無法驗證第 6 條(view);改用理由與影響已記於 `verification-v1.5.0.md`「樣本表選擇說明」與「遺留事項 #1」。
+- AWS RDS 於本次驗證環境實測**可連線**(非預期中的不可達),故本次為**真實 RDS 全鏈路驗證**,非本地替代鏈路。
+- 詳細逐條記錄見 `docs/Tasks/v1.5.0/verification-v1.5.0.md`。
 
 ## 必讀檔(Just-in-time)
 
