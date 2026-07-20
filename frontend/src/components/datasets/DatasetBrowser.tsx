@@ -10,6 +10,7 @@ import {
   useDatasetSchemaSummaryQuery,
   useListDatasetSchemasQuery,
   useListDatasetTablesQuery,
+  useListSchemaModulesQuery,
   useRefreshDatasetSnapshotMutation,
   type Dataset,
   type TableFilters,
@@ -46,6 +47,15 @@ const DEFAULT_FILTERS: TableFilters = {
   keywordExact: false,
   rowMin: '',
   rowMax: '',
+}
+
+/** 模組篩選特殊值：後端哨符,篩 module_code IS NULL(未分類);直接當 module 參數送後端 */
+const UNCLASSIFIED_MODULE = '__unclassified__'
+
+interface ModuleOption {
+  /** 實際模組代碼,或 UNCLASSIFIED_MODULE 代表「未分類」 */
+  value: string
+  label: string
 }
 
 interface SegmentedOption<T extends string> {
@@ -115,6 +125,43 @@ function Segmented<T extends string>({
           </button>
         )
       })}
+    </div>
+  )
+}
+
+/** ERP 模組篩選下拉：選項由後端全 schema distinct module_code 聚合 + 固定「全部」；
+ *  含未分類選項時排最後;isError 時給極簡提示,不誤導為「無模組」 */
+function ModuleFilterSelect({
+  options,
+  value,
+  isError,
+  onChange,
+}: {
+  options: readonly ModuleOption[]
+  value: string | null
+  isError: boolean
+  onChange: (value: string | null) => void
+}): React.ReactNode {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm font-medium text-foreground md:text-base">模組</span>
+      {isError ? (
+        <span className="text-sm text-danger md:text-base">模組清單載入失敗</span>
+      ) : (
+        <select
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+          aria-label="模組篩選"
+          className="df-input w-auto py-1.5"
+        >
+          <option value="">全部</option>
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   )
 }
@@ -409,6 +456,8 @@ export function DatasetBrowser({
   const [activeSchema, setActiveSchema] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [filters, setFilters] = useState<TableFilters>(DEFAULT_FILTERS)
+  // null=全部（不篩）；UNCLASSIFIED_MODULE=未分類；其餘為實際模組代碼（皆為後端等值篩選）
+  const [activeModule, setActiveModule] = useState<string | null>(null)
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [openDialog, setOpenDialog] = useState<
@@ -431,12 +480,22 @@ export function DatasetBrowser({
   // 尚未手動選擇時，以載入後的排序第一個（DS 優先）當預設，不在 effect 內 setState
   const effectiveSchema = activeSchema ?? orderedSchemas[0] ?? null
 
+  // module 直接送後端（含未分類哨符值，後端已支援 module_code IS NULL 篩選）
+  const apiModule = activeModule ?? ''
+
   // 與 SchemaTables 相同查詢參數 → RTK Query 共用同一筆快取（不會多打一次 API），
   // 這裡只是為了在 header 取得 isFetching / refetch 供 AutoRefreshControl 使用
   const { isFetching: tablesFetching, refetch: refetchTables } =
     useListDatasetTablesQuery(
       effectiveSchema !== null
-        ? { dataset, schema: effectiveSchema, page, pageSize: PAGE_SIZE, ...filters }
+        ? {
+            dataset,
+            schema: effectiveSchema,
+            page,
+            pageSize: PAGE_SIZE,
+            ...filters,
+            module: apiModule,
+          }
         : skipToken,
       { pollingInterval: POLLING_INTERVAL_MS, skipPollingIfUnfocused: true },
     )
@@ -448,7 +507,7 @@ export function DatasetBrowser({
     refetchTables()
   }, [refetchSchemas, refetchTables])
 
-  // combobox 建議：取當前 schema + 其他篩選（不含關鍵字）的表名 / 業務名
+  // combobox 建議：取當前 schema + 其他篩選（不含關鍵字 / 模組）的表名 / 業務名
   const { data: suggestData } = useListDatasetTablesQuery(
     effectiveSchema !== null
       ? {
@@ -458,6 +517,7 @@ export function DatasetBrowser({
           pageSize: PAGE_SIZE,
           ...filters,
           keyword: '',
+          module: '',
         }
       : skipToken,
   )
@@ -472,6 +532,21 @@ export function DatasetBrowser({
     return out
   }, [suggestData])
 
+  // 模組篩選選項：後端全 schema distinct module_code 聚合（非單頁）+ has_unclassified 旗標
+  const { data: modulesData, isError: modulesError } = useListSchemaModulesQuery(
+    effectiveSchema !== null ? { dataset, schema: effectiveSchema } : skipToken,
+  )
+  const moduleOptions = useMemo((): ModuleOption[] => {
+    const options: ModuleOption[] = (modulesData?.modules ?? []).map((code) => ({
+      value: code,
+      label: code,
+    }))
+    if (modulesData?.has_unclassified === true) {
+      options.push({ value: UNCLASSIFIED_MODULE, label: '未分類' })
+    }
+    return options
+  }, [modulesData])
+
   const activeFilterCount = useMemo((): number => {
     let count = 0
     if (filters.rows !== DEFAULT_FILTERS.rows) count += 1
@@ -481,11 +556,19 @@ export function DatasetBrowser({
     if (filters.transformedBefore !== '') count += 1
     if (filters.keyword !== '') count += 1
     if (filters.rowMin !== '' || filters.rowMax !== '') count += 1
+    if (activeModule !== null) count += 1
     return count
-  }, [filters])
+  }, [filters, activeModule])
 
   const handleSchemaSelect = useCallback((schema: string): void => {
     setActiveSchema(schema)
+    // 切換 schema 時模組選項會重新聚合，先選定的代碼在新 schema 未必存在，重置避免殘留無效篩選
+    setActiveModule(null)
+    setPage(1)
+  }, [])
+
+  const handleModuleSelect = useCallback((module: string | null): void => {
+    setActiveModule(module)
     setPage(1)
   }, [])
 
@@ -493,13 +576,22 @@ export function DatasetBrowser({
     setPage(next)
   }, [])
 
-  const updateFilters = useCallback((patch: Partial<TableFilters>): void => {
-    setFilters((prev) => ({ ...prev, ...patch }))
-    setPage(1)
-  }, [])
+  const updateFilters = useCallback(
+    (patch: Partial<TableFilters>): void => {
+      setFilters((prev) => ({ ...prev, ...patch }))
+      setPage(1)
+      // 進階篩選變動後，若目前選定模組已不在最新模組選項內，重置為 null，避免受控 select
+      // 顯示空白但後端仍以舊代碼過濾（AD-116）
+      setActiveModule((prev) =>
+        prev !== null && !moduleOptions.some((opt) => opt.value === prev) ? null : prev,
+      )
+    },
+    [moduleOptions],
+  )
 
   const resetFilters = useCallback((): void => {
     setFilters(DEFAULT_FILTERS)
+    setActiveModule(null)
     setPage(1)
   }, [])
 
@@ -736,9 +828,17 @@ export function DatasetBrowser({
           </CollapsibleSection>
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-foreground md:text-base">
-              {effectiveSchema !== null ? `${effectiveSchema} 資料表` : '資料表'}
-            </h2>
+            <div className="flex flex-wrap items-center gap-4">
+              <h2 className="text-sm font-semibold text-foreground md:text-base">
+                {effectiveSchema !== null ? `${effectiveSchema} 資料表` : '資料表'}
+              </h2>
+              <ModuleFilterSelect
+                options={moduleOptions}
+                value={activeModule}
+                isError={modulesError}
+                onChange={handleModuleSelect}
+              />
+            </div>
             {isAdmin && dataset === 'source' ? (
               <button
                 type="button"
@@ -757,6 +857,7 @@ export function DatasetBrowser({
               schema={effectiveSchema}
               page={page}
               filters={filters}
+              activeModule={activeModule}
               hasActiveFilter={activeFilterCount > 0}
               canSync={isAdmin}
               onPageChange={handlePageChange}
@@ -773,6 +874,8 @@ interface SchemaTablesProps {
   schema: string
   page: number
   filters: TableFilters
+  /** null=全部；UNCLASSIFIED_MODULE=未分類；其餘為實際模組代碼（皆為後端等值篩選） */
+  activeModule: string | null
   hasActiveFilter: boolean
   canSync: boolean
   onPageChange: (page: number) => void
@@ -783,16 +886,20 @@ function SchemaTables({
   schema,
   page,
   filters,
+  activeModule,
   hasActiveFilter,
   canSync,
   onPageChange,
 }: SchemaTablesProps): React.ReactNode {
+  // module 直接送後端（含未分類哨符值，後端已支援 module_code IS NULL 篩選）
+  const apiModule = activeModule ?? ''
   const { data, isLoading, isError, isFetching } = useListDatasetTablesQuery({
     dataset,
     schema,
     page,
     pageSize: PAGE_SIZE,
     ...filters,
+    module: apiModule,
   })
   // target 已是 ETL 產物,不記同步/轉換生命週期(那兩欄恆空)→ 改顯示快照擷取時間
   const isTarget = dataset === 'target'
@@ -800,6 +907,8 @@ function SchemaTables({
   const [busyTable, setBusyTable] = useState<string | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [syncNotice, setSyncNotice] = useState<string | null>(null)
+
+  const displayItems: TableSummary[] = data?.items ?? []
 
   const handleSync = useCallback(
     async (table: string): Promise<void> => {
@@ -851,11 +960,12 @@ function SchemaTables({
       <div
         className={`df-card overflow-x-auto transition-opacity ${isFetching ? 'opacity-60' : ''}`}
       >
-        <table className="df-table min-w-[760px]">
+        <table className="df-table min-w-[840px]">
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="df-th">資料表</th>
               <th className="df-th">業務資料表名稱</th>
+              <th className="df-th">模組</th>
               <th className="df-th">資料總筆數</th>
               {isTarget ? (
                 <th className="df-th">快照時間</th>
@@ -869,7 +979,7 @@ function SchemaTables({
             </tr>
           </thead>
           <tbody>
-            {data.items.map((table) => (
+            {displayItems.map((table) => (
               <TableRow
                 key={table.name}
                 table={table}
@@ -881,10 +991,12 @@ function SchemaTables({
             ))}
           </tbody>
         </table>
-        {data.items.length === 0 ? (
+        {displayItems.length === 0 ? (
           <p className="px-3 py-8 text-center text-sm text-muted-foreground md:text-base">
             {hasActiveFilter
-              ? '查無符合篩選條件的資料表（可調整或清除進階篩選）'
+              ? `查無符合篩選條件的資料表（可調整或清除進階篩選${
+                  activeModule !== null ? '，或將模組切回「全部」' : ''
+                }）`
               : '此 schema 尚無資料表'}
           </p>
         ) : null}
@@ -925,6 +1037,9 @@ const TableRow = memo(function TableRow({
       </td>
       <td className="df-td text-muted-foreground">
         {table.business_name ?? '—'}
+      </td>
+      <td className="df-td text-muted-foreground">
+        {table.module_code ?? '未分類'}
       </td>
       <td className="df-td text-muted-foreground">
         {formatRowCount(table.row_count)}

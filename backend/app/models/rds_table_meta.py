@@ -9,6 +9,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -44,6 +45,14 @@ class RdsTableMeta(BaseModel):
         comment=(
             "業務資料名稱(中文,快照時 JOIN GAT_FILE 落地,由 task-002 寫入)"
             "/ Business data name (snapshotted from GAT_FILE join)"
+        ),
+    )
+    module_code: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=(
+            "ERP 模組代碼(GAT_FILE.GAT06,快照時 JOIN 落地;字典缺對應為 null)"
+            "/ ERP module code (GAT_FILE.GAT06; null if dictionary has no match)"
         ),
     )
     column_count: Mapped[int] = mapped_column(

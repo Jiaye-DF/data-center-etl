@@ -16,11 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import redis as cache
 from app.etl import introspect
-from app.etl.dictionary import fetch_table_comments
+from app.etl.dictionary import fetch_table_comments, fetch_table_modules
 from app.models.rds_table_meta import Dataset, RdsTableMeta
 from app.repositories.rds_table_meta_repo import RdsTableMetaRepository
 from app.repositories.schedule_repo import ScheduleRepository
 from app.schemas.rawdata import (
+    ModuleListResponse,
     SchemaListResponse,
     SchemaStatSummary,
     SchemaSummary,
@@ -58,6 +59,8 @@ class TableFilters:
     # 資料總筆數區間(含端點);None 為該端不限(row_count 上限探測 1001,>1000 無法精確)
     row_min: int | None = None
     row_max: int | None = None
+    # ERP 模組代碼精準篩選(空字串=不篩;task-007 B2,資料集頁模組分類)
+    module: str = ""
 
     def cache_fragment(self) -> tuple[str, ...]:
         """組 cache key 用的穩定片段(None 截止日以 '-' 佔位)。"""
@@ -78,6 +81,7 @@ class TableFilters:
             "exact" if self.exact else "fuzzy",
             num(self.row_min),
             num(self.row_max),
+            self.module,
         )
 
 
@@ -90,6 +94,8 @@ class _CollectedTable:
     business_name: str | None
     column_count: int
     row_count: int
+    # 尾端加新欄 + 給預設值:既有測試以位置引數建構 _CollectedTable 者不受影響
+    module_code: str | None = None
 
 
 class SnapshotService:
@@ -110,6 +116,7 @@ class SnapshotService:
                 schema_name=item.schema_name,
                 table_name=item.table_name,
                 business_name=item.business_name,
+                module_code=item.module_code,
                 column_count=item.column_count,
                 row_count=item.row_count,
                 snapshot_at=snapshot_at,
@@ -130,14 +137,16 @@ class SnapshotService:
         engine = introspect.get_engine(dataset_value)
         async with engine.connect() as conn:
             tables = await introspect.snapshot_tables(conn)
-            # 批量查全部表名的字典業務名(一次 RDS 來回,取代逐表 N 次)
+            # 批量查全部表名的字典業務名 + 模組代碼(各一次 RDS 來回,取代逐表 N 次)
             names = [str(t["name"]) for t in tables]
             comments = await fetch_table_comments(conn, names)
+            modules = await fetch_table_modules(conn, names)
             collected: list[_CollectedTable] = [
                 _CollectedTable(
                     schema_name=str(t["schema"]),
                     table_name=str(t["name"]),
                     business_name=comments.get(str(t["name"]).lower()),
+                    module_code=modules.get(str(t["name"]).lower()),
                     column_count=int(t["column_count"]),
                     row_count=int(t["row_count"]),
                 )
@@ -185,6 +194,21 @@ class SnapshotService:
         )
         return response
 
+    async def list_modules(self, dataset_value: str, schema: str) -> ModuleListResponse:
+        """回指定 schema 下 distinct ERP 模組代碼(讀快照 + Redis cache;AD-115)。"""
+        key = cache.cache_key("datasets", dataset_value, "modules", schema)
+        cached = await cache.cache_get(key)
+        if cached is not None:
+            return ModuleListResponse.model_validate_json(cached)
+        codes, has_unclassified = await self._repo.list_distinct_modules(
+            Dataset(dataset_value), schema
+        )
+        response = ModuleListResponse(modules=codes, has_unclassified=has_unclassified)
+        await cache.cache_set(
+            key, response.model_dump_json(), ttl_seconds=_CACHE_TTL_SECONDS
+        )
+        return response
+
     async def list_tables(
         self,
         dataset_value: str,
@@ -221,6 +245,7 @@ class SnapshotService:
             exact=filters.exact,
             row_min=filters.row_min,
             row_max=filters.row_max,
+            module=filters.module,
         )
         response = TableListResponse(
             items=[self._to_summary(r) for r in rows],
@@ -261,6 +286,7 @@ class SnapshotService:
         return TableSummary(
             name=row.table_name,
             business_name=row.business_name,
+            module_code=row.module_code,
             column_count=row.column_count,
             row_count=row.row_count,
             snapshot_at=row.snapshot_at,

@@ -18,6 +18,10 @@ from sqlalchemy.orm import InstrumentedAttribute
 from app.models.rds_table_meta import Dataset, RdsTableMeta
 from app.utils.datetime import db_now as _db_now
 
+# 「未分類」模組哨符值(module_code IS NULL);與前端 DatasetBrowser.tsx 的
+# UNCLASSIFIED_MODULE 常值對齊(AD-115/117:後端不支援 IS NULL 等值篩選的補洞)。
+UNCLASSIFIED_MODULE_SENTINEL = "__unclassified__"
+
 
 def _keyword_cond(keyword: str, exact: bool) -> ColumnElement[bool]:
     """關鍵字比對條件(呼叫端須先確認 keyword 非空)。
@@ -50,8 +54,10 @@ class RdsTableMetaRepository:
         row_count: int,
         snapshot_at: datetime,
         actor_uid: UUID,
+        module_code: str | None = None,
     ) -> RdsTableMeta:
-        """依 (dataset, schema, table) find-or-create;既有筆更新結構 / 業務名 / 快照時間。"""
+        """依 (dataset, schema, table) find-or-create;
+        既有筆更新結構 / 業務名 / 模組代碼 / 快照時間。"""
         existing = (
             await self._db.execute(
                 select(RdsTableMeta).where(
@@ -69,6 +75,7 @@ class RdsTableMetaRepository:
                 schema_name=schema_name,
                 table_name=table_name,
                 business_name=business_name,
+                module_code=module_code,
                 column_count=column_count,
                 row_count=row_count,
                 snapshot_at=snapshot_at,
@@ -79,6 +86,7 @@ class RdsTableMetaRepository:
             await self._db.flush()
             return row
         existing.business_name = business_name
+        existing.module_code = module_code
         existing.column_count = column_count
         existing.row_count = row_count
         existing.snapshot_at = snapshot_at
@@ -100,6 +108,29 @@ class RdsTableMetaRepository:
         )
         rows = (await self._db.execute(stmt)).all()
         return [(str(schema), int(count)) for schema, count in rows]
+
+    async def list_distinct_modules(
+        self, dataset: Dataset, schema: str
+    ) -> tuple[list[str], bool]:
+        """回指定 schema 下 distinct module_code(排序)+ 是否存在未分類(module_code
+        IS NULL)的表(未刪除範圍)。
+
+        AD-115:聚合來源為整個 schema(非單頁),供模組篩選下拉取代「僅第 1 頁 distinct」
+        的作法,避免分頁外模組無法被篩選。
+        """
+        stmt = (
+            select(RdsTableMeta.module_code)
+            .where(
+                RdsTableMeta.dataset == dataset,
+                RdsTableMeta.schema_name == schema,
+                RdsTableMeta.is_deleted.is_(False),
+            )
+            .distinct()
+        )
+        rows = (await self._db.execute(stmt)).scalars().all()
+        codes = sorted({str(r) for r in rows if r is not None})
+        has_unclassified = any(r is None for r in rows)
+        return codes, has_unclassified
 
     async def summary_by_schema(
         self, dataset: Dataset, schema: str
@@ -178,8 +209,10 @@ class RdsTableMetaRepository:
         exact: bool = False,
         row_min: int | None = None,
         row_max: int | None = None,
+        module: str = "",
     ) -> tuple[list[RdsTableMeta], int]:
-        """分頁列出指定 schema 的表,套進階篩選(狀態分段 + 截止日 + 關鍵字 + 筆數區間,AND 疊加)。
+        """分頁列出指定 schema 的表,套進階篩選(狀態分段 + 截止日 + 關鍵字 + 筆數區間 + 模組,
+        AND 疊加)。
 
         - rows: all / nonempty(row_count>0)/ empty(row_count=0)
         - row_min / row_max: 資料總筆數區間(含端點);None 為該端不限
@@ -188,6 +221,8 @@ class RdsTableMetaRepository:
         - *_before: 截止日上界(含);state=all 時忽略
         - keyword: 空字串不套;exact=False 對 table_name 或 business_name ILIKE 子字串比對,
           exact=True(下拉選定某表)則對 table_name 精準等值,避免子字串誤命中他表
+        - module: 空字串不套;`UNCLASSIFIED_MODULE_SENTINEL` 篩 module_code IS NULL
+          (AD-117);其餘非空值對 module_code 精準等值(task-007 B2)
         """
         conds: list[ColumnElement[bool]] = [
             RdsTableMeta.dataset == dataset,
@@ -205,6 +240,11 @@ class RdsTableMetaRepository:
         keyword = keyword.strip()
         if keyword:
             conds.append(_keyword_cond(keyword, exact))
+        module = module.strip()
+        if module == UNCLASSIFIED_MODULE_SENTINEL:
+            conds.append(RdsTableMeta.module_code.is_(None))
+        elif module:
+            conds.append(RdsTableMeta.module_code == module)
         synced_present = {"synced": True, "unsynced": False}.get(synced)
         transformed_present = {"transformed": True, "untransformed": False}.get(
             transformed
