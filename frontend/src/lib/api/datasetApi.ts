@@ -33,6 +33,12 @@ export interface DatasetTableListData {
   page_size: number
 }
 
+/** 指定 schema 下 distinct ERP 模組代碼(全 schema 聚合,排序,不含未分類) */
+export interface ModuleListData {
+  modules: string[]
+  has_unclassified: boolean
+}
+
 /** 資料總筆數篩選:全部 / 僅有資料(>0)/ 僅空表(=0) */
 export type RowsFilter = 'all' | 'nonempty' | 'empty'
 /** RDS 同步狀態:全部 / 已同步(有時間)/ 未同步(無時間) */
@@ -73,7 +79,7 @@ export interface ListTablesParams extends TableFilters {
   schema: string
   page: number
   pageSize: number
-  /** ERP 模組代碼精準篩選;空字串=不篩。「未分類」(module_code=null)後端不支援,由呼叫端不帶此參數改前端過濾 */
+  /** ERP 模組代碼精準篩選;空字串=不篩。哨符值 `__unclassified__` 篩 module_code IS NULL(未分類) */
   module: string
 }
 
@@ -89,6 +95,20 @@ export const datasetApi = baseApi
         transformResponse: (
           response: ApiEnvelope<{ items: SchemaSummary[] }>,
         ): SchemaSummary[] => unwrap(response).items,
+      }),
+      // AD-115:模組下拉選項改由後端全 schema distinct 聚合(非單頁聚合)
+      listSchemaModules: build.query<
+        ModuleListData,
+        { dataset: Dataset; schema: string }
+      >({
+        query: ({ dataset, schema }) =>
+          `/datasets/${dataset}/schemas/${schema}/modules`,
+        providesTags: (_result, _error, { dataset }) => [
+          { type: 'DatasetTable', id: dataset },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<ModuleListData>,
+        ): ModuleListData => unwrap(response),
       }),
       listDatasetTables: build.query<DatasetTableListData, ListTablesParams>({
         query: ({
@@ -166,6 +186,7 @@ export const datasetApi = baseApi
 
 export const {
   useListDatasetSchemasQuery,
+  useListSchemaModulesQuery,
   useListDatasetTablesQuery,
   useDatasetSchemaSummaryQuery,
   useRefreshDatasetSnapshotMutation,
