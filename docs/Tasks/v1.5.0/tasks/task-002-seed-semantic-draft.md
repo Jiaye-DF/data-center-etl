@@ -1,7 +1,7 @@
 ---
 id: task-002
 title: 英文草稿匯入 RDS semantic_mappings + 複核輔助腳本(A2)
-status: pending
+status: done
 parallel: false
 depends_on: [task-001]
 affected_files:
@@ -25,9 +25,9 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_seed_semantic_mappings.py` 全綠(含:draft upsert、confirmed 不覆寫、`--confirm-table` 轉態、冪等重跑筆數不變)
-- [ ] `uv run ruff check scripts/seed_semantic_mappings.py` + mypy 全綠
-- [ ] dry-run 實測(測試 DB):對 3 列样本 TSV 跑兩次,semantic_mappings 恆為 3 列
+- [x] `cd backend && uv run pytest tests/test_seed_semantic_mappings.py` 全綠(含:draft upsert、confirmed 不覆寫、`--confirm-table` 轉態、冪等重跑筆數不變)
+- [x] `uv run ruff check scripts/seed_semantic_mappings.py` + mypy 全綠
+- [x] dry-run 實測(測試 DB):對 3 列样本 TSV 跑兩次,semantic_mappings 恆為 3 列
 
 ## 必讀檔(Just-in-time)
 
