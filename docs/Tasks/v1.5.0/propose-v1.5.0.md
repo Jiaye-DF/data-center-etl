@@ -11,17 +11,17 @@
 ### A. 欄位語意層(英文名) — 方案 1「鏡像不動 + mapping 驅動語意層」(已定案,否決實體改 column name)
 
 - **A1. RDS mapping table(全域、不分 schema)**:於目標 RDS 建獨立 schema `erp_metadata`,單一表 `semantic_mappings`(PK=`table_name+column_name`;`column_name=''` 代表表層級映射(表英文名),其餘為欄位映射;欄位含 `english_name`/`zh_name`(GAQ03/GAT03 帶入)/`status`(draft/confirmed)/`updated_by`/`updated_at`)。帳套 schema 同構、字典全域(同 DS 字典設計),**mapping 只維護一份,不因 schema 重建**;例外 override 表本版不做。
-- **A2. 英文名草稿→複核流程**:先只挑 JSON 會回傳的表(首批清單由 user 提供),由 GAQ 中文名批次產英文草稿(`status='draft'`),人工複核後轉 `confirmed`;未 confirmed 欄位不出現在對外輸出。本版複核以腳本/SQL 進行,不做後台編輯 UI。
+- **A2. 草稿匯入與複核流程**:全量英文草稿**已完成**(2026-07-20:M2201 333 表+11,947 欄,`docs/ERP-Analyze/data/semantic_draft.tsv`,報告 `erp-metadata-m2201.html` 第 9 章可審;GAT 無中文名的表=原表名小寫)。本 task = 草稿匯入 RDS `semantic_mappings`(`status='draft'`) + 複核機制(腳本/SQL 轉 `confirmed`,不做後台編輯 UI);未 confirmed 欄位不出現在對外輸出。**複核節奏(2026-07-20 user 決議):不急著複核 — 本版先把 DMS+ETL 應用完整功能建好,複核為之後的營運動作**;驗收時僅以 1–2 張樣本表(如 `GEN_FILE`)走完複核流程作全鏈路手測。非 M2201 帳套獨有表(四帳套聯集 413 − M2201 333 ≈ 80 張)之草稿補翻視消費需求列後續。
 - **A3. JSON key 轉換**:API 依 confirmed mapping 回傳英文 key(`gen01`→`employee_number`)。
-- **A4. view 產生器**:迴圈各帳套 schema,以同一份 mapping 對實際存在的表 `CREATE OR REPLACE VIEW <schema>_en.<english_table>`;schema 差異只在 view 層處理。
+- **A4. view 產生器**:迴圈各帳套 schema,以同一份 mapping 對實際存在的表 `CREATE OR REPLACE VIEW <schema>_en.<english_table>`;schema 差異只在 view 層處理。注意跨帳套共用主檔(`GEM/GEN/ABM` 集中託管 G2203,M2201/S2202 以 synonym 引用,四帳套對照實錘):以「該 schema 實際存在的表」為準即自然涵蓋,共用主檔抽取以 G2203 為準。
 - **A5. mapping 副本同步回系統**:RDS `erp_metadata.semantic_mappings` 為唯一事實來源;ETL 同步時單向同步回 backend 自有 DB 本地副本(小表,免增量、整表重灌),JSON API 讀本地副本(同 `rds_table_meta` 快照模式,不即時打 RDS)。同步後失效轉換 cache;view 重生掛同一時點(mapping 有異動才重生)。禁雙向同步。
 - 實作注意:mapping 寫入走獨立 RDS 連線/權限(backend 自有 DB 與 RDS 分離);mirror TRUNCATE+INSERT 不受 view 影響,未來欄位型別 ALTER 需先重建 view。
 
 ### B. ETL 字典/comment 補強(來源=ERP 字典分析 `docs/ERP-Analyze/mapping-alignment.md`)
 
-- **B1. 欄位 comment 缺漏 fallback**:GAQ 缺中文名時退 `DS.GAE_FILE` 畫面標籤(GAQ 缺 191 欄中可補 126 欄)。**前置**:DMS 複寫加 `GAE_FILE` + 來源帳號授權(`RO_M2201` 現僅被授權 `GAT/GAQ/PAT_FILE`);前置未成則本項順延,不阻塞 A。
+- **B1. 欄位 comment 缺漏 fallback**:GAQ 缺中文名時退 `DS.GAE_FILE` 畫面標籤(GAQ 缺 191 欄中可補 126 欄)。**前置**:把 `DS.GAE_FILE` 加入 DMS 複寫任務的 table mapping 即可 — DMS source 已用 sys 帳號(2026-07-20 user 確認),**無需額外授權**;前置未成則本項順延,不阻塞 A。
 - **B2. 資料集頁模組分類**:以 `GAT_FILE.GAT06` 模組代碼分類/篩選資料表(欄位已在現行複寫表內,無前置)。
-- **B3.(可選)欄位說明/選項值增強**:`GAQ_FILE.GAQ04/05`(欄位說明與選項代碼意義)補進欄 comment,現行只用 GAQ03 中文名。
+- **B3. 欄位說明/選項值增強**(2026-07-20 user 確認納入):`GAQ_FILE.GAQ04/05`(選項代碼意義,如 `sdf09`→`1.單檔 2.單檔多欄…`)附加進欄 comment,現行只用 GAQ03 中文名。實測 54,196 筆字典中 312 筆有值,與中文名重複者(無資訊量)略過;無 DMS/授權前置,成本極低。
 
 ## Out of Scope
 
@@ -41,16 +41,16 @@
 
 ## 風險與相依
 
-- 技術風險:英文命名主觀性 → 複核可能成為瓶頸(以「先只翻 JSON 回傳表」控量);view 依賴會擋未來欄位型別 ALTER(先重建 view 即可)。
-- 第三方依賴 / 跨團隊阻塞:B1 需 DMS 加 `GAE_FILE` 複寫 + `RO_M2201` 授權(DMS 目前同步進行中,需與負責方協調);`erp_metadata` schema 建立需 RDS 權限。
+- 技術風險:英文命名主觀性 → 複核可能成為瓶頸(全量草稿已產出,複核以報告第 9 章逐表圈選,可分批 confirmed);view 依賴會擋未來欄位型別 ALTER(先重建 view 即可)。
+- 第三方依賴 / 跨團隊阻塞:B1 需在 DMS 任務加 `DS.GAE_FILE` 複寫(source 已用 sys,無需授權;DMS 目前同步進行中,加表時機需留意);`erp_metadata` schema 建立需 RDS 權限。
 - **同步範圍未決(ERP 分析 §1)**:來源 Oracle 有多個公司帳套,`SDF`(5,919 萬列)/`GDF`(4,937 萬)/`MDF`/`DF` 資料量皆大於 `M2201`(755 萬);是否納入其他帳套屬 scope 決策,連動 Phase 3 資料湖 750 表盤點(本版不擴,僅記錄)。
 - **無 PK 表 32/333(ERP 分析實查)**:本專案增量為「表級計數器比對+變動表整表重灌」,不依賴 PK,無阻斷;但 (a) `TLF_FILE`(85 萬列)等異動記錄大表幾乎每日變動,每次整表重灌成本最高;(b) 上游 DMS CDC 對無 PK 表的 update/delete 有重複/漏更風險,可作為「750 表同步失敗根因」排查線索之一。
 - **本專案跑法**:改碼後以 `docker compose up -d --build` 驗證(禁 start-dev)。
 
 ## 驗收標準
 
-- RDS 存在 `erp_metadata.semantic_mappings`,首批 JSON 回傳表的草稿已匯入(含 `zh_name` 帶入與 `status`)。
-- 手測:任一 confirmed 表的 JSON API 回傳 key 為英文名(如 `gen01`→`employee_number`),未 confirmed 欄位不出現。
+- RDS 存在 `erp_metadata.semantic_mappings`,全量草稿(333 表+11,947 欄)已匯入且 `status='draft'`(含 `zh_name` 帶入);複核後之表為 `confirmed`。
+- 手測:以 1–2 張樣本表走完複核流程(draft→confirmed)後,JSON API 回傳 key 為英文名(如 `gen01`→`employee_number`),未 confirmed 欄位不出現;全量複核不在本版驗收範圍。
 - view 產生器對至少一個帳套產出 `<schema>_en` view,SQL 查詢可得英文欄名;mapping 更新後重跑產生器,view 定義同步更新。
 - ETL 同步 job 完成後,自有 DB 副本與 RDS mapping 一致,轉換 cache 已失效。
 - 資料集頁可按 GAT06 模組分類/篩選(B2)。
@@ -64,6 +64,8 @@
 - 2026-07-20:與 erp-metadata 報告全面比對後,補入可選候選 2 條(GAQ04/05 說明值、單頭單身關聯併入 GAU 條目)與風險 2 條(多帳套同步範圍未決、無 PK 表 32 張);作業流程/畫面異動別(報告 §5.2)確認與 ETL 無關,不納入。
 - 2026-07-20:與 user 討論定案「欄位語意層(英文名)」方向 — 採方案 1(鏡像不動 + RDS 全域 mapping table + JSON key 轉換/view 產生器),否決實體改 column name;mapping 落點 `erp_metadata.semantic_mappings`,不分 schema,schema 差異僅在 view 層處理;副本單向同步回自有 DB。
 - 2026-07-20:整理為正式 propose — In Scope 收斂為「A. 欄位語意層 + B. ETL 字典/comment 補強」,作業流程展示類/多帳套擴充/編輯 UI 列 Out of Scope;補版本目標/對外承諾/驗收標準,待 user 認可。
+- 2026-07-20:同步實況更新 — A2 改為「草稿已全量完成(333 表+11,947 欄),task=匯入+複核」;A4 補跨帳套 synonym 注意(GEM/GEN/ABM 託管 G2203);驗收改全量草稿匯入。
+- 2026-07-20:user 決議 — B3 納入正式 scope;複核不急,本版先建完整功能,驗收僅以 1–2 張樣本表走通複核鏈路。
 
 ---
 

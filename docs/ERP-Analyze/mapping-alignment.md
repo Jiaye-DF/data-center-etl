@@ -51,8 +51,8 @@
 | 資源 | 內容 | 對本專案的用途 | 實作注意 |
 | --- | --- | --- | --- |
 | `GAT_FILE.GAT06` | 表所屬模組代碼（如 `AOO`/`ASM`） | 資料集頁可按 ERP 模組分類/篩選 | 已在現行複寫表內，**成本最低** |
-| `DS.GAE_FILE` | 畫面欄位標籤 158,187 列（`GAE01`=畫面 / `GAE02`=欄位 / `GAE03`=語別 / `GAE04`=標籤） | 欄 comment fallback：GAQ 缺的 191 欄可補 126 欄 | `RO_M2201` 於 DS **僅被授權 `GAT/GAQ/PAT_FILE`**（§2 條件 3）；需 DMS 加表 + 來源授權才可用 |
-| `DS.ZR_FILE` + `GAZ_FILE`/`ZZ_FILE` | 程式↔表關連（102,262 列）與程式中文名 | 顯示「這張表由哪支 ERP 作業維護」，幫助使用者辨識資料集 | 同上，需 DMS 加表 + 授權 |
+| `DS.GAE_FILE` | 畫面欄位標籤 158,187 列（`GAE01`=畫面 / `GAE02`=欄位 / `GAE03`=語別 / `GAE04`=標籤） | 欄 comment fallback：GAQ 缺的 191 欄可補 126 欄 | 僅需把表加入 DMS 複寫任務（DMS source 用 sys，無需授權；2026-07-20 user 確認） |
+| `DS.ZR_FILE` + `GAZ_FILE`/`ZZ_FILE` | 程式↔表關連（102,262 列）與程式中文名 | 顯示「這張表由哪支 ERP 作業維護」，幫助使用者辨識資料集 | 同上，僅需 DMS 加表 |
 | `DS.GAU_FILE` | 鼎新邏輯層 PK/FK（1,957 列） | ERP **無任何實體 FK**（§2 條件 4），此為表間關聯的唯一字典級來源 | 同上；覆蓋有限，關聯仍以命名慣例推導為主 |
 
 上述已列入 `docs/Tasks/v1.5.0/propose-v1.5.0.md` In Scope 候選，待 user 認可後走 `/propose-to-tasks`。
