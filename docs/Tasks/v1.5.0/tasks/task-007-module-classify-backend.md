@@ -1,7 +1,7 @@
 ---
 id: task-007
 title: B2 後端 — 快照加 GAT06 模組欄位 + datasets API 模組篩選
-status: pending
+status: done
 parallel: false
 depends_on: [task-003, task-004]
 affected_files:
@@ -27,10 +27,10 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `cd backend && uv run alembic upgrade head` → `downgrade -1` round-trip OK → 再 upgrade
-- [ ] `uv run pytest tests/test_snapshot_module_code.py` 全綠(含:refresh 帶入 GAT06、字典缺為 null、`?module=` 篩選、cache key 區分)
-- [ ] `uv run pytest` 既有全套件不紅
-- [ ] ruff + mypy 全綠
+- [x] `cd backend && uv run alembic upgrade head` → `downgrade -1` round-trip OK → 再 upgrade
+- [x] `uv run pytest tests/test_snapshot_module_code.py` 全綠(含:refresh 帶入 GAT06、字典缺為 null、`?module=` 篩選、cache key 區分)
+- [x] `uv run pytest` 既有全套件不紅
+- [x] ruff + mypy 全綠
 
 ## 必讀檔(Just-in-time)
 

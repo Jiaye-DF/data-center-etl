@@ -16,13 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, require_admin
 from app.core.response import success
 from app.models.user import User
+from app.schemas.data_query import DataQueryResponse
 from app.schemas.rawdata import (
     SchemaListResponse,
     SchemaStatSummary,
     SnapshotRefreshResponse,
     TableListResponse,
 )
-from app.schemas.data_query import DataQueryResponse
 from app.schemas.response import ApiResponse
 from app.services.data_query_service import DataQueryService
 from app.services.snapshot_service import SnapshotService, TableFilters
@@ -81,6 +81,9 @@ async def list_tables(
     row_max: Annotated[
         int | None, Query(ge=0, description="資料總筆數上限(含);>1000 一律視為 1000+")
     ] = None,
+    module: Annotated[
+        str, Query(max_length=100, description="ERP 模組代碼精準篩選(空字串不篩)")
+    ] = "",
 ) -> ApiResponse[TableListResponse]:
     filters = TableFilters(
         rows=rows,
@@ -92,6 +95,7 @@ async def list_tables(
         exact=keyword_exact,
         row_min=row_min,
         row_max=row_max,
+        module=module,
     )
     data = await SnapshotService(db).list_tables(
         dataset, schema, page=page, page_size=page_size, filters=filters

@@ -44,6 +44,12 @@ _TABLE_COMMENTS_BATCH_SQL = text(
     ' WHERE lower("GAT01") = ANY(:tables) AND "GAT02" = :lang'
 )
 
+# 表 ERP 模組代碼:一次批量查多表(繁優先缺退簡;task-007 B2,資料集頁模組分類)
+_TABLE_MODULES_BATCH_SQL = text(
+    'SELECT lower("GAT01") k, "GAT06" v FROM "DS"."GAT_FILE"'
+    ' WHERE lower("GAT01") = ANY(:tables) AND "GAT02" = :lang'
+)
+
 # 欄中文名:一次批量查該表所有欄(設計要點 GAQ 查詢,一字不差);併取 GAQ04/05(說明/選項值,B3)
 _COLUMN_COMMENT_SQL = text(
     'SELECT lower("GAQ01") k, "GAQ03" v, "GAQ04" v4, "GAQ05" v5 FROM "DS"."GAQ_FILE"'
@@ -98,6 +104,34 @@ async def fetch_table_comments(
         rows = (
             await conn.execute(
                 _TABLE_COMMENTS_BATCH_SQL, {"tables": remaining, "lang": lang}
+            )
+        ).mappings().all()
+        for r in rows:
+            value = r["v"]
+            if value is not None and str(value).strip():
+                result[str(r["k"])] = str(value).strip()
+    return result
+
+
+async def fetch_table_modules(
+    conn: AsyncConnection, tables: Sequence[str]
+) -> dict[str, str]:
+    """批量查多表 ERP 模組代碼(GAT06;逐表繁優先缺退簡);回傳 key 為小寫表名。
+
+    語意與 fetch_table_comments 一致(同表 GAT_FILE,取 GAT06 而非 GAT03),
+    供 refresh 全量內省批量取用(task-007 B2);字典表缺失、表無對應者靜默略過(不 raise)。
+    """
+    if not tables or not await _dict_table_exists(conn, TABLE_NAME_DICT):
+        return {}
+    wanted = [t.lower() for t in tables]
+    result: dict[str, str] = {}
+    for lang in _LANG_PREFERENCE:
+        remaining = [t for t in wanted if t not in result]
+        if not remaining:
+            break
+        rows = (
+            await conn.execute(
+                _TABLE_MODULES_BATCH_SQL, {"tables": remaining, "lang": lang}
             )
         ).mappings().all()
         for r in rows:

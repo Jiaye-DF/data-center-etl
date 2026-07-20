@@ -50,8 +50,10 @@ class RdsTableMetaRepository:
         row_count: int,
         snapshot_at: datetime,
         actor_uid: UUID,
+        module_code: str | None = None,
     ) -> RdsTableMeta:
-        """依 (dataset, schema, table) find-or-create;既有筆更新結構 / 業務名 / 快照時間。"""
+        """依 (dataset, schema, table) find-or-create;
+        既有筆更新結構 / 業務名 / 模組代碼 / 快照時間。"""
         existing = (
             await self._db.execute(
                 select(RdsTableMeta).where(
@@ -69,6 +71,7 @@ class RdsTableMetaRepository:
                 schema_name=schema_name,
                 table_name=table_name,
                 business_name=business_name,
+                module_code=module_code,
                 column_count=column_count,
                 row_count=row_count,
                 snapshot_at=snapshot_at,
@@ -79,6 +82,7 @@ class RdsTableMetaRepository:
             await self._db.flush()
             return row
         existing.business_name = business_name
+        existing.module_code = module_code
         existing.column_count = column_count
         existing.row_count = row_count
         existing.snapshot_at = snapshot_at
@@ -178,8 +182,10 @@ class RdsTableMetaRepository:
         exact: bool = False,
         row_min: int | None = None,
         row_max: int | None = None,
+        module: str = "",
     ) -> tuple[list[RdsTableMeta], int]:
-        """分頁列出指定 schema 的表,套進階篩選(狀態分段 + 截止日 + 關鍵字 + 筆數區間,AND 疊加)。
+        """分頁列出指定 schema 的表,套進階篩選(狀態分段 + 截止日 + 關鍵字 + 筆數區間 + 模組,
+        AND 疊加)。
 
         - rows: all / nonempty(row_count>0)/ empty(row_count=0)
         - row_min / row_max: 資料總筆數區間(含端點);None 為該端不限
@@ -188,6 +194,7 @@ class RdsTableMetaRepository:
         - *_before: 截止日上界(含);state=all 時忽略
         - keyword: 空字串不套;exact=False 對 table_name 或 business_name ILIKE 子字串比對,
           exact=True(下拉選定某表)則對 table_name 精準等值,避免子字串誤命中他表
+        - module: 空字串不套;非空對 module_code 精準等值(task-007 B2)
         """
         conds: list[ColumnElement[bool]] = [
             RdsTableMeta.dataset == dataset,
@@ -205,6 +212,9 @@ class RdsTableMetaRepository:
         keyword = keyword.strip()
         if keyword:
             conds.append(_keyword_cond(keyword, exact))
+        module = module.strip()
+        if module:
+            conds.append(RdsTableMeta.module_code == module)
         synced_present = {"synced": True, "unsynced": False}.get(synced)
         transformed_present = {"transformed": True, "untransformed": False}.get(
             transformed

@@ -23,6 +23,10 @@ class TableSummary(BaseModel):
     business_name: str | None = Field(
         default=None, description="業務資料名稱(中文,快照時 JOIN GAT_FILE 落地;缺對應為 null)"
     )
+    module_code: str | None = Field(
+        default=None,
+        description="ERP 模組代碼(GAT_FILE.GAT06,快照時 JOIN 落地;字典缺對應為 null)",
+    )
     column_count: int = Field(description="欄位數")
     row_count: int = Field(
         description="bounded row 數(SELECT 1 ... LIMIT 1001 探測);> 1000 代表超過上限"
