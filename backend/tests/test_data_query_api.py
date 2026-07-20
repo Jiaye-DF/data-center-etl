@@ -2,7 +2,8 @@
 
 涵蓋:confirmed 表回英文 key、未 confirmed 欄不出現、表層級映射不當資料欄、
 全 draft 表 404、未知 schema 404(訊息不回打輸入)、limit 上限 / offset 邊界 422、
-分頁 limit/offset、未登入 401、member 403(datasets 全端點 admin-only)。
+分頁 limit/offset、未登入 401、member 403(datasets 全端點 admin-only)、
+confirmed mapping 與實際欄位漂移時取交集 / 交集為空與表不存在皆 404 不 500(AD-111)。
 
 RDS dataset 庫在測試中指向本地測試 DB(AWS_RDS_* → localhost 測試 DB,不觸碰真正 AWS RDS);
 以真實 source 表(M2201.GEN_FILE)驗證識別字白名單 + bind params 的實際查詢行為。
@@ -335,6 +336,86 @@ async def test_confirmed_returns_english_keys(
     assert meta == {"employee_number": "員工編號", "employee_name": "員工姓名"}
 
 
+# ── confirmed mapping 與實際欄位漂移(AD-111)───────────────────────────
+async def test_confirmed_intersects_with_actual_columns_partial_drift(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    db_engine: AsyncEngine,
+) -> None:
+    """confirmed 欄位一部分已從實體表移除(ERP 端改名/移除)→ 僅回實際存在的交集欄位,
+    不因缺欄整個拋例外(500)。"""
+    await _login_as(client, session_factory, "admin")
+    await _seed_snapshot(session_factory)
+    await _seed_mapping(
+        session_factory, table_name=_SRC_TABLE, column_name="", english_name="employee",
+        status="confirmed",
+    )
+    await _seed_mapping(
+        session_factory, table_name=_SRC_TABLE, column_name="gen01",
+        english_name="employee_number", zh_name="員工編號", status="confirmed",
+    )
+    # gen99 不存在於實體表(模擬 ERP 端欄位已移除的 mapping 漂移)
+    await _seed_mapping(
+        session_factory, table_name=_SRC_TABLE, column_name="gen99",
+        english_name="ghost_column", status="confirmed",
+    )
+    await _seed_source_rows(db_engine, [("E001", "Alice", "x")])
+
+    resp = await client.get(_URL)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    row = body["data"]["rows"][0]
+    assert set(row.keys()) == {"employee_number"}
+    assert "ghost_column" not in row
+    meta = {c["english_name"] for c in body["data"]["columns"]}
+    assert meta == {"employee_number"}
+
+
+async def test_confirmed_columns_entirely_missing_returns_404_not_500(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """confirmed 欄位與實際表欄位交集為空(全部漂移)→ 404,不讓 SELECT 拋 500。"""
+    await _login_as(client, session_factory, "admin")
+    await _seed_snapshot(session_factory)
+    await _seed_mapping(
+        session_factory, table_name=_SRC_TABLE, column_name="", english_name="employee",
+        status="confirmed",
+    )
+    await _seed_mapping(
+        session_factory, table_name=_SRC_TABLE, column_name="gen99",
+        english_name="ghost_column", status="confirmed",
+    )
+    resp = await client.get(_URL)
+    assert resp.status_code == 404
+    _assert_shell(resp.json(), success=False, response_code=404)
+    detail = resp.json()["detail"]
+    assert _SRC_SCHEMA not in detail
+    assert _SRC_TABLE not in detail
+
+
+async def test_table_missing_from_rds_returns_404_not_500(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """快照有該表紀錄、confirmed mapping 存在,但實體 RDS 表已不存在(整表刪除/改名)
+    → 404,不讓 information_schema 交集查詢後的 SELECT 拋 500。"""
+    ghost_table = "GEN_FILE_GHOST"
+    await _login_as(client, session_factory, "admin")
+    await _seed_snapshot(session_factory, table_name=ghost_table)
+    await _seed_mapping(
+        session_factory, table_name=ghost_table, column_name="", english_name="employee",
+        status="confirmed",
+    )
+    await _seed_mapping(
+        session_factory, table_name=ghost_table, column_name="gen01",
+        english_name="employee_number", status="confirmed",
+    )
+    resp = await client.get(
+        f"/api/v1/datasets/source/tables/{_SRC_SCHEMA}/{ghost_table}/rows"
+    )
+    assert resp.status_code == 404
+    _assert_shell(resp.json(), success=False, response_code=404)
+
+
 # ── 全 draft 表 → 404 ───────────────────────────────────────────────────
 async def test_all_draft_table_returns_404(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
@@ -381,6 +462,9 @@ async def test_limit_and_offset_bounds_422(
     assert (await client.get(_URL, params={"limit": 0})).status_code == 422
     # offset >= 0
     assert (await client.get(_URL, params={"offset": -1})).status_code == 422
+    # offset 上界 100_000(AD-114:避免無界 offset 拖垮小連線池)
+    assert (await client.get(_URL, params={"offset": 100_001})).status_code == 422
+    assert (await client.get(_URL, params={"offset": 100_000})).status_code != 422
 
 
 # ── 分頁:limit / offset ────────────────────────────────────────────────

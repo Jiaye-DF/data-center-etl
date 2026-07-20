@@ -10,14 +10,16 @@ dataset ∈ {source, target}:
 from datetime import date, datetime, time
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_admin
 from app.core.response import success
 from app.models.user import User
+from app.repositories.rds_table_meta_repo import UNCLASSIFIED_MODULE_SENTINEL
 from app.schemas.data_query import DataQueryResponse
 from app.schemas.rawdata import (
+    ModuleListResponse,
     SchemaListResponse,
     SchemaStatSummary,
     SnapshotRefreshResponse,
@@ -55,6 +57,21 @@ async def list_schemas(
 
 
 @router.get(
+    "/{dataset}/schemas/{schema_name}/modules",
+    response_model=ApiResponse[ModuleListResponse],
+    summary="列出指定 schema 下 distinct ERP 模組代碼(讀快照;供模組篩選下拉聚合,含未分類旗標)",
+)
+async def list_schema_modules(
+    dataset: Dataset,
+    schema_name: Annotated[str, Path(min_length=1, max_length=128)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ModuleListResponse]:
+    data = await SnapshotService(db).list_modules(dataset, schema_name)
+    return success(data=data)
+
+
+@router.get(
     "/{dataset}/tables",
     response_model=ApiResponse[TableListResponse],
     summary="分頁列出指定 schema 的表(讀快照,含業務名 / 同步時間;預設隱藏 0 筆表)",
@@ -82,7 +99,14 @@ async def list_tables(
         int | None, Query(ge=0, description="資料總筆數上限(含);>1000 一律視為 1000+")
     ] = None,
     module: Annotated[
-        str, Query(max_length=100, description="ERP 模組代碼精準篩選(空字串不篩)")
+        str,
+        Query(
+            max_length=100,
+            description=(
+                "ERP 模組代碼精準篩選(空字串不篩;"
+                f"哨符值 `{UNCLASSIFIED_MODULE_SENTINEL}` 篩未分類 module_code IS NULL)"
+            ),
+        ),
     ] = "",
 ) -> ApiResponse[TableListResponse]:
     filters = TableFilters(
@@ -130,7 +154,7 @@ async def query_table_rows(
     db: Annotated[AsyncSession, Depends(get_db)],
     _user: Annotated[User, Depends(require_admin)],
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
 ) -> ApiResponse[DataQueryResponse]:
     data = await DataQueryService(db).query_rows(
         dataset=dataset,

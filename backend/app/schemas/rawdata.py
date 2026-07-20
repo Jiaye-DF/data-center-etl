@@ -18,6 +18,13 @@ class SchemaListResponse(BaseModel):
     items: list[SchemaSummary] = Field(description="非系統 schema 清單")
 
 
+class ModuleListResponse(BaseModel):
+    """指定 schema 下 distinct ERP 模組代碼清單(AD-115:整 schema 聚合,非單頁)。"""
+
+    modules: list[str] = Field(description="distinct ERP 模組代碼(排序;不含未分類)")
+    has_unclassified: bool = Field(description="該 schema 是否存在未分類(module_code IS NULL)的表")
+
+
 class TableSummary(BaseModel):
     name: str = Field(description="表名")
     business_name: str | None = Field(

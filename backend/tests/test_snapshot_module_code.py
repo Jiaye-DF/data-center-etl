@@ -52,8 +52,11 @@ from app.core.security import hash_password_async  # noqa: E402
 from app.etl import introspect  # noqa: E402
 from app.etl.dictionary import fetch_table_modules  # noqa: E402
 from app.main import create_app  # noqa: E402
-from app.models import RdsTableMeta  # noqa: E402
-from app.repositories.rds_table_meta_repo import RdsTableMetaRepository  # noqa: E402
+from app.models import Dataset, RdsTableMeta  # noqa: E402
+from app.repositories.rds_table_meta_repo import (  # noqa: E402
+    UNCLASSIFIED_MODULE_SENTINEL,
+    RdsTableMetaRepository,
+)
 from app.repositories.user_repo import UserRepository  # noqa: E402
 from app.services.snapshot_service import (  # noqa: E402
     SnapshotService,
@@ -389,6 +392,25 @@ async def test_list_tables_module_filter(
         assert unfiltered.total == 3  # module="" 不篩
 
 
+# ── D2. list_tables:module=__unclassified__ 篩 module_code IS NULL(AD-117)───
+async def test_list_tables_unclassified_sentinel_filters_null_module(
+    session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`module=UNCLASSIFIED_MODULE_SENTINEL` 篩 module_code IS NULL,分頁/total 正確反映
+    (前端 sentinel `__unclassified__` 與後端此常值對齊)。"""
+    _patch_collect(monkeypatch)
+    await _refresh(session_factory)
+    async with session_factory() as session:
+        svc = SnapshotService(session)
+        unclassified_only = await svc.list_tables(
+            "source", "DS", page=1, page_size=50,
+            filters=TableFilters(rows="all", module=UNCLASSIFIED_MODULE_SENTINEL),
+        )
+        assert {i.name for i in unclassified_only.items} == {"BBB_FILE"}
+        assert unclassified_only.total == 1
+        assert unclassified_only.items[0].module_code is None
+
+
 # ── E. cache key 依 module 區分 ──────────────────────────────────────────
 async def test_list_tables_cache_key_differs_by_module(
     session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
@@ -452,3 +474,83 @@ async def test_api_list_tables_filters_by_module_and_returns_module_code(
     assert filtered_resp.status_code == 200, filtered_resp.text
     filtered_items = filtered_resp.json()["data"]["items"]
     assert [i["name"] for i in filtered_items] == ["AAA_FILE"]
+
+
+# ── G. repo.list_distinct_modules:整 schema 聚合(AD-115)─────────────────
+async def test_repo_list_distinct_modules_aggregates_whole_schema(
+    session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """distinct 模組清單來自整個 schema(非單頁),含未分類旗標。"""
+    _patch_collect(monkeypatch)
+    await _refresh(session_factory)
+    async with session_factory() as session:
+        codes, has_unclassified = await RdsTableMetaRepository(session).list_distinct_modules(
+            Dataset.SOURCE, "DS"
+        )
+    assert codes == ["GL", "SYS"]  # 排序;不含 None
+    assert has_unclassified is True  # BBB_FILE module_code=None
+
+
+async def test_repo_list_distinct_modules_no_unclassified_when_all_classified(
+    session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_collect(self: SnapshotService, dataset_value: str) -> list[_CollectedTable]:
+        return [_CollectedTable("DS", "AAA_FILE", None, 1, 1, "GL")]
+
+    monkeypatch.setattr(SnapshotService, "_collect_from_rds", fake_collect)
+    await _refresh(session_factory)
+    async with session_factory() as session:
+        codes, has_unclassified = await RdsTableMetaRepository(session).list_distinct_modules(
+            Dataset.SOURCE, "DS"
+        )
+    assert codes == ["GL"]
+    assert has_unclassified is False
+
+
+# ── H. datasets API:distinct 模組清單端點(AD-115)──────────────────────
+async def test_api_list_schema_modules_returns_distinct_codes_and_unclassified_flag(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _login_as(client, session_factory, "admin")
+    _patch_collect(monkeypatch)
+    refresh_resp = await client.post("/api/v1/datasets/source/snapshot/refresh")
+    assert refresh_resp.status_code == 200, refresh_resp.text
+
+    resp = await client.get("/api/v1/datasets/source/schemas/DS/modules")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data == {"modules": ["GL", "SYS"], "has_unclassified": True}
+
+
+async def test_api_list_schema_modules_requires_login_and_admin(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    resp = await client.get("/api/v1/datasets/source/schemas/DS/modules")
+    assert resp.status_code == 401
+
+    await _login_as(client, session_factory, "member")
+    resp = await client.get("/api/v1/datasets/source/schemas/DS/modules")
+    assert resp.status_code == 403
+
+
+# ── I. datasets API:?module=__unclassified__ 端到端(AD-117)──────────────
+async def test_api_list_tables_unclassified_sentinel_end_to_end(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _login_as(client, session_factory, "admin")
+    _patch_collect(monkeypatch)
+    refresh_resp = await client.post("/api/v1/datasets/source/snapshot/refresh")
+    assert refresh_resp.status_code == 200, refresh_resp.text
+
+    resp = await client.get(
+        "/api/v1/datasets/source/tables",
+        params={"schema": "DS", "rows": "all", "module": UNCLASSIFIED_MODULE_SENTINEL},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()["data"]
+    assert [i["name"] for i in body["items"]] == ["BBB_FILE"]
+    assert body["total"] == 1

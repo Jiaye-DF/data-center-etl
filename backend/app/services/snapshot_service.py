@@ -21,6 +21,7 @@ from app.models.rds_table_meta import Dataset, RdsTableMeta
 from app.repositories.rds_table_meta_repo import RdsTableMetaRepository
 from app.repositories.schedule_repo import ScheduleRepository
 from app.schemas.rawdata import (
+    ModuleListResponse,
     SchemaListResponse,
     SchemaStatSummary,
     SchemaSummary,
@@ -188,6 +189,21 @@ class SnapshotService:
                 SchemaSummary(schema=schema, table_count=count) for schema, count in rows
             ]
         )
+        await cache.cache_set(
+            key, response.model_dump_json(), ttl_seconds=_CACHE_TTL_SECONDS
+        )
+        return response
+
+    async def list_modules(self, dataset_value: str, schema: str) -> ModuleListResponse:
+        """回指定 schema 下 distinct ERP 模組代碼(讀快照 + Redis cache;AD-115)。"""
+        key = cache.cache_key("datasets", dataset_value, "modules", schema)
+        cached = await cache.cache_get(key)
+        if cached is not None:
+            return ModuleListResponse.model_validate_json(cached)
+        codes, has_unclassified = await self._repo.list_distinct_modules(
+            Dataset(dataset_value), schema
+        )
+        response = ModuleListResponse(modules=codes, has_unclassified=has_unclassified)
         await cache.cache_set(
             key, response.model_dump_json(), ttl_seconds=_CACHE_TTL_SECONDS
         )

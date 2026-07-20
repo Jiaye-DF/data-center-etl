@@ -47,6 +47,11 @@ etl_pkg.zip
 .backup/
 *.dump
 
+# 憑證 / 金鑰(scan R-ENV-002)
+credentials*
+*.key
+*.pem
+
 # 架構報告
 docs/Arch/ai-data-hub.html
 

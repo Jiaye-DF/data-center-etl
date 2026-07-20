@@ -43,7 +43,9 @@ from collections.abc import AsyncIterator  # noqa: E402
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from sqlalchemy import text  # noqa: E402
+from sqlalchemy.exc import DBAPIError  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
+    AsyncConnection,
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
@@ -52,6 +54,7 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app import models  # noqa: E402, F401  匯入全部 model 讓 create_all 建齊資料表
+from app.core import redis as cache  # noqa: E402
 from app.core.db import Base  # noqa: E402
 from app.etl import view_generator  # noqa: E402
 from app.etl.reader import rds_database_url  # noqa: E402
@@ -116,6 +119,12 @@ async def target_engine() -> AsyncIterator[AsyncEngine]:
         yield engine
     finally:
         await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _reset_cache() -> None:
+    """每測試重置 redis 記憶體 fake(避免簽名快取跨測試髒讀,對齊 test_snapshot_module_code.py)。"""
+    cache._client = None
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -256,8 +265,11 @@ async def test_confirmed_table_produces_view_with_english_aliases(
     }
     async with target_engine.connect() as conn:
         conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
-        created = await view_generator.generate_views_for_schema(conn, "VG_TEST", confirmed)
+        created, failed = await view_generator.generate_views_for_schema(
+            conn, "VG_TEST", confirmed
+        )
     assert created == ["VG_TEST_en.employee_master_alias"]
+    assert failed == []
 
     async with target_engine.connect() as conn:
         row = (
@@ -274,8 +286,11 @@ async def test_empty_intersection_skips_table_no_view(target_engine: AsyncEngine
     confirmed = {"VG_EMPTY": {"": "empty_view", "VGA99": "not_present_on_table"}}
     async with target_engine.connect() as conn:
         conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
-        created = await view_generator.generate_views_for_schema(conn, "VG_TEST", confirmed)
+        created, failed = await view_generator.generate_views_for_schema(
+            conn, "VG_TEST", confirmed
+        )
     assert created == []
+    assert failed == []
 
     async with target_engine.connect() as conn:
         exists = (
@@ -305,9 +320,14 @@ async def test_rerun_is_idempotent(target_engine: AsyncEngine) -> None:
     }
     async with target_engine.connect() as conn:
         conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
-        first = await view_generator.generate_views_for_schema(conn, "VG_TEST", confirmed)
-        second = await view_generator.generate_views_for_schema(conn, "VG_TEST", confirmed)
+        first, first_failed = await view_generator.generate_views_for_schema(
+            conn, "VG_TEST", confirmed
+        )
+        second, second_failed = await view_generator.generate_views_for_schema(
+            conn, "VG_TEST", confirmed
+        )
     assert first == second == ["VG_TEST_en.employee_master_idem"]
+    assert first_failed == second_failed == []
 
 
 async def test_list_target_schemas_excludes_ds_erp_metadata_and_en_suffix(
@@ -327,6 +347,138 @@ async def test_list_target_schemas_excludes_ds_erp_metadata_and_en_suffix(
     assert "DS" not in schemas
     assert "erp_metadata" not in schemas
     assert "VG_TEST_en" not in schemas
+
+
+# =============================================================================
+# 真實 DB 整合測試:_create_or_replace_view 重建分支收斂(AD-112)
+# =============================================================================
+
+
+async def test_create_or_replace_view_incompatible_columns_triggers_rebuild(
+    target_engine: AsyncEngine,
+) -> None:
+    """既有 view 欄位別名改變(Postgres 拒絕 REPLACE,42P16)→ 觸發 DROP VIEW + CREATE 重建。"""
+    await _ensure_source_table(target_engine, "VG_TEST", "VG_REBUILD", {"VGA01": "VARCHAR(10)"})
+    qualified = '"VG_TEST_en"."vg_rebuild"'
+    async with target_engine.connect() as conn:
+        conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+        await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "VG_TEST_en"'))
+        await view_generator._create_or_replace_view(
+            conn, qualified, 'SELECT "VGA01" AS "old_alias" FROM "VG_TEST"."VG_REBUILD"'
+        )
+        # 欄位別名改變 = 欄位集合不相容,Postgres 拒絕 REPLACE → 應觸發重建
+        await view_generator._create_or_replace_view(
+            conn, qualified, 'SELECT "VGA01" AS "new_alias" FROM "VG_TEST"."VG_REBUILD"'
+        )
+
+    async with target_engine.connect() as conn:
+        row = (
+            await conn.execute(text('SELECT * FROM "VG_TEST_en"."vg_rebuild"'))
+        ).mappings().first()
+    assert row is not None
+    assert set(row.keys()) == {"new_alias"}
+
+
+async def test_create_or_replace_view_other_error_does_not_drop_view(
+    target_engine: AsyncEngine,
+) -> None:
+    """非 42P16 例外(如語法 / 欄位不存在)不得觸發 DROP,例外照樣往上拋,原 view 保留。"""
+    await _ensure_source_table(target_engine, "VG_TEST", "VG_KEEP", {"VGA01": "VARCHAR(10)"})
+    qualified = '"VG_TEST_en"."vg_keep"'
+    async with target_engine.connect() as conn:
+        conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+        await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "VG_TEST_en"'))
+        await view_generator._create_or_replace_view(
+            conn, qualified, 'SELECT "VGA01" AS "employee_number" FROM "VG_TEST"."VG_KEEP"'
+        )
+
+        # 引用不存在欄位 → UndefinedColumnError(42703),非欄位集合不相容,不應 DROP
+        bad_select_sql = 'SELECT "NOT_EXIST_COL" AS "employee_number" FROM "VG_TEST"."VG_KEEP"'
+        with pytest.raises(DBAPIError):
+            await view_generator._create_or_replace_view(conn, qualified, bad_select_sql)
+
+    async with target_engine.connect() as conn:
+        exists = (
+            await conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.views"
+                    " WHERE table_schema = 'VG_TEST_en' AND table_name = 'vg_keep'"
+                )
+            )
+        ).first()
+    assert exists is not None  # view 未被 DROP
+
+
+# =============================================================================
+# 真實 DB 整合測試:generate_views_for_schema 回報失敗表(AD-113)
+# =============================================================================
+
+
+async def test_generate_views_for_schema_reports_failed_tables(
+    target_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _ensure_source_table(target_engine, "VG_TEST", "VG_FAIL", {"VGA01": "VARCHAR(10)"})
+    await _ensure_source_table(target_engine, "VG_TEST", "VG_OK", {"VGA01": "VARCHAR(10)"})
+    confirmed = {
+        "VG_FAIL": {"": "employee_fail", "VGA01": "employee_number"},
+        "VG_OK": {"": "employee_ok", "VGA01": "employee_number"},
+    }
+    real_create_or_replace = view_generator._create_or_replace_view
+
+    async def _flaky(conn: AsyncConnection, qualified_view: str, select_sql: str) -> None:
+        if "employee_fail" in qualified_view:
+            raise RuntimeError("boom(模擬非 42P16 失敗)")
+        await real_create_or_replace(conn, qualified_view, select_sql)
+
+    monkeypatch.setattr(view_generator, "_create_or_replace_view", _flaky)
+
+    async with target_engine.connect() as conn:
+        conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+        created, failed = await view_generator.generate_views_for_schema(
+            conn, "VG_TEST", confirmed
+        )
+
+    assert created == ["VG_TEST_en.employee_ok"]
+    assert failed == ["VG_TEST.VG_FAIL"]
+
+
+async def test_regenerate_views_if_changed_does_not_cache_signature_on_partial_failure(
+    session_factory: async_sessionmaker[AsyncSession],
+    target_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """部分表失敗 → 不寫入內容簽名,確保下輪(即便內容未再變動)仍會重試補齊。"""
+    await _ensure_source_table(
+        target_engine, "VG_TEST", "VG_PARTIAL", {"VGA01": "VARCHAR(10)"}
+    )
+    await _seed_mapping(
+        session_factory,
+        table_name="VG_PARTIAL",
+        column_name="",
+        english_name="employee_partial",
+        status="confirmed",
+    )
+    await _seed_mapping(
+        session_factory,
+        table_name="VG_PARTIAL",
+        column_name="VGA01",
+        english_name="employee_number",
+        status="confirmed",
+    )
+
+    async def _failing_generate_views(
+        engine: AsyncEngine, confirmed: dict[str, dict[str, str]]
+    ) -> tuple[list[str], list[str]]:
+        return [], ["VG_TEST.VG_PARTIAL"]
+
+    monkeypatch.setattr(view_generator, "generate_views", _failing_generate_views)
+
+    async with session_factory() as session:
+        repo = SemanticMappingRepository(session)
+        await view_generator.regenerate_views_if_changed(session, repo)
+
+    cached = await cache.cache_get(view_generator._SIGNATURE_CACHE_KEY)
+    assert cached is None  # 失敗未寫簽名,下輪會重試
 
 
 # =============================================================================
@@ -400,7 +552,7 @@ async def test_regenerate_views_if_changed_skips_when_signature_unchanged(
 
     async def _counting_generate_views(
         engine: AsyncEngine, confirmed: dict[str, dict[str, str]]
-    ) -> list[str]:
+    ) -> tuple[list[str], list[str]]:
         nonlocal call_count
         call_count += 1
         return await real_generate_views(engine, confirmed)
