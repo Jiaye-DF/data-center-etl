@@ -13,6 +13,7 @@
 | `output/*.md` | 三份分析報告（ERP / BPM / HRM） | ✅ |
 | `output/*.html` | 同內容的 HTML 版（ERP 版 9.3MB，含互動目錄） | ❌ gitignore |
 | `data/` | 原始查詢 dump（TSV + 查詢錯誤 .err，約 18MB），報告由此產生 | ❌ gitignore |
+| `data/semantic_draft.tsv` | **英文語意名草稿**（333 表 + 11,947 欄，AI 產生待複核；`erp_metadata.semantic_mappings` 種子），報告第 9 章由此渲染 | ❌ gitignore |
 | `tools/` | 報告產生器與查詢工具（見下） | ✅ |
 
 > `output/*.html` 與 `data/` 為本地保留、不進版控（對齊 `docs/Arch/ai-data-hub.html` 先例）；clone 後若需要，可依下節工具重新產生，或向持有者索取。
@@ -24,6 +25,7 @@
 | `java/Q.java` / `Q2.java` / `q.sh` | Oracle 唯讀查詢小工具（stdin 收 SQL、stdout 吐 TSV）；`Q2` 讀 `db.properties`（複製 `db.properties.example` 填值，**該檔已 gitignore**） |
 | `java/generate.py` | 讀 `data/*.tsv` 產出 `erp-metadata.md/html`（初版） |
 | `_gen_screen.py` | 讀 `data/*.tsv` 產出 `erp-metadata.md/html`（現行版：DS 字典 ↔ M2201 ↔ 畫面整合） |
+| `_gen_schema.py` | 單一帳套版：`python _gen_schema.py S2202` 讀 `data/<schema>_tables/columns.tsv` + DS 字典 TSV，產出 `output/erp-metadata-<schema>.html`（S2202 / G2203 / F2204 已產出） |
 | `_gen.py` | 連線 MS SQL Server 抽取 metadata 並產出 `bpm/hrm-metadata.md/html` |
 | `_fmtscan.py` | 掃描 EFGP 大文字欄位格式（XML/HTML/JSON/BASE64 判別） |
 

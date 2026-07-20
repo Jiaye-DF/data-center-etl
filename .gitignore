@@ -56,3 +56,4 @@ docs/ERP-Analyze/output/*.html
 
 # ERP 分析連線機密(僅 db.properties.example 進版控)
 docs/ERP-Analyze/**/db.properties
+DB-INFO.md

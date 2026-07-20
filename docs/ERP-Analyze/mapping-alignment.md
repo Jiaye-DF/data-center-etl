@@ -56,3 +56,13 @@
 | `DS.GAU_FILE` | 鼎新邏輯層 PK/FK（1,957 列） | ERP **無任何實體 FK**（§2 條件 4），此為表間關聯的唯一字典級來源 | 同上；覆蓋有限，關聯仍以命名慣例推導為主 |
 
 上述已列入 `docs/Tasks/v1.5.0/propose-v1.5.0.md` In Scope 候選，待 user 認可後走 `/propose-to-tasks`。
+
+## 6. 英文語意名草稿（2026-07-20 產出）
+
+全部 333 表 + 11,947 欄已完成英文名 AI 草稿（表名/欄名皆翻，snake_case；表內唯一、全域表名唯一均已驗證）：
+
+- 資料：`data/semantic_draft.tsv`（`TABLE_NAME / COLUMN_NAME('' = 表層級) / EN_NAME / ZH_NAME / SRC`），即 `erp_metadata.semantic_mappings` 的匯入種子。
+- 檢視：`output/erp-metadata-m2201.html` **第 9 章**（可搜尋/分頁），md 版第 9 章僅列表層級。
+- 來源分佈：GAQ 中文名 11,756、GAE 畫面標籤補 126、無來源保留原欄名 65；全域表名撞名 6 組已自動消歧（加表前綴尾碼）。
+- 命名規則補充（2026-07-20 user 決議）：**GAT 字典無中文名的表（20 張），英文表名一律 = 原表名小寫原樣**（如 `TC_IMA_FILE`→`tc_ima_file`），不自創語意名。
+- 狀態：**全部 draft，待人工複核**後轉 confirmed 匯入 RDS。

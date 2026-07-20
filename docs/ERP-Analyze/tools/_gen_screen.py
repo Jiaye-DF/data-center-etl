@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """整合版產生器：DS 字典（GAT/GAQ/ZZ/GAZ/ZR/GAE）↔ M2201 表/欄位 ↔ TipTop 畫面(程式)。
-由 _data/*.tsv 產出 docs/output/erp-metadata.md + erp-metadata.html（覆蓋原版）。
+由 _data/*.tsv 產出 docs/output/erp-metadata.md + erp-metadata-m2201.html（覆蓋原版）。
 資料來源皆為先前以唯讀 SELECT 抽出的 TSV，本腳本不連 DB。"""
 import os, html, collections, io, sys, bisect
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+# 目錄整併後版面:本檔在 tools/,資料在 ../data、輸出在 ../output(docs/ERP-Analyze/ 之下)
 BASE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(BASE, "_data")
-OUT  = os.path.join(BASE, "docs", "output")
+ROOT = os.path.dirname(BASE)
+DATA = os.path.join(ROOT, "data")
+OUT  = os.path.join(ROOT, "output")
 os.makedirs(OUT, exist_ok=True)
 TODAY = "2026-07-17"
 
@@ -36,6 +38,12 @@ zy_rows  = read_tsv("ds_zy.tsv")               # ZY01 ZY02 ZY03 ZY04 ZY05 ZY07�
 zw_rows  = read_tsv("ds_zw.tsv")               # ZW01 ZW02 ZW03（權限類別 57）
 zxy_rows = read_tsv("ds_zxy.tsv")              # ZXY01 ZXY02 ZXY03（使用者↔營運中心）
 gau      = read_tsv("ds_gau.tsv")              # GAU01=PK欄 GAU02=PK表 GAU03=FK欄 GAU04=FK表（1,957 條）
+
+# 英文語意名草稿(erp_metadata.semantic_mappings 的種子;翻譯批次合併產生。無檔案時第 9 章顯示提示)
+SEM_FILE = os.path.join(DATA, "semantic_draft.tsv")
+semantic = read_tsv("semantic_draft.tsv") if os.path.exists(SEM_FILE) else []
+sem_tab  = {r["TABLE_NAME"]: r for r in semantic if not r["COLUMN_NAME"]}   # 表層級(COLUMN_NAME 空)
+sem_cols = [r for r in semantic if r["COLUMN_NAME"]]                        # 欄位層級
 
 # ---- 權限模型統計（由抽出資料計算，屬事實）----
 perm_cols_by_tab = collections.defaultdict(list)
@@ -609,6 +617,22 @@ A("- 其他公司 schema（SDF/GDF/DF…）與 M2201 同構，本文件字典可
 A("- 機器可讀對照：`_data/m2201_table_programs.tsv`、`_data/m2201_column_screen_labels.tsv`、`_data/m2201_column_label_variants.tsv`（一列一名稱展開版）。")
 A("")
 
+# 9 英文語意名草稿(md 版僅列表層級 + 統計;欄位級 1.2 萬列詳見 html 第 9 章與 data/semantic_draft.tsv)
+if semantic:
+    n_sem_col = len(sem_cols)
+    n_sem_src = collections.Counter(r.get("SRC", "") for r in sem_cols)
+    A("## 9. 英文語意名草稿（`erp_metadata.semantic_mappings` 種子，待人工複核）")
+    A("")
+    A("> 全部 AI 產生之 **draft**：表名與欄位英文名(snake_case)依 GAQ/GAT 中文名翻譯,中文名缺漏者以 GAE 畫面標籤補,兩者皆無者保留原欄名。")
+    A(f"> 覆蓋:表 {len(sem_tab)} 張、欄位 {fmt(n_sem_col)} 個(來源 GAQ {fmt(n_sem_src.get('GAQ',0))}、畫面標籤 {fmt(n_sem_src.get('GAE',0))}、原名保留 {fmt(n_sem_src.get('原名',0))})。")
+    A("> 欄位級完整清單見 HTML 版第 9 章(可搜尋/分頁)與 `data/semantic_draft.tsv`;複核後匯入 RDS `erp_metadata.semantic_mappings`。")
+    A("")
+    A("| # | 表名 | 中文名(GAT) | 英文表名(草稿) |")
+    A("| ---: | --- | --- | --- |")
+    for i, t in enumerate(sorted(sem_tab.values(), key=lambda r: r["TABLE_NAME"]), 1):
+        A(f"| {i} | `{t['TABLE_NAME']}` | {md_escape(t.get('ZH_NAME','') or '—')} | `{t['EN_NAME']}` |")
+    A("")
+
 md_text = "\n".join(md)
 with open(os.path.join(OUT, "erp-metadata.md"), "w", encoding="utf-8") as f:
     f.write(md_text)
@@ -697,7 +721,8 @@ B("</style></head><body>")
 B("<aside id='sb'><h1>鼎新 TIPTOP GP Metadata<br>DS 字典 ↔ M2201 ↔ 畫面(程式)</h1>")
 B(f"<div class='meta'>產出日期 {TODAY}<br>Oracle toptest @10.200.206.130<br>全程唯讀，只下 SELECT<br>（GAT/GAQ 用 RO_M2201；其餘 DS 字典用 sys 唯讀）</div>")
 B("<nav><a href='#legend'>資訊來源標示</a><a href='#ov'>1. 總覽</a><a href='#verify'>2. 已知條件驗證</a><a href='#dict'>3. DS 總覽</a>"
-  "<a href='#rel'>4. 關聯模型</a><a href='#tp'>5. 表↔程式</a><a href='#cols'>6. 欄位對照</a><a href='#perm'>7. 權限模型</a><a href='#limit'>8. 限制</a></nav></aside>")
+  "<a href='#rel'>4. 關聯模型</a><a href='#tp'>5. 表↔程式</a><a href='#cols'>6. 欄位對照</a><a href='#perm'>7. 權限模型</a><a href='#limit'>8. 限制</a>"
+  "<a href='#sem'>9. 英文語意名草稿</a></nav></aside>")
 B("<main>")
 B("<div class='kpi'>")
 B(f"<div><b>{n_tbl}</b>M2201 有資料表</div>")
@@ -933,7 +958,50 @@ B("<li>「主要維護程式」為推導；同表可能被多支程式維護（�
 B(f"<li>畫面標籤覆蓋 {fmt(n_col_screen)}/{fmt(n_col_total)} 欄位；未覆蓋者多為純後端欄位（畫面本來不顯示）。</li>")
 B("<li>其他公司 schema（SDF/GDF/DF…）與 M2201 同構，字典可直接套用。</li>")
 B("<li>機器可讀對照：<code>_data/m2201_table_programs.tsv</code>、<code>_data/m2201_column_screen_labels.tsv</code>、<code>_data/m2201_column_label_variants.tsv</code>（一列一名稱展開版）。</li>")
-B("</ul></section></main>")
+B("</ul></section>")
+
+# 9 英文語意名草稿(semantic_mappings 種子)
+B("<section id='sem'><h2>9. 英文語意名草稿（<code>erp_metadata.semantic_mappings</code> 種子）</h2>")
+if semantic:
+    n_sem_col = len(sem_cols)
+    n_sem_src = collections.Counter(r.get("SRC", "") for r in sem_cols)
+    B("<div class='warn'>本章全部為 <b>AI 產生之 draft</b>,供人工複核後匯入 RDS <code>erp_metadata.semantic_mappings</code>(status=draft→confirmed)。"
+      "命名規則:小寫 snake_case;表名=語意化複數(單頭檔→<code>_headers</code>、單身檔→<code>_details</code>、記錄檔→<code>_logs</code>),"
+      "<b>GAT 字典無中文名的表保留原表名小寫</b>(如 <code>TC_IMA_FILE</code>→<code>tc_ima_file</code>);"
+      "欄位依 GAQ 中文名翻譯,GAQ 缺者以 GAE 畫面標籤補<span class='b b-scr'>畫面</span>,兩者皆無者保留原欄名。"
+      "mapping 全域一份、不分帳套 schema(帳套同構,同 DS 字典設計)。</div>")
+    B("<div class='kpi'>")
+    B(f"<div><b>{len(sem_tab)}</b>表名已翻譯</div>")
+    B(f"<div><b>{fmt(n_sem_col)}</b>欄位已翻譯</div>")
+    B(f"<div><b>{fmt(n_sem_src.get('GAQ', 0))}</b>依 GAQ 中文名</div>")
+    B(f"<div><b>{fmt(n_sem_src.get('GAE', 0))}</b>依畫面標籤</div>")
+    B(f"<div><b>{fmt(n_sem_src.get('原名', 0))}</b>無來源保留原名</div>")
+    B("</div>")
+    B("<h3>9.1 表名對照（表層級映射,<code>column_name=''</code>）</h3>")
+    B("<div class='pgwrap' data-size='50' data-list='tbody'>")
+    B(PGBAR.format(ph="搜尋表名 / 中文名 / 英文名,例如 oea、訂單、order"))
+    B("<table><thead><tr><th>#</th><th>表名</th><th>中文名(GAT)<span class='b b-dict'>字典</span></th><th>模組</th><th>英文表名(草稿)<span class='b b-sug'>建議</span></th></tr></thead><tbody>")
+    _sem_mod = {t["TABLE_NAME"]: t.get("MODULE", "") for t in tables}
+    for i, t in enumerate(sorted(sem_tab.values(), key=lambda r: r["TABLE_NAME"]), 1):
+        B(f"<tr><td style='text-align:right'>{i}</td><td><code>{esc(t['TABLE_NAME'])}</code></td><td>{esc(t.get('ZH_NAME','') or '—')}</td>"
+          f"<td>{esc(_sem_mod.get(t['TABLE_NAME'], ''))}</td><td><code>{esc(t['EN_NAME'])}</code></td></tr>")
+    B("</tbody></table>")
+    B(PGBAR.format(ph="搜尋表名 / 中文名 / 英文名"))
+    B("</div>")
+    B("<h3>9.2 欄位對照（全部欄位,可搜尋）</h3>")
+    B("<div class='pgwrap' data-size='100' data-list='tbody'>")
+    B(PGBAR.format(ph="搜尋表名 / 欄位 / 中文名 / 英文名,例如 gen01、員工、employee"))
+    B("<table><thead><tr><th>資料表</th><th>欄位</th><th>中文名<span class='b b-dict'>字典</span></th><th>英文欄名(草稿)<span class='b b-sug'>建議</span></th><th>來源</th></tr></thead><tbody>")
+    SRC_BADGE = {"GAQ": "<span class='b b-dict'>GAQ</span>", "GAE": "<span class='b b-scr'>畫面</span>", "原名": "<span class='b b-inf'>原名</span>"}
+    for r in sem_cols:
+        B(f"<tr><td><code>{esc(r['TABLE_NAME'])}</code></td><td><code>{esc(r['COLUMN_NAME'])}</code></td><td>{esc(r.get('ZH_NAME','') or '—')}</td>"
+          f"<td><code>{esc(r['EN_NAME'])}</code></td><td>{SRC_BADGE.get(r.get('SRC',''), esc(r.get('SRC','')))}</td></tr>")
+    B("</tbody></table>")
+    B(PGBAR.format(ph="搜尋表名 / 欄位 / 中文名 / 英文名"))
+    B("</div>")
+else:
+    B("<div class='warn'>尚未產生 <code>data/semantic_draft.tsv</code>(翻譯批次未合併);合併後重跑本產生器即出現內容。</div>")
+B("</section></main>")
 # 章節換頁路由（sidebar = 分頁器，一次只顯示一章）+ 清單分頁元件
 B("""<script>
 (function(){
@@ -981,7 +1049,7 @@ B("""<script>
 B("</body></html>")
 
 html_text = "\n".join(H)
-with open(os.path.join(OUT, "erp-metadata.html"), "w", encoding="utf-8") as f:
+with open(os.path.join(OUT, "erp-metadata-m2201.html"), "w", encoding="utf-8") as f:
     f.write(html_text)
-print("已寫出 docs/output/erp-metadata.html", len(html_text), "bytes")
+print("已寫出 docs/output/erp-metadata-m2201.html", len(html_text), "bytes")
 print(f"tables={n_tbl} with_prog={n_tbl_prog} with_writer={n_tbl_writer} cols={n_col_total} col_dict={n_col_dict} col_screen={n_col_screen} rels={len(rels)}")
