@@ -25,7 +25,8 @@
 | `java/Q.java` / `Q2.java` / `q.sh` | Oracle 唯讀查詢小工具（stdin 收 SQL、stdout 吐 TSV）；`Q2` 讀 `db.properties`（複製 `db.properties.example` 填值，**該檔已 gitignore**） |
 | `java/generate.py` | 讀 `data/*.tsv` 產出 `erp-metadata.md/html`（初版） |
 | `_gen_screen.py` | 讀 `data/*.tsv` 產出 `erp-metadata.md/html`（現行版：DS 字典 ↔ M2201 ↔ 畫面整合） |
-| `_gen_schema.py` | 單一帳套版：`python _gen_schema.py S2202` 讀 `data/<schema>_tables/columns.tsv` + DS 字典 TSV，產出 `output/erp-metadata-<schema>.html`（S2202 / G2203 / F2204 已產出） |
+| `_gen_schema.py` | 單一帳套版：`python _gen_schema.py S2202` 讀 `data/<schema>_tables/columns.tsv` + DS 字典 TSV，產出 `output/erp-metadata-<schema>.html`（S2202 / G2203 / F2204 已產出，含英文語意名草稿章）；英文名合併 `data/semantic_draft.tsv`（M2201 批次）+ `data/semantic_draft_extra.tsv`（三帳套缺口補翻 1,426 列） |
+| `_gen_clean.py` | 資料清洗前置：整合四帳套（M2201/S2202/G2203/F2204）TSV 產出 `output/erp-data-clean.html`（表 × Schema 對照矩陣、欄位級 presence、結構差異、跨帳套共用表與抽取來源）；第 7 章讀 `data/cross_schema_synonyms.tsv`（`ALL_SYNONYMS` 唯讀查詢落地，實錘 GEM/GEN/ABM 三表集中託管於 G2203） |
 | `_gen.py` | 連線 MS SQL Server 抽取 metadata 並產出 `bpm/hrm-metadata.md/html` |
 | `_fmtscan.py` | 掃描 EFGP 大文字欄位格式（XML/HTML/JSON/BASE64 判別） |
 
