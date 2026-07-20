@@ -1,6 +1,9 @@
-"""DS 字典查詢:對 source RDS 的 ERP 資料字典(GAT_FILE 表名 / GAQ_FILE 欄名)取中文描述。
+"""DS 字典查詢:對 source RDS 的 ERP 資料字典(GAT_FILE 表名 / GAQ_FILE 欄名 / GAE_FILE 畫面標籤)
+取中文描述。
 
 - 表中文名走 `DS.GAT_FILE`,欄中文名走 `DS.GAQ_FILE`;繁體(`'0'`)優先,缺退簡體(`'2'`)。
+- 欄中文名查不到時(GAQ 缺漏),退 `DS.GAE_FILE` 畫面欄位標籤補洞(task-006 B1)。
+- GAQ04/GAQ05(說明/選項值)有值且不等於中文名時,附加進欄 comment(task-006 B3)。
 - 識別字為白名單常值(schema / table / column 皆硬編於 SQL,非使用者輸入),
   查詢值一律 bind params(`04-sql-safety.md`)。
 - 字典表缺失時 graceful 回空(不 raise)——comment 放寬(task-003 In Scope ⑦)。
@@ -17,7 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 # 字典表所在 schema 與表名(ERP 資料字典)
 DICT_SCHEMA = "DS"
 TABLE_NAME_DICT = "GAT_FILE"  # GAT01=表名 / GAT02=語別 / GAT03=中文名
-COLUMN_NAME_DICT = "GAQ_FILE"  # GAQ01=欄名 / GAQ02=語別 / GAQ03=中文名
+COLUMN_NAME_DICT = "GAQ_FILE"  # GAQ01=欄名 / GAQ02=語別 / GAQ03=中文名 / GAQ04,05=說明/選項
+SCREEN_LABEL_DICT = "GAE_FILE"  # GAE01=畫面代碼 / GAE02=欄名(小寫) / GAE03=語別 / GAE04=畫面標籤
 
 # 語別代碼:繁體優先,缺退簡體
 LANG_ZH_TW = "0"
@@ -40,10 +44,18 @@ _TABLE_COMMENTS_BATCH_SQL = text(
     ' WHERE lower("GAT01") = ANY(:tables) AND "GAT02" = :lang'
 )
 
-# 欄中文名:一次批量查該表所有欄(設計要點 GAQ 查詢,一字不差)
+# 欄中文名:一次批量查該表所有欄(設計要點 GAQ 查詢,一字不差);併取 GAQ04/05(說明/選項值,B3)
 _COLUMN_COMMENT_SQL = text(
-    'SELECT lower("GAQ01") k, "GAQ03" v FROM "DS"."GAQ_FILE"'
+    'SELECT lower("GAQ01") k, "GAQ03" v, "GAQ04" v4, "GAQ05" v5 FROM "DS"."GAQ_FILE"'
     ' WHERE lower("GAQ01") = ANY(:cols) AND "GAQ02" = :lang'
+)
+
+# 畫面欄位標籤:GAQ 查不到中文名時的 fallback(B1);同一欄可能對應多畫面,
+# 依 GAE01 排序取第一筆非空標籤(需求文字明定),故加 ORDER BY(常值欄名,非使用者輸入)
+_SCREEN_LABEL_SQL = text(
+    'SELECT lower("GAE02") k, "GAE04" v FROM "DS"."GAE_FILE"'
+    ' WHERE lower("GAE02") = ANY(:cols) AND "GAE03" = :lang'
+    ' ORDER BY "GAE01"'
 )
 
 
@@ -95,26 +107,66 @@ async def fetch_table_comments(
     return result
 
 
+def _compose_column_comment(name: str, extra1: str | None, extra2: str | None) -> str:
+    """組欄 comment:中文名 + GAQ04/05 說明/選項值(去空白後不等於中文名者依序附加,B3)。
+
+    無附加值時原樣回傳中文名,維持現行輸出不變動。
+    """
+    parts = [name]
+    for extra in (extra1, extra2):
+        if extra and extra != name:
+            parts.append(extra)
+    return "；".join(parts)
+
+
 async def fetch_column_comments(
     conn: AsyncConnection, columns: Sequence[str]
 ) -> dict[str, str]:
     """批量查該表各欄中文名(逐欄繁優先缺退簡);回傳 key 為小寫欄名。
 
-    字典表缺失、欄無對應者靜默略過(不 raise);key 以小寫欄名對映,供呼叫端比對。
+    - GAQ 有對應:中文名(GAQ03)+ GAQ04/05 說明選項值(不等於中文名者附加,B3)。
+    - GAQ 查不到者,退 GAE_FILE 畫面標籤補洞(B1);同一欄多畫面取第一筆非空標籤。
+    - 兩字典表皆缺失、欄無對應者靜默略過(不 raise);key 以小寫欄名對映,供呼叫端比對。
     """
-    if not columns or not await _dict_table_exists(conn, COLUMN_NAME_DICT):
+    if not columns:
         return {}
     wanted = [c.lower() for c in columns]
     result: dict[str, str] = {}
-    for lang in _LANG_PREFERENCE:
-        remaining = [c for c in wanted if c not in result]
-        if not remaining:
-            break
-        rows = (
-            await conn.execute(_COLUMN_COMMENT_SQL, {"cols": remaining, "lang": lang})
-        ).mappings().all()
-        for r in rows:
-            value = r["v"]
-            if value is not None and str(value).strip():
-                result[str(r["k"])] = str(value).strip()
+
+    if await _dict_table_exists(conn, COLUMN_NAME_DICT):
+        for lang in _LANG_PREFERENCE:
+            remaining = [c for c in wanted if c not in result]
+            if not remaining:
+                break
+            rows = (
+                await conn.execute(_COLUMN_COMMENT_SQL, {"cols": remaining, "lang": lang})
+            ).mappings().all()
+            for r in rows:
+                value = r["v"]
+                if value is not None and str(value).strip():
+                    name = str(value).strip()
+                    v4 = r["v4"]
+                    v5 = r["v5"]
+                    extra1 = str(v4).strip() if v4 is not None else None
+                    extra2 = str(v5).strip() if v5 is not None else None
+                    result[str(r["k"])] = _compose_column_comment(name, extra1, extra2)
+
+    # B1:GAQ 仍缺者退 GAE_FILE 畫面標籤;GAE_FILE 表不存在時 graceful 略過(不 raise)
+    missing = [c for c in wanted if c not in result]
+    if missing and await _dict_table_exists(conn, SCREEN_LABEL_DICT):
+        for lang in _LANG_PREFERENCE:
+            remaining = [c for c in missing if c not in result]
+            if not remaining:
+                break
+            rows = (
+                await conn.execute(_SCREEN_LABEL_SQL, {"cols": remaining, "lang": lang})
+            ).mappings().all()
+            for r in rows:
+                key = str(r["k"])
+                if key in result:
+                    continue  # 同一欄多畫面已取得第一筆非空標籤,略過後續
+                value = r["v"]
+                if value is not None and str(value).strip():
+                    result[key] = str(value).strip()
+
     return result
