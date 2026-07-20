@@ -4,7 +4,7 @@
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
-| 001 | RDS erp_metadata schema + semantic_mappings 表冪等建置(A1) | in_progress(worker: claude-A) | ✓ | — | `backend/app/etl/semantic_schema.py` / `backend/tests/test_semantic_schema.py` |
+| 001 | RDS erp_metadata schema + semantic_mappings 表冪等建置(A1) | done(worker: claude-A) | ✓ | — | `backend/app/etl/semantic_schema.py` / `backend/tests/test_semantic_schema.py` |
 | 002 | 英文草稿匯入 RDS + 複核輔助腳本(A2) | pending | ✗ | 001 | `backend/scripts/seed_semantic_mappings.py` / `backend/tests/test_seed_semantic_mappings.py` |
 | 003 | 自有 DB mapping 副本表 + 同步回流與 cache 失效(A5) | pending | ✗ | 001 | `backend/alembic/versions/v150_add_semantic_mappings_copy.py` / `backend/app/models/semantic_mapping.py` / `backend/app/models/__init__.py` / `backend/app/repositories/semantic_mapping_repo.py` / `backend/app/worker/tasks.py` / `backend/tests/test_semantic_mapping_sync.py` |
 | 004 | 資料查詢 JSON API + confirmed 英文 key 轉換(A3) | pending | ✗ | 003 | `backend/app/api/v1/datasets.py` / `backend/app/services/data_query_service.py` / `backend/app/schemas/data_query.py` / `backend/tests/test_data_query_api.py` |

@@ -1,7 +1,7 @@
 ---
 id: task-001
 title: RDS erp_metadata schema + semantic_mappings 表冪等建置(A1)
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:
@@ -23,9 +23,9 @@ estimated_hours: 2
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_semantic_schema.py` 全綠(含:重複呼叫 ensure 兩次不 raise、CHECK 拒絕非 draft/confirmed)
-- [ ] `grep -n "DROP" app/etl/semantic_schema.py` 零命中
-- [ ] `uv run ruff check app/etl/semantic_schema.py` + `uv run mypy app/etl/semantic_schema.py` 全綠
+- [x] `cd backend && uv run pytest tests/test_semantic_schema.py` 全綠(含:重複呼叫 ensure 兩次不 raise、CHECK 拒絕非 draft/confirmed)
+- [x] `grep -n "DROP" app/etl/semantic_schema.py` 零命中
+- [x] `uv run ruff check app/etl/semantic_schema.py` + `uv run mypy app/etl/semantic_schema.py` 全綠
 
 ## 必讀檔(Just-in-time)
 
