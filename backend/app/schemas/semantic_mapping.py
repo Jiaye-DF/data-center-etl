@@ -71,12 +71,7 @@ class SemanticAffectedResponse(BaseModel):
     affected: int = Field(description="受影響列數")
 
 
-class SemanticSyncViewsResponse(BaseModel):
-    """「同步 view」執行結果(副本重灌 + view 重生)。"""
+class SemanticSyncViewsQueuedResponse(BaseModel):
+    """「套用變更」派工受理結果(AD-122:實際執行移至 worker,統計見 worker log)。"""
 
-    copied: int = Field(description="重灌至本地副本的映射筆數")
-    regenerated: bool = Field(
-        description="是否執行 view 重生(false = confirmed 內容未異動或尚無 confirmed,略過)"
-    )
-    created: int = Field(description="本輪建立 / 更新的 view 數(略過時為 0)")
-    failed: int = Field(description="本輪產生失敗的表數(略過時為 0)")
+    queued: bool = Field(description="是否已派工 worker 執行(進度輪詢聚合進度端點)")

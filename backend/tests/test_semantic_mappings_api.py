@@ -1,7 +1,8 @@
 """語意映射管理 API 測試(v1.5.1 task-004;真實本地 PostgreSQL 測試 DB 假扮目標 RDS)。
 
 涵蓋:列表分頁 / 表名精準 / 狀態 / 關鍵字篩選、PATCH 更新(含 404 / 422 驗證)、
-confirm-table 整表轉態(冪等)、member 403。
+confirm-table 整表轉態(冪等)、sync-views 派工 202 / 進行中 409(AD-122/120)、
+semantic_apply task 持鎖略過、寫入類稽核(AD-123)、member 403。
 對齊 test_view_generator.py 模式:AWS_RDS_* 指向本地測試 DB,不觸碰真正 AWS RDS;
 teardown 僅清資料(DELETE)不刪結構(禁 DROP)。
 """
@@ -47,6 +48,7 @@ from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app import models  # noqa: E402, F401  匯入全部 model 讓 create_all 建齊資料表
 from app.api.deps import get_db  # noqa: E402
+from app.core import db as core_db  # noqa: E402
 from app.core import redis as cache  # noqa: E402
 from app.core.db import Base  # noqa: E402
 from app.core.security import hash_password_async  # noqa: E402
@@ -54,6 +56,7 @@ from app.etl import introspect  # noqa: E402
 from app.etl.semantic_schema import ensure_semantic_schema  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.repositories.user_repo import UserRepository  # noqa: E402
+from app.worker import tasks  # noqa: E402
 
 _BASE_PATH = "/api/v1/semantic-mappings"
 
@@ -106,6 +109,15 @@ async def _clean_tables(db_engine: AsyncEngine) -> None:
         await conn.execute(text("DELETE FROM erp_metadata.semantic_mappings"))
         await conn.execute(text("DELETE FROM semantic_mappings"))  # 自有 DB 本地副本
         await conn.execute(text("DELETE FROM users"))
+        await conn.execute(text("DELETE FROM audit_logs"))  # 稽核斷言決定性(AD-123)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _dispose_global_engine() -> AsyncIterator[None]:
+    # semantic_apply(taskiq 就地執行)自開 AsyncSessionLocal → 走全域 engine 連線池;
+    # pytest-asyncio 每測試換 event loop,不釋放會跨 loop 重用連線而失敗
+    yield
+    await core_db.engine.dispose()
 
 
 @pytest.fixture(autouse=True)
@@ -266,6 +278,20 @@ async def test_patch_updates_fields_and_actor(
     assert item["status"] == "confirmed"
     assert item["updated_by"] is not None
 
+    # 稽核事件(AD-123):action + 定位 + 異動欄位入 detail
+    async with db_engine.connect() as conn:
+        detail = (
+            await conn.execute(
+                text(
+                    "SELECT detail FROM audit_logs"
+                    " WHERE action = 'semantic_mapping.update'"
+                )
+            )
+        ).scalar_one()
+    assert "BMA_FILE.BMA002" in str(detail)
+    assert "english_name" in str(detail)
+    assert "status" in str(detail)
+
 
 async def test_patch_missing_row_returns_404(
     client: AsyncClient,
@@ -329,9 +355,24 @@ async def test_confirm_table_idempotent(
     resp = await client.get(_BASE_PATH, params={"table": "GAT06", "status": "draft"})
     assert resp.json()["data"]["total"] == 0
 
+    # 稽核事件(AD-123):兩次呼叫各一列,detail 帶 affected
+    async with db_engine.connect() as conn:
+        details = (
+            await conn.execute(
+                text(
+                    "SELECT detail FROM audit_logs"
+                    " WHERE action = 'semantic_mapping.confirm_table' ORDER BY pid"
+                )
+            )
+        ).scalars().all()
+    assert len(details) == 2
+    assert "GAT06" in str(details[0])
+    assert "affected=2" in str(details[0])
+    assert "affected=0" in str(details[1])
 
-# ── sync-views(task-005:副本重灌 + view 重生)──────────────────────────
-async def test_sync_views_copies_replica_and_reports(
+
+# ── sync-views(AD-122:派工 worker,202 受理)────────────────────────────
+async def test_sync_views_returns_202_and_replaces_replica(
     client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
     db_engine: AsyncEngine,
@@ -340,44 +381,84 @@ async def test_sync_views_copies_replica_and_reports(
     await _seed_rows(db_engine)
 
     resp = await client.post(f"{_BASE_PATH}/sync-views")
-    assert resp.status_code == 200, resp.text
-    data = resp.json()["data"]
-    assert data["copied"] == 5
-    # confirmed 映射存在且簽名初次寫入 → 執行重生;樣本表無實體表 → 建立/失敗皆 0
-    assert data["regenerated"] is True
-    assert data["created"] == 0
-    assert data["failed"] == 0
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["data"] == {"queued": True}
 
-    # 本地副本(自有 DB semantic_mappings)已整表重灌
+    # InMemoryBroker await_inplace:派工當下已就地執行完畢 → 副本已整表重灌
     async with db_engine.connect() as conn:
         replica_total = (
             await conn.execute(text("SELECT count(*) FROM semantic_mappings"))
         ).scalar_one()
     assert int(replica_total) == 5
 
-    # 內容未異動的第二次呼叫:副本照灌,view 重生略過(簽名命中)
+    # 稽核事件已寫 audit_logs(AD-123)
+    async with db_engine.connect() as conn:
+        audit_total = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM audit_logs"
+                    " WHERE action = 'semantic_mapping.sync_views'"
+                )
+            )
+        ).scalar_one()
+    assert int(audit_total) == 1
+
+    # 前次已結束(鎖已釋放)→ 可再次派工
     resp = await client.post(f"{_BASE_PATH}/sync-views")
-    assert resp.status_code == 200, resp.text
-    data = resp.json()["data"]
-    assert data["copied"] == 5
-    assert data["regenerated"] is False
+    assert resp.status_code == 202, resp.text
 
 
-# ── 套用進度端點(閒置 / 進行中)──────────────────────────────────────────
+async def test_sync_views_conflict_when_apply_in_progress(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _login_as(client, session_factory, "admin")
+    # 模擬另一 process(worker)持鎖進行中 → 派工前預檢 409
+    await cache.cache_set(tasks.APPLY_LOCK_KEY, "1", ttl_seconds=60)
+    resp = await client.post(f"{_BASE_PATH}/sync-views")
+    assert resp.status_code == 409, resp.text
+    await cache.cache_delete(tasks.APPLY_LOCK_KEY)
+
+    # 進度 key 存在(執行中)亦視為進行中
+    await tasks._report_apply_progress("views", 1, 10)
+    resp = await client.post(f"{_BASE_PATH}/sync-views")
+    assert resp.status_code == 409, resp.text
+
+
+# ── semantic_apply task:持鎖略過(AD-120 跨 process 互斥)────────────────
+async def test_semantic_apply_task_skips_when_locked(
+    db_engine: AsyncEngine,
+) -> None:
+    await _seed_rows(db_engine)
+    assert await tasks.acquire_apply_lock() is True
+    try:
+        task = await tasks.semantic_apply.kiq()
+        result = await task.wait_result(timeout=10)
+        assert not result.is_err, result.error
+        assert result.return_value == {"skipped": "locked"}
+    finally:
+        await tasks.release_apply_lock()
+    # 持鎖期間未執行副本重灌
+    async with db_engine.connect() as conn:
+        replica_total = (
+            await conn.execute(text("SELECT count(*) FROM semantic_mappings"))
+        ).scalar_one()
+    assert int(replica_total) == 0
+
+
+# ── 套用進度(聚合進度端點 /progress 的 apply 欄位)──────────────────────
 async def test_apply_progress_idle_and_running(
     client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    from app.worker.tasks import _report_apply_progress
-
     await _login_as(client, session_factory, "admin")
-    resp = await client.get(f"{_BASE_PATH}/sync-views/progress")
+    resp = await client.get("/api/v1/progress")
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["active"] is False
+    assert resp.json()["data"]["apply"]["active"] is False
 
-    await _report_apply_progress("views", 120, 1284)
-    resp = await client.get(f"{_BASE_PATH}/sync-views/progress")
-    data = resp.json()["data"]
+    await tasks._report_apply_progress("views", 120, 1284)
+    resp = await client.get("/api/v1/progress")
+    data = resp.json()["data"]["apply"]
     assert data == {"active": True, "phase": "views", "done": 120, "total": 1284}
 
 
@@ -389,10 +470,10 @@ async def test_sync_views_clears_apply_progress_key(
     await _login_as(client, session_factory, "admin")
     await _seed_rows(db_engine)
     resp = await client.post(f"{_BASE_PATH}/sync-views")
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 202, resp.text
     # 套用結束後進度 key 已清 → 閒置 inactive
-    resp = await client.get(f"{_BASE_PATH}/sync-views/progress")
-    assert resp.json()["data"]["active"] is False
+    resp = await client.get("/api/v1/progress")
+    assert resp.json()["data"]["apply"]["active"] is False
 
 
 # ── 權限 ────────────────────────────────────────────────────────────────

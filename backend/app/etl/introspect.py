@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 
 from sqlalchemy import text
@@ -43,8 +44,12 @@ def _get_engine(dataset: str) -> AsyncEngine:
     return engine
 
 
+logger = logging.getLogger(__name__)
+
 # 排除非業務 schema:pg 系統、語意層 metadata(erp_metadata)、語意化 view 落點
-# `*_view`(含 v1.5.0 舊制 `*_en`)——瀏覽 / 快照皆不應把系統結構列為資料分類
+# `*_view`(含 v1.5.0 舊制 `*_en`)——瀏覽 / 快照皆不應把系統結構列為資料分類。
+# 注意(AD-129):後綴排除同時作用於 source 側 — 來源 schema 命名不得以 `_view` / `_en`
+# 結尾,否則會被靜默排除(永不納入快照 / 同步);snapshot_tables 對此類排除補 info log 供診斷。
 _EXCLUDED_SCHEMA_CONDS = f"""
       AND t.table_schema NOT IN ('pg_catalog', 'information_schema', '{SEMANTIC_SCHEMA}')
       AND t.table_schema NOT LIKE '%\\_view' ESCAPE '\\'
@@ -183,6 +188,20 @@ _ALL_TABLES_SQL = text(
     """
 )
 
+# AD-129 診斷:被後綴保留字(_view/_en)排除、且非 erp_metadata 的 schema
+# (快照 refresh 時 log info 一次,避免來源業務 schema 撞名被靜默吃掉無從察覺)
+_SUFFIX_EXCLUDED_SCHEMAS_SQL = text(
+    f"""
+    SELECT DISTINCT t.table_schema AS schema
+    FROM information_schema.tables t
+    WHERE t.table_type = 'BASE TABLE'
+      AND t.table_schema NOT IN ('pg_catalog', 'information_schema', '{SEMANTIC_SCHEMA}')
+      AND (t.table_schema LIKE '%\\_view' ESCAPE '\\'
+           OR t.table_schema LIKE '%\\_en' ESCAPE '\\')
+    ORDER BY 1
+    """
+)
+
 # bounded row 探測單批表數上限(表數多時避免單條 UNION ALL 過長)
 _ROW_PROBE_CHUNK = 50
 
@@ -205,6 +224,14 @@ async def snapshot_tables(
     表數多時分批探測,避免單條 UNION ALL 過長。連線由呼叫端提供(供 refresh 於同連線續查字典)。
     `on_progress` 每探測完一批呼叫一次(row 探測為 refresh 最耗時階段,供進度條顯示)。
     """
+    # AD-129:後綴保留字排除的 schema 補診斷 log(靜默排除無從察覺誤殺)
+    excluded = (await conn.execute(_SUFFIX_EXCLUDED_SCHEMAS_SQL)).scalars().all()
+    if excluded:
+        logger.info(
+            "內省排除 %d 個後綴保留字 schema(_view/_en 結尾不納入快照):%s",
+            len(excluded),
+            ", ".join(str(s) for s in excluded),
+        )
     rows = (await conn.execute(_ALL_TABLES_SQL)).mappings().all()
     names_by_schema: dict[str, list[str]] = {}
     column_counts: dict[tuple[str, str], int] = {}

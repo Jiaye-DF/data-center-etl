@@ -300,6 +300,30 @@ async def test_source_table_missing_is_graceful(
     assert remaining == ["PRESEEDED_FILE"]
 
 
+# ── 2b. AD-120:手動套用持鎖中 → mirror_sync 收尾略過本輪副本重灌(不 fail run)──
+async def test_mirror_sync_skips_semantic_refresh_when_apply_locked(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    refresh_calls: list[bool] = []
+
+    async def _spy_refresh(session: object) -> None:
+        refresh_calls.append(True)
+
+    monkeypatch.setattr(tasks, "refresh_semantic_copy_and_views", _spy_refresh)
+
+    assert await tasks.acquire_apply_lock() is True
+    try:
+        with caplog.at_level(logging.INFO, logger="app.worker.tasks"):
+            ret = await _invoke(monkeypatch, schema="DS", table="AAA_FILE")
+    finally:
+        await tasks.release_apply_lock()
+
+    assert ret["status"] == "success"
+    assert refresh_calls == []
+    assert any("略過本輪語意映射副本重灌" in message for message in caplog.messages)
+
+
 # ── 3. mirror_sync 完成階段呼叫 replace_all + 語意映射快取失效被呼叫 ────────
 async def test_mirror_sync_replaces_mapping_and_invalidates_cache(
     monkeypatch: pytest.MonkeyPatch,

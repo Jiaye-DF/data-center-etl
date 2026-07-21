@@ -13,24 +13,19 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import redis as cache
 from app.core.exceptions import AppError
 from app.etl import introspect
 from app.etl.comments import quote_ident
 from app.etl.semantic_schema import SEMANTIC_SCHEMA, SEMANTIC_TABLE
-from app.schemas.rawdata import SnapshotRefreshProgress
 from app.schemas.semantic_mapping import (
     SemanticAffectedResponse,
     SemanticMappingItem,
     SemanticMappingListResponse,
     SemanticMappingUpdateRequest,
-    SemanticSyncViewsResponse,
     SemanticTableListResponse,
     SemanticTableSummary,
 )
-from app.worker.tasks import APPLY_PROGRESS_KEY, refresh_semantic_copy_and_views
 
 _QUALIFIED = f"{quote_ident(SEMANTIC_SCHEMA)}.{quote_ident(SEMANTIC_TABLE)}"
 
@@ -171,35 +166,3 @@ class SemanticAdminService:
             )
         affected = int(result.rowcount or 0)
         return SemanticAffectedResponse(affected=affected)
-
-    # ── 同步 view(task-005:副本重灌 + view 重生,與 mirror_sync 收尾共用)──
-    async def sync_views(self, session: AsyncSession) -> SemanticSyncViewsResponse:
-        """手動觸發:RDS 真身 → 本地副本整表重灌 → confirmed 有異動則重生 view。
-
-        `session` 為自有 DB session(副本落地);RDS 讀取由共用函式自行建連線。
-        """
-        outcome = await refresh_semantic_copy_and_views(session)
-        if outcome is None:
-            raise AppError(
-                "RDS erp_metadata.semantic_mappings 不存在,無法同步",
-                response_code=404,
-                status_code=404,
-            )
-        copied, regen = outcome
-        return SemanticSyncViewsResponse(
-            copied=copied,
-            regenerated=regen.regenerated,
-            created=regen.created,
-            failed=regen.failed,
-        )
-
-    async def get_apply_progress(self) -> SnapshotRefreshProgress:
-        """回當前「套用變更」進度;無進行中套用(key 不存在)回 active=False。
-
-        進度 payload 結構與快照 refresh 共用(active/phase/done/total),phase:
-        copy(更新名稱對照)/ views(重建英文資料檢視)。
-        """
-        cached = await cache.cache_get(APPLY_PROGRESS_KEY)
-        if cached is None:
-            return SnapshotRefreshProgress(active=False)
-        return SnapshotRefreshProgress.model_validate_json(cached)

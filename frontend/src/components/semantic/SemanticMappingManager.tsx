@@ -19,6 +19,7 @@ import {
   type MappingStatusFilter,
   type SemanticMappingItem,
 } from '@/lib/api/semanticMappingApi'
+import { useGlobalProgressQuery } from '@/lib/api/progressApi'
 import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatNullableDateTime } from '@/utils/datetime'
 
@@ -51,13 +52,7 @@ function StatusBadge({ status }: { status: MappingStatus }): React.ReactNode {
     status === 'confirmed'
       ? 'bg-success/15 text-success'
       : 'bg-muted text-muted-foreground'
-  return (
-    <span
-      className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium md:text-sm ${cls}`}
-    >
-      {STATUS_LABELS[status]}
-    </span>
-  )
+  return <span className={`df-badge ${cls}`}>{STATUS_LABELS[status]}</span>
 }
 
 /** 狀態篩選膠囊(與資料集頁 Segmented 同一視覺語言) */
@@ -162,7 +157,10 @@ export function SemanticMappingManager(): React.ReactNode {
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  const { data: tables } = useListSemanticTablesQuery()
+  const { data: tables, isError: isTablesError } = useListSemanticTablesQuery()
+  // 與 layout 的全局進度條共用 RTK Query 快取(不多打 API):套用進行中時擋「套用變更」
+  const { data: globalProgress } = useGlobalProgressQuery()
+  const isApplyRunning = globalProgress?.apply.active === true
   const { data, isLoading, isError, isFetching } = useListSemanticMappingsQuery({
     table: activeTable,
     status: statusFilter,
@@ -170,6 +168,13 @@ export function SemanticMappingManager(): React.ReactNode {
     page,
     pageSize: PAGE_SIZE,
   })
+
+  // 逐筆轉態使 total 縮水後 page 可能超出末頁而停在空頁(AD-131):資料回來後夾回末頁
+  // (React「渲染期間調整 state」模式:條件成立時立即重渲染,不進 effect)
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / PAGE_SIZE))
+  if (!isFetching && data !== undefined && page > totalPages) {
+    setPage(totalPages)
+  }
 
   // combobox 建議池:不受表 / 狀態篩選影響,依當前關鍵字取前 20 筆(表 / 欄 / 中 / 英皆可命中)
   const { data: suggestData } = useListSemanticMappingsQuery(
@@ -244,6 +249,10 @@ export function SemanticMappingManager(): React.ReactNode {
           )?.table_name ?? null)
       if (matched !== null && matched !== activeTable) {
         setActiveTable(matched)
+        setPage(1)
+      } else if (matched === null && activeTable !== '') {
+        // 打不中就不套表篩選:解除既有表篩選,避免顯示文字與實際篩選脫鉤(AD-126)
+        setActiveTable('')
         setPage(1)
       }
     },
@@ -352,15 +361,12 @@ export function SemanticMappingManager(): React.ReactNode {
     resetMessages()
     const result = await syncViews()
     if ('error' in result) {
+      // 409(套用進行中)等錯誤同走此路徑,detail 由後端提供
       setActionError(extractApiErrorDetail(result.error, '套用變更失敗,請稍後再試'))
       return
     }
-    const { copied, regenerated, created, failed } = result.data
-    setNoticeMessage(
-      regenerated
-        ? `套用完成:已更新 ${copied.toLocaleString()} 筆名稱對照,重建 ${created} 個英文資料檢視${failed > 0 ? `(${failed} 張表失敗,請聯絡系統管理者)` : ''}`
-        : `套用完成:已更新 ${copied.toLocaleString()} 筆名稱對照;已確認內容沒有變動,不需重建`,
-    )
+    // 202 受理:實際執行進度由全局進度條(apply)呈現
+    setNoticeMessage('已開始套用,進度顯示於上方進度條')
   }, [syncViews, resetMessages])
 
   return (
@@ -375,10 +381,10 @@ export function SemanticMappingManager(): React.ReactNode {
         <button
           type="button"
           onClick={() => setOpenDialog('sync-views')}
-          disabled={isSyncing}
+          disabled={isSyncing || isApplyRunning}
           className="df-btn-primary-soft"
         >
-          {isSyncing ? '套用中…' : '套用變更'}
+          {isApplyRunning ? '套用進行中…' : isSyncing ? '套用中…' : '套用變更'}
         </button>
       </div>
 
@@ -424,6 +430,11 @@ export function SemanticMappingManager(): React.ReactNode {
               suggestions={tableSuggestions}
               onCommit={handleTableCommit}
             />
+            {isTablesError ? (
+              <span className="text-sm text-danger md:text-base">
+                表清單載入失敗
+              </span>
+            ) : null}
             {activeTable !== '' && activeTableSummary !== null ? (
               <span className="text-sm text-muted-foreground">
                 (草稿 {activeTableSummary.draft_count} / 已確認{' '}
@@ -602,14 +613,14 @@ export function SemanticMappingManager(): React.ReactNode {
         open={openDialog === 'sync-views'}
         title="套用變更"
         confirmLabel="開始套用"
-        confirmDisabled={isSyncing}
+        confirmDisabled={isSyncing || isApplyRunning}
         onConfirm={handleSyncViews}
         onCancel={() => setOpenDialog(null)}
       >
         <p className="text-foreground">
-          把「已確認」的名稱對照立即套用到系統:資料查詢的英文欄位名與各帳套的英文資料檢視會同步更新。
+          把「已確認」的名稱對照套用到系統:資料查詢的英文欄位名與各帳套的英文資料檢視會同步更新。
         </p>
-        <p>通常數秒內完成;只更新名稱對照,不會更動任何 ERP 資料。</p>
+        <p>於背景執行,進度顯示於上方進度條;只更新名稱對照,不會更動任何 ERP 資料。</p>
       </ConfirmDialog>
     </section>
   )

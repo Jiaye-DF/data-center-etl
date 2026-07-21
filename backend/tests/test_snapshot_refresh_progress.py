@@ -1,9 +1,9 @@
 """快照 refresh 進度回報測試(真實 PostgreSQL 測試 DB + fake collect)。
 
 涵蓋:refresh 過程寫入階段進度(introspect / persist / schedules)、結束清進度 key、
-`GET /datasets/{dataset}/snapshot/refresh/progress` 閒置回 active=false / 進行中回進度、
-member 403。introspect / 字典查詢以 monkeypatch `_collect_from_rds` 取代(不打 RDS);
-Redis 走記憶體 fake。
+聚合進度端點 `GET /progress` 閒置回四欄位 / 進行中回進度、member 403、
+同 dataset 併發 refresh 409 互斥(AD-120)、進度 key 不落 datasets:* 誤刪範圍(AD-119)。
+introspect / 字典查詢以 monkeypatch `_collect_from_rds` 取代(不打 RDS);Redis 走記憶體 fake。
 """
 
 import asyncio
@@ -44,6 +44,7 @@ from app import models  # noqa: E402, F401  匯入全部 model 讓 create_all �
 from app.api.deps import get_db  # noqa: E402
 from app.core import redis as cache  # noqa: E402
 from app.core.db import Base  # noqa: E402
+from app.core.exceptions import AppError  # noqa: E402
 from app.core.security import hash_password_async  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.repositories.user_repo import UserRepository  # noqa: E402
@@ -101,6 +102,9 @@ async def _clean_tables(db_engine: AsyncEngine) -> None:
         await conn.execute(text("DELETE FROM schedules"))
         await conn.execute(text("DELETE FROM rds_table_meta"))
         await conn.execute(text("DELETE FROM users"))
+        # 聚合進度端點含 sync(active run)欄位:清 run 殘留使斷言決定性
+        await conn.execute(text("DELETE FROM etl_run_logs"))
+        await conn.execute(text("DELETE FROM etl_runs"))
 
 
 @pytest.fixture(autouse=True)
@@ -176,7 +180,8 @@ async def test_refresh_reports_phases_and_clears_key(
     real_cache_set = cache.cache_set
 
     async def spy_cache_set(key: str, value: str, *, ttl_seconds: int) -> None:
-        if key.endswith("refresh-progress"):
+        # AD-119 後進度 key 為 snapshot-progress:{dataset}(鎖 key 走 cache_set_nx,不經此)
+        if ":snapshot-progress:" in key:
             recorded.append(SnapshotRefreshProgress.model_validate_json(value))
         await real_cache_set(key, value, ttl_seconds=ttl_seconds)
 
@@ -201,32 +206,76 @@ async def test_refresh_reports_phases_and_clears_key(
         assert progress.active is False
 
 
-# ── 進度端點:閒置 / 進行中 / 權限 ───────────────────────────────────────
-async def test_progress_endpoint_idle_returns_inactive(
+# ── 聚合進度端點(AD-121):閒置 / 進行中 / 權限 ─────────────────────────
+async def test_global_progress_idle_returns_all_inactive(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _login_as(client, session_factory, "admin")
-    resp = await client.get("/api/v1/datasets/source/snapshot/refresh/progress")
+    resp = await client.get("/api/v1/progress")
     assert resp.status_code == 200, resp.text
     data = resp.json()["data"]
-    assert data["active"] is False
+    assert set(data) == {"sync", "snapshot_source", "snapshot_target", "apply"}
+    assert data["sync"] is None
+    assert data["snapshot_source"]["active"] is False
+    assert data["snapshot_target"]["active"] is False
+    assert data["apply"]["active"] is False
 
 
-async def test_progress_endpoint_returns_running_progress(
+async def test_global_progress_returns_running_snapshot_progress(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _login_as(client, session_factory, "admin")
     async with session_factory() as session:
         await SnapshotService(session)._report_progress("target", "introspect", 50, 200)
-    resp = await client.get("/api/v1/datasets/target/snapshot/refresh/progress")
+    resp = await client.get("/api/v1/progress")
     assert resp.status_code == 200, resp.text
     data = resp.json()["data"]
-    assert data == {"active": True, "phase": "introspect", "done": 50, "total": 200}
+    assert data["snapshot_target"] == {
+        "active": True,
+        "phase": "introspect",
+        "done": 50,
+        "total": 200,
+    }
+    assert data["snapshot_source"]["active"] is False
 
 
-async def test_progress_endpoint_member_forbidden(
+async def test_global_progress_member_forbidden(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _login_as(client, session_factory, "member")
-    resp = await client.get("/api/v1/datasets/source/snapshot/refresh/progress")
+    resp = await client.get("/api/v1/progress")
     assert resp.status_code == 403, resp.text
+
+
+# ── AD-119:進度 key 不落在 datasets:* 快取失效的誤刪範圍 ────────────────
+async def test_progress_key_survives_datasets_cache_invalidation(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as session:
+        await SnapshotService(session)._report_progress("source", "persist", 100, 500)
+    # mirror_sync 收尾 / refresh 後的快取失效 pattern:不得掃到快照進度 key
+    await cache.delete_pattern(cache.cache_key("datasets", "source", "*"))
+    progress = await SnapshotService.get_refresh_progress("source")
+    assert progress.active is True
+    assert progress.done == 100
+
+
+# ── AD-120:同 dataset 併發 refresh 以 SET NX 鎖互斥 → 409 ───────────────
+async def test_refresh_conflict_when_lock_held(
+    session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_collect(monkeypatch)
+    lock_key = cache.cache_key("snapshot-progress", "source", "lock")
+    # 模擬另一請求 / process 正在 refresh(持鎖中)
+    assert await cache.cache_set_nx(lock_key, "1", ttl_seconds=60) is True
+    async with session_factory() as session:
+        service = SnapshotService(session)
+        with pytest.raises(AppError) as exc_info:
+            await service.refresh("source", uuid4())
+        assert exc_info.value.status_code == 409
+        # 釋放鎖後可正常執行(鎖於 finally 釋放,重跑不殘留)
+        await cache.cache_delete(lock_key)
+        result = await service.refresh("source", uuid4())
+        await session.commit()
+    assert result.table_count == 3
+    assert await cache.cache_get(lock_key) is None

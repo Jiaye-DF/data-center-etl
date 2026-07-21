@@ -52,20 +52,9 @@ export interface UpdateSemanticMappingPayload {
   status?: MappingStatus
 }
 
-/** 「套用變更」結果:副本重灌筆數 + view 重生統計(regenerated=false 為簽名未變略過) */
-export interface SyncViewsResult {
-  copied: number
-  regenerated: boolean
-  created: number
-  failed: number
-}
-
-/** 套用變更執行進度(與快照 refresh 進度同構;phase: copy=更新名稱對照 / views=重建英文資料檢視) */
-export interface ApplyProgressData {
-  active: boolean
-  phase: string
-  done: number
-  total: number
+/** 「套用變更」受理結果(202):後端改背景執行,進度由全局進度條(GET /progress 的 apply)呈現 */
+export interface SyncViewsQueued {
+  queued: boolean
 }
 
 export const semanticMappingApi = baseApi
@@ -123,18 +112,11 @@ export const semanticMappingApi = baseApi
           response: ApiEnvelope<{ affected: number }>,
         ): { affected: number } => unwrap(response),
       }),
-      syncSemanticViews: build.mutation<SyncViewsResult, void>({
+      syncSemanticViews: build.mutation<SyncViewsQueued, void>({
         query: () => ({ url: '/semantic-mappings/sync-views', method: 'POST' }),
         transformResponse: (
-          response: ApiEnvelope<SyncViewsResult>,
-        ): SyncViewsResult => unwrap(response),
-      }),
-      // 套用進度:全局進度條輪詢用(閒置回 active=false),不掛 tag
-      applyProgress: build.query<ApplyProgressData, void>({
-        query: () => '/semantic-mappings/sync-views/progress',
-        transformResponse: (
-          response: ApiEnvelope<ApplyProgressData>,
-        ): ApplyProgressData => unwrap(response),
+          response: ApiEnvelope<SyncViewsQueued>,
+        ): SyncViewsQueued => unwrap(response),
       }),
     }),
   })
@@ -145,5 +127,4 @@ export const {
   useUpdateSemanticMappingMutation,
   useConfirmSemanticTableMutation,
   useSyncSemanticViewsMutation,
-  useApplyProgressQuery,
 } = semanticMappingApi

@@ -25,3 +25,10 @@
   - 自有 DB 副本:`source_updated_by` String → UUID(alembic v152,round-trip 驗證過);`SemanticMappingRow` / `_coerce_uuid` / admin service 綁定型別連動修正。
 - **影響檔案**:`backend/app/etl/semantic_schema.py`、`backend/alembic/versions/v151_semantic_source_updated_by_uuid.py`、`backend/app/models/semantic_mapping.py`、`backend/app/repositories/semantic_mapping_repo.py`、`backend/app/worker/tasks.py`、`backend/app/services/semantic_admin_service.py`、對應測試。
 - **升規候選**:scan 檢查清單應加「表結構 vs `04-databases` 必備欄位型別比對」;拆解階段 orchestrator 對 propose 未指定的型別應回查規範地板而非自行發明。
+
+## 4. ETL 同步撞 `pg_namespace_nspname_index`(CREATE SCHEMA 併發 race)
+
+- **症狀**:ETL 同步時單表失敗,traceback 為 `CREATE SCHEMA IF NOT EXISTS "G2203"` 撞 `duplicate key value violates unique constraint "pg_namespace_nspname_index"`(2026-07-21 user 回報)。
+- **根因**:PostgreSQL 的 `CREATE SCHEMA IF NOT EXISTS` **非併發安全** — v1.4.0 改多表並行同步(`asyncio.gather`)後,同一 schema 首次落地時多張表同時通過「不存在」檢查再搶建,搶輸者拋 UniqueViolation 且該表整筆鏡像交易中止 → 記為失敗。屬 v1.4.0 併發化的潛伏邊界(既有 schema 不觸發,只在「新 schema × 並行首同步」出現),v1.4.0/v1.5.0 兩次 scan 的併發面向均未涵蓋「DDL 併發安全」。
+- **修法**:`write_mirror` 的 CREATE SCHEMA 以 SAVEPOINT(`conn.begin_nested()`)包裹,catch `IntegrityError` 吞掉續行(搶輸即代表 schema 已由並行交易建立);回歸測試 `test_write_mirror_swallows_schema_create_race`。
+- **影響檔案**:`backend/app/etl/mirror.py`、`backend/tests/test_mirror.py`。

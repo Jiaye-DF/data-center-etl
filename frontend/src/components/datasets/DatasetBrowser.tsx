@@ -404,7 +404,7 @@ export function DatasetBrowser({
 
   const closeDialog = useCallback((): void => setOpenDialog(null), [])
 
-  // 快照進度條改全局(layout 的 SnapshotProgress),此處僅保留按鈕 loading 狀態
+  // 快照進度條改全局(layout 的 GlobalProgress),此處僅保留按鈕 loading 狀態
   const [refreshSnapshot, { isLoading: isRefreshing }] =
     useRefreshDatasetSnapshotMutation()
   const [syncAll, { isLoading: isSyncingAll }] = useSyncAllMutation()

@@ -6,6 +6,7 @@ from . import (
     dashboard,
     datasets,
     health,
+    progress,
     roles,
     runs,
     schedules,
@@ -23,6 +24,7 @@ router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 router.include_router(datasets.router, prefix="/datasets", tags=["datasets"])
 router.include_router(schedules.router, prefix="/schedules", tags=["schedules"])
 router.include_router(runs.router, prefix="/runs", tags=["runs"])
+router.include_router(progress.router, prefix="/progress", tags=["progress"])
 router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit-logs"])
 router.include_router(sync.router, prefix="/sync", tags=["sync"])
 router.include_router(

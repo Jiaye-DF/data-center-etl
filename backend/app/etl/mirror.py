@@ -19,6 +19,7 @@ from datetime import datetime, time
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from app.etl.comments import quote_ident, quote_literal
@@ -239,7 +240,14 @@ async def write_mirror(
     qualified = f"{quote_ident(schema)}.{quote_ident(table)}"
     colnames = [c.name for c in columns]
 
-    await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {quote_ident(schema)}"))
+    # CREATE SCHEMA IF NOT EXISTS 非併發安全:多表並行首次同步同 schema 時會同時通過
+    # 「不存在」檢查再搶建,慢者撞 pg_namespace 唯一索引且中止整筆交易。以 SAVEPOINT
+    # 包裹,搶輸(IntegrityError)代表 schema 已由並行交易建立,吞掉續行。
+    try:
+        async with conn.begin_nested():
+            await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {quote_ident(schema)}"))
+    except IntegrityError:
+        pass
     exists = (
         await conn.execute(
             _TARGET_TABLE_EXISTS_SQL.bindparams(schema=schema, table=table)

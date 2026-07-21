@@ -15,6 +15,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import redis as cache
+from app.core.exceptions import AppError
 from app.etl import introspect
 from app.etl.dictionary import fetch_table_comments, fetch_table_modules
 from app.models.rds_table_meta import Dataset, RdsTableMeta
@@ -116,35 +117,42 @@ class SnapshotService:
 
         全程把階段進度寫 Redis(`_report_progress`),供 `get_refresh_progress` 輪詢;
         結束(含異常)一律清進度 key,異常中斷漏清靠 TTL 過期。
+        同 dataset 併發 refresh 以 SET NX 鎖互斥(AD-120):取不到鎖回 409。
         """
         dataset = Dataset(dataset_value)
+        lock_key = self._lock_key(dataset_value)
+        if not await cache.cache_set_nx(lock_key, "1", ttl_seconds=_PROGRESS_TTL_SECONDS):
+            raise AppError("快照同步進行中,請稍後再試", response_code=409, status_code=409)
         snapshot_at = db_now()
         try:
-            await self._report_progress(dataset_value, "introspect", 0, 0)
-            collected = await self._collect_from_rds(dataset_value)
-            total = len(collected)
-            await self._report_progress(dataset_value, "persist", 0, total)
-            for index, item in enumerate(collected, start=1):
-                await self._repo.upsert_snapshot(
-                    dataset=dataset,
-                    schema_name=item.schema_name,
-                    table_name=item.table_name,
-                    business_name=item.business_name,
-                    module_code=item.module_code,
-                    column_count=item.column_count,
-                    row_count=item.row_count,
-                    snapshot_at=snapshot_at,
-                    actor_uid=actor_uid,
-                )
-                if index % _PROGRESS_PERSIST_STEP == 0 or index == total:
-                    await self._report_progress(dataset_value, "persist", index, total)
-            # 僅 source:同交易維護逐表排程(避免「表有快照、無排程」中間態)
-            if dataset is Dataset.SOURCE:
-                await self._report_progress(dataset_value, "schedules", 0, total)
-                await self._sync_source_schedules(collected)
-            await cache.delete_pattern(cache.cache_key("datasets", dataset_value, "*"))
+            try:
+                await self._report_progress(dataset_value, "introspect", 0, 0)
+                collected = await self._collect_from_rds(dataset_value)
+                total = len(collected)
+                await self._report_progress(dataset_value, "persist", 0, total)
+                for index, item in enumerate(collected, start=1):
+                    await self._repo.upsert_snapshot(
+                        dataset=dataset,
+                        schema_name=item.schema_name,
+                        table_name=item.table_name,
+                        business_name=item.business_name,
+                        module_code=item.module_code,
+                        column_count=item.column_count,
+                        row_count=item.row_count,
+                        snapshot_at=snapshot_at,
+                        actor_uid=actor_uid,
+                    )
+                    if index % _PROGRESS_PERSIST_STEP == 0 or index == total:
+                        await self._report_progress(dataset_value, "persist", index, total)
+                # 僅 source:同交易維護逐表排程(避免「表有快照、無排程」中間態)
+                if dataset is Dataset.SOURCE:
+                    await self._report_progress(dataset_value, "schedules", 0, total)
+                    await self._sync_source_schedules(collected)
+                await cache.delete_pattern(cache.cache_key("datasets", dataset_value, "*"))
+            finally:
+                await cache.cache_delete(self._progress_key(dataset_value))
         finally:
-            await cache.delete_pattern(self._progress_key(dataset_value))
+            await cache.cache_delete(lock_key)
         return SnapshotRefreshResponse(
             dataset=dataset_value,
             table_count=len(collected),
@@ -152,9 +160,15 @@ class SnapshotService:
         )
 
     # ── refresh 進度(Redis;供前端輪詢進度條)────────────────────────────
+    # key 刻意不落在 `datasets:*`(該 pattern 於 mirror_sync 收尾 / refresh 後整批失效,
+    # 會誤刪進行中的進度;AD-119,對齊 tasks.py APPLY_PROGRESS_KEY 設計)
     @staticmethod
     def _progress_key(dataset_value: str) -> str:
-        return cache.cache_key("datasets", dataset_value, "refresh-progress")
+        return cache.cache_key("snapshot-progress", dataset_value)
+
+    @staticmethod
+    def _lock_key(dataset_value: str) -> str:
+        return cache.cache_key("snapshot-progress", dataset_value, "lock")
 
     async def _report_progress(
         self, dataset_value: str, phase: str, done: int, total: int
@@ -166,9 +180,13 @@ class SnapshotService:
             ttl_seconds=_PROGRESS_TTL_SECONDS,
         )
 
-    async def get_refresh_progress(self, dataset_value: str) -> SnapshotRefreshProgress:
-        """回當前 refresh 進度;無進行中 refresh(key 不存在)回 active=False。"""
-        cached = await cache.cache_get(self._progress_key(dataset_value))
+    @staticmethod
+    async def get_refresh_progress(dataset_value: str) -> SnapshotRefreshProgress:
+        """回當前 refresh 進度;無進行中 refresh(key 不存在)回 active=False。
+
+        只讀 Redis、不觸 db → staticmethod,供聚合進度端點免建 db-bound service。
+        """
+        cached = await cache.cache_get(SnapshotService._progress_key(dataset_value))
         if cached is None:
             return SnapshotRefreshProgress(active=False)
         return SnapshotRefreshProgress.model_validate_json(cached)

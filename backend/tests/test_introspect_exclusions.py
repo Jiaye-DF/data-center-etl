@@ -19,6 +19,7 @@ _BASE_URL = f"postgresql+asyncpg://{_PG_USER}:{_PG_PASSWORD}@{_PG_HOST}:{_PG_POR
 _ADMIN_DATABASE_URL = f"{_BASE_URL}/{_PG_ADMIN_DB}"
 _TEST_DATABASE_URL = f"{_BASE_URL}/{_TEST_DB_NAME}"
 
+import logging  # noqa: E402
 from collections.abc import AsyncIterator  # noqa: E402
 
 import pytest  # noqa: E402
@@ -95,3 +96,18 @@ async def test_snapshot_tables_excludes_metadata_and_view_schemas(
     assert "erp_metadata" not in schemas
     assert "IX_TEST_view" not in schemas
     assert "IX_LEGACY_en" not in schemas
+
+
+async def test_snapshot_tables_logs_suffix_excluded_schemas(
+    engine: AsyncEngine, caplog: pytest.LogCaptureFixture
+) -> None:
+    """AD-129:後綴保留字(_view/_en)排除非靜默 — 快照內省補一次 info log 供診斷。"""
+    with caplog.at_level(logging.INFO, logger="app.etl.introspect"):
+        async with engine.connect() as conn:
+            await introspect.snapshot_tables(conn)
+    excluded_logs = [m for m in caplog.messages if "後綴保留字" in m]
+    assert len(excluded_logs) == 1
+    assert "IX_TEST_view" in excluded_logs[0]
+    assert "IX_LEGACY_en" in excluded_logs[0]
+    # erp_metadata 為已知系統 schema,不列入後綴排除診斷
+    assert "erp_metadata" not in excluded_logs[0]

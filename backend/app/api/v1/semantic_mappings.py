@@ -4,9 +4,10 @@
 - `GET /semantic-mappings/tables`:distinct 表名 + 各狀態計數(前端下拉)。
 - `PATCH /semantic-mappings`:單列更新(english_name / zh_name / status;複合鍵定位)。
 - `POST /semantic-mappings/confirm-table`:整表轉 confirmed。
-- `POST /semantic-mappings/sync-views`:手動觸發副本重灌 + view 重生(即時生效)。
+- `POST /semantic-mappings/sync-views`:派工 worker 執行副本重灌 + view 重生
+  (202 受理;進度輪詢 `GET /progress` 聚合端點,AD-122)。
 
-全端點 admin-only(member 403)。
+全端點 admin-only(member 403);寫入類端點寫 audit_logs(AD-123)。
 """
 
 from typing import Annotated, Literal
@@ -15,9 +16,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_admin
+from app.core.exceptions import AppError
 from app.core.response import success
 from app.models.user import User
-from app.schemas.rawdata import SnapshotRefreshProgress
 from app.schemas.response import ApiResponse
 from app.schemas.semantic_mapping import (
     SemanticAffectedResponse,
@@ -25,10 +26,12 @@ from app.schemas.semantic_mapping import (
     SemanticMappingItem,
     SemanticMappingListResponse,
     SemanticMappingUpdateRequest,
-    SemanticSyncViewsResponse,
+    SemanticSyncViewsQueuedResponse,
     SemanticTableListResponse,
 )
+from app.services.audit_service import AuditService
 from app.services.semantic_admin_service import SemanticAdminService
+from app.worker.tasks import is_apply_in_progress, semantic_apply
 
 router = APIRouter()
 
@@ -75,9 +78,20 @@ async def list_tables(
 )
 async def update_mapping(
     payload: SemanticMappingUpdateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[SemanticMappingItem]:
     data = await SemanticAdminService().update_mapping(payload, actor_uid=user.uid)
+    changed = sorted(payload.model_fields_set - {"table_name", "column_name"})
+    await AuditService(db).log(
+        action="semantic_mapping.update",
+        actor_uid=user.uid,
+        target_type="semantic_mapping",
+        detail=(
+            f"更新映射 {payload.table_name}.{payload.column_name or '(表層級)'}"
+            f"(欄位:{', '.join(changed)})"
+        ),
+    )
     return success(data=data)
 
 
@@ -88,34 +102,39 @@ async def update_mapping(
 )
 async def confirm_table(
     payload: SemanticConfirmTableRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[SemanticAffectedResponse]:
     data = await SemanticAdminService().confirm_table(
         payload.table_name, actor_uid=user.uid
+    )
+    await AuditService(db).log(
+        action="semantic_mapping.confirm_table",
+        actor_uid=user.uid,
+        target_type="semantic_mapping",
+        detail=f"整表轉 confirmed:{payload.table_name}(affected={data.affected})",
     )
     return success(data=data)
 
 
 @router.post(
     "/sync-views",
-    response_model=ApiResponse[SemanticSyncViewsResponse],
-    summary="手動同步:RDS 真身 → 本地副本重灌 + confirmed 異動則重生 view(即時生效)",
+    response_model=ApiResponse[SemanticSyncViewsQueuedResponse],
+    status_code=202,
+    summary="手動套用變更:派工 worker 執行副本重灌 + view 重生(202 受理;進行中 409)",
 )
 async def sync_views(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(require_admin)],
-) -> ApiResponse[SemanticSyncViewsResponse]:
-    data = await SemanticAdminService().sync_views(db)
-    return success(data=data)
-
-
-@router.get(
-    "/sync-views/progress",
-    response_model=ApiResponse[SnapshotRefreshProgress],
-    summary="查套用變更執行進度(讀 Redis;無進行中套用回 active=false)",
-)
-async def sync_views_progress(
-    _user: Annotated[User, Depends(require_admin)],
-) -> ApiResponse[SnapshotRefreshProgress]:
-    data = await SemanticAdminService().get_apply_progress()
-    return success(data=data)
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[SemanticSyncViewsQueuedResponse]:
+    # 派工前預檢(仍有微小 race 無妨,真互斥為 task 內 SET NX 鎖;AD-120)
+    if await is_apply_in_progress():
+        raise AppError("套用進行中,請稍後再試", response_code=409, status_code=409)
+    await semantic_apply.kiq()
+    await AuditService(db).log(
+        action="semantic_mapping.sync_views",
+        actor_uid=user.uid,
+        target_type="semantic_mapping",
+        detail="觸發套用變更(queued=true;副本重灌 + view 重生派工 worker)",
+    )
+    return success(data=SemanticSyncViewsQueuedResponse(queued=True), response_code=202)
