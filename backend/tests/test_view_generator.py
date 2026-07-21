@@ -268,12 +268,12 @@ async def test_confirmed_table_produces_view_with_english_aliases(
         created, failed = await view_generator.generate_views_for_schema(
             conn, "VG_TEST", confirmed
         )
-    assert created == ["VG_TEST_en.employee_master_alias"]
+    assert created == ["VG_TEST_view.employee_master_alias"]
     assert failed == []
 
     async with target_engine.connect() as conn:
         row = (
-            await conn.execute(text('SELECT * FROM "VG_TEST_en"."employee_master_alias"'))
+            await conn.execute(text('SELECT * FROM "VG_TEST_view"."employee_master_alias"'))
         ).mappings().first()
     assert row is not None
     assert set(row.keys()) == {"employee_number", "employee_name"}
@@ -297,7 +297,7 @@ async def test_empty_intersection_skips_table_no_view(target_engine: AsyncEngine
             await conn.execute(
                 text(
                     "SELECT 1 FROM information_schema.views"
-                    " WHERE table_schema = 'VG_TEST_en' AND table_name = 'empty_view'"
+                    " WHERE table_schema = 'VG_TEST_view' AND table_name = 'empty_view'"
                 )
             )
         ).first()
@@ -326,19 +326,23 @@ async def test_rerun_is_idempotent(target_engine: AsyncEngine) -> None:
         second, second_failed = await view_generator.generate_views_for_schema(
             conn, "VG_TEST", confirmed
         )
-    assert first == second == ["VG_TEST_en.employee_master_idem"]
+    assert first == second == ["VG_TEST_view.employee_master_idem"]
     assert first_failed == second_failed == []
 
 
-async def test_list_target_schemas_excludes_ds_erp_metadata_and_en_suffix(
+async def test_list_target_schemas_excludes_ds_erp_metadata_and_view_suffix(
     target_engine: AsyncEngine,
 ) -> None:
+    """`_view`(現制)與 `_en`(v1.5.0 舊制,RENAME 前殘留)皆不得列為帳套 schema。"""
     await _ensure_source_table(
         target_engine, "VG_TEST", "VG_SCHEMA_PROBE", {"VGA01": "VARCHAR(10)"}
     )
     await _ensure_source_table(target_engine, "DS", "VG_DS_PROBE", {"C1": "VARCHAR(5)"})
     await _ensure_source_table(target_engine, "erp_metadata", "VG_META_PROBE", {"C1": "VARCHAR(5)"})
-    await _ensure_source_table(target_engine, "VG_TEST_en", "VG_EN_PROBE", {"C1": "VARCHAR(5)"})
+    await _ensure_source_table(target_engine, "VG_TEST_view", "VG_VIEW_PROBE", {"C1": "VARCHAR(5)"})
+    await _ensure_source_table(
+        target_engine, "VG_LEGACY_en", "VG_EN_LEGACY_PROBE", {"C1": "VARCHAR(5)"}
+    )
 
     async with target_engine.connect() as conn:
         schemas = await view_generator._list_target_schemas(conn)
@@ -346,7 +350,8 @@ async def test_list_target_schemas_excludes_ds_erp_metadata_and_en_suffix(
     assert "VG_TEST" in schemas
     assert "DS" not in schemas
     assert "erp_metadata" not in schemas
-    assert "VG_TEST_en" not in schemas
+    assert "VG_TEST_view" not in schemas
+    assert "VG_LEGACY_en" not in schemas
 
 
 # =============================================================================
@@ -359,10 +364,10 @@ async def test_create_or_replace_view_incompatible_columns_triggers_rebuild(
 ) -> None:
     """既有 view 欄位別名改變(Postgres 拒絕 REPLACE,42P16)→ 觸發 DROP VIEW + CREATE 重建。"""
     await _ensure_source_table(target_engine, "VG_TEST", "VG_REBUILD", {"VGA01": "VARCHAR(10)"})
-    qualified = '"VG_TEST_en"."vg_rebuild"'
+    qualified = '"VG_TEST_view"."vg_rebuild"'
     async with target_engine.connect() as conn:
         conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
-        await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "VG_TEST_en"'))
+        await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "VG_TEST_view"'))
         await view_generator._create_or_replace_view(
             conn, qualified, 'SELECT "VGA01" AS "old_alias" FROM "VG_TEST"."VG_REBUILD"'
         )
@@ -373,7 +378,7 @@ async def test_create_or_replace_view_incompatible_columns_triggers_rebuild(
 
     async with target_engine.connect() as conn:
         row = (
-            await conn.execute(text('SELECT * FROM "VG_TEST_en"."vg_rebuild"'))
+            await conn.execute(text('SELECT * FROM "VG_TEST_view"."vg_rebuild"'))
         ).mappings().first()
     assert row is not None
     assert set(row.keys()) == {"new_alias"}
@@ -384,10 +389,10 @@ async def test_create_or_replace_view_other_error_does_not_drop_view(
 ) -> None:
     """非 42P16 例外(如語法 / 欄位不存在)不得觸發 DROP,例外照樣往上拋,原 view 保留。"""
     await _ensure_source_table(target_engine, "VG_TEST", "VG_KEEP", {"VGA01": "VARCHAR(10)"})
-    qualified = '"VG_TEST_en"."vg_keep"'
+    qualified = '"VG_TEST_view"."vg_keep"'
     async with target_engine.connect() as conn:
         conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
-        await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "VG_TEST_en"'))
+        await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "VG_TEST_view"'))
         await view_generator._create_or_replace_view(
             conn, qualified, 'SELECT "VGA01" AS "employee_number" FROM "VG_TEST"."VG_KEEP"'
         )
@@ -402,7 +407,7 @@ async def test_create_or_replace_view_other_error_does_not_drop_view(
             await conn.execute(
                 text(
                     "SELECT 1 FROM information_schema.views"
-                    " WHERE table_schema = 'VG_TEST_en' AND table_name = 'vg_keep'"
+                    " WHERE table_schema = 'VG_TEST_view' AND table_name = 'vg_keep'"
                 )
             )
         ).first()
@@ -438,7 +443,7 @@ async def test_generate_views_for_schema_reports_failed_tables(
             conn, "VG_TEST", confirmed
         )
 
-    assert created == ["VG_TEST_en.employee_ok"]
+    assert created == ["VG_TEST_view.employee_ok"]
     assert failed == ["VG_TEST.VG_FAIL"]
 
 
@@ -467,7 +472,9 @@ async def test_regenerate_views_if_changed_does_not_cache_signature_on_partial_f
     )
 
     async def _failing_generate_views(
-        engine: AsyncEngine, confirmed: dict[str, dict[str, str]]
+        engine: AsyncEngine,
+        confirmed: dict[str, dict[str, str]],
+        on_progress: object = None,
     ) -> tuple[list[str], list[str]]:
         return [], ["VG_TEST.VG_PARTIAL"]
 
@@ -551,7 +558,9 @@ async def test_regenerate_views_if_changed_skips_when_signature_unchanged(
     real_generate_views = view_generator.generate_views
 
     async def _counting_generate_views(
-        engine: AsyncEngine, confirmed: dict[str, dict[str, str]]
+        engine: AsyncEngine,
+        confirmed: dict[str, dict[str, str]],
+        on_progress: object = None,
     ) -> tuple[list[str], list[str]]:
         nonlocal call_count
         call_count += 1

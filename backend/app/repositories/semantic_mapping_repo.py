@@ -29,7 +29,7 @@ class SemanticMappingRow:
     english_name: str
     zh_name: str | None
     status: str
-    source_updated_by: str | None
+    source_updated_by: UUID | None
     source_updated_at: datetime | None
 
 

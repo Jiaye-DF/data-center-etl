@@ -6,6 +6,8 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 from app.etl.mirror import (
     MirrorColumn,
     build_comment_statements,
@@ -45,6 +47,19 @@ class FakeConn:
         self.executed.append(sql)
         self.driver_executed.append(sql)
         return _FakeResult([])
+
+    def begin_nested(self) -> _FakeSavepoint:
+        return _FakeSavepoint()
+
+
+class _FakeSavepoint:
+    """對齊 AsyncConnection.begin_nested 的 async context manager 介面(SAVEPOINT no-op)。"""
+
+    async def __aenter__(self) -> _FakeSavepoint:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
 
 
 async def _make_batches(
@@ -235,3 +250,32 @@ async def test_write_mirror_skips_empty_batches() -> None:
     )
     assert written == 1
     assert conn.insert_batches == [1]
+
+
+class _SchemaRaceConn(FakeConn):
+    """模擬併發搶建 schema 輸掉:CREATE SCHEMA 一律撞 pg_namespace 唯一索引。"""
+
+    async def execute(self, sql: Any, params: Any = None) -> _FakeResult:
+        s = str(sql)
+        if "CREATE SCHEMA" in s:
+            self.executed.append(s)
+            raise IntegrityError(s, params, Exception("duplicate key pg_namespace_nspname_index"))
+        return await super().execute(sql, params)
+
+
+async def test_write_mirror_swallows_schema_create_race() -> None:
+    """多表並行首次同步同 schema:搶建輸掉(IntegrityError)須吞掉續行,不中止鏡像。"""
+    conn = _SchemaRaceConn(table_exists=True)
+    columns = [MirrorColumn("AAA01", "VARCHAR(10)")]
+    written = await write_mirror(
+        conn,
+        schema="G2203",
+        table="AAA_FILE",
+        columns=columns,
+        row_batches=_make_batches([[{"AAA01": "a"}]]),
+        table_comment=None,
+        column_comments={},
+    )
+    assert written == 1
+    joined = "\n".join(conn.executed)
+    assert "TRUNCATE TABLE" in joined

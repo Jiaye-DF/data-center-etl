@@ -291,7 +291,9 @@ async def test_collect_from_rds_merges_module_code(
     module_code(而非僅測試被 monkeypatch 取代的整個方法)。"""
     monkeypatch.setattr(introspect, "get_engine", lambda dataset: _FakeIntrospectEngine())
 
-    async def fake_snapshot_tables(conn: object) -> list[dict[str, int | str]]:
+    async def fake_snapshot_tables(
+        conn: object, on_progress: object = None
+    ) -> list[dict[str, int | str]]:
         return [
             {"schema": "DS", "name": "AAA_FILE", "column_count": 5, "row_count": 12},
             {"schema": "DS", "name": "BBB_FILE", "column_count": 2, "row_count": 4},

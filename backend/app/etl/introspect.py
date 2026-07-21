@@ -9,11 +9,15 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Awaitable, Callable
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from app.etl.comments import quote_ident
 from app.etl.reader import rds_database_url
+from app.etl.semantic_schema import SEMANTIC_SCHEMA
 
 # row 數上限:超過即以 1000+ 呈現(禁 COUNT(*),改 SELECT 1 ... LIMIT 1001 探測)
 ROW_COUNT_CAP = 1000
@@ -40,13 +44,25 @@ def _get_engine(dataset: str) -> AsyncEngine:
     return engine
 
 
+logger = logging.getLogger(__name__)
+
+# 排除非業務 schema:pg 系統、語意層 metadata(erp_metadata)、語意化 view 落點
+# `*_view`(含 v1.5.0 舊制 `*_en`)——瀏覽 / 快照皆不應把系統結構列為資料分類。
+# 注意(AD-129):後綴排除同時作用於 source 側 — 來源 schema 命名不得以 `_view` / `_en`
+# 結尾,否則會被靜默排除(永不納入快照 / 同步);snapshot_tables 對此類排除補 info log 供診斷。
+_EXCLUDED_SCHEMA_CONDS = f"""
+      AND t.table_schema NOT IN ('pg_catalog', 'information_schema', '{SEMANTIC_SCHEMA}')
+      AND t.table_schema NOT LIKE '%\\_view' ESCAPE '\\'
+      AND t.table_schema NOT LIKE '%\\_en' ESCAPE '\\'
+"""
+
 _SCHEMAS_SQL = text(
-    """
+    f"""
     SELECT t.table_schema AS schema,
            count(*) AS table_count
     FROM information_schema.tables t
     WHERE t.table_type = 'BASE TABLE'
-      AND t.table_schema NOT IN ('pg_catalog', 'information_schema')
+{_EXCLUDED_SCHEMA_CONDS}
     GROUP BY t.table_schema
     ORDER BY t.table_schema
     """
@@ -159,7 +175,7 @@ async def list_columns(dataset: str, schema: str, table: str) -> list[dict[str, 
 
 # snapshot 用:一次列全 schema 全 base table + 欄位數(供 rds_table_meta 快照落地)
 _ALL_TABLES_SQL = text(
-    """
+    f"""
     SELECT t.table_schema AS schema,
            t.table_name AS name,
            (SELECT count(*) FROM information_schema.columns c
@@ -167,8 +183,22 @@ _ALL_TABLES_SQL = text(
              AS column_count
     FROM information_schema.tables t
     WHERE t.table_type = 'BASE TABLE'
-      AND t.table_schema NOT IN ('pg_catalog', 'information_schema')
+{_EXCLUDED_SCHEMA_CONDS}
     ORDER BY t.table_schema, t.table_name
+    """
+)
+
+# AD-129 診斷:被後綴保留字(_view/_en)排除、且非 erp_metadata 的 schema
+# (快照 refresh 時 log info 一次,避免來源業務 schema 撞名被靜默吃掉無從察覺)
+_SUFFIX_EXCLUDED_SCHEMAS_SQL = text(
+    f"""
+    SELECT DISTINCT t.table_schema AS schema
+    FROM information_schema.tables t
+    WHERE t.table_type = 'BASE TABLE'
+      AND t.table_schema NOT IN ('pg_catalog', 'information_schema', '{SEMANTIC_SCHEMA}')
+      AND (t.table_schema LIKE '%\\_view' ESCAPE '\\'
+           OR t.table_schema LIKE '%\\_en' ESCAPE '\\')
+    ORDER BY 1
     """
 )
 
@@ -181,12 +211,27 @@ def get_engine(dataset: str) -> AsyncEngine:
     return _get_engine(dataset)
 
 
-async def snapshot_tables(conn: AsyncConnection) -> list[dict[str, int | str]]:
+# 快照進度回報 callback:(已探測表數, 總表數);由呼叫端決定落地方式(如寫 Redis)
+ProgressCallback = Callable[[int, int], Awaitable[None]]
+
+
+async def snapshot_tables(
+    conn: AsyncConnection, on_progress: ProgressCallback | None = None
+) -> list[dict[str, int | str]]:
     """一次列全 schema 全 base table + 欄位數 + bounded row 數(供 metadata 快照)。
 
     row 數沿用 `_bounded_row_counts` 的 `SELECT 1 ... LIMIT` 探測(禁 COUNT(*));
     表數多時分批探測,避免單條 UNION ALL 過長。連線由呼叫端提供(供 refresh 於同連線續查字典)。
+    `on_progress` 每探測完一批呼叫一次(row 探測為 refresh 最耗時階段,供進度條顯示)。
     """
+    # AD-129:後綴保留字排除的 schema 補診斷 log(靜默排除無從察覺誤殺)
+    excluded = (await conn.execute(_SUFFIX_EXCLUDED_SCHEMAS_SQL)).scalars().all()
+    if excluded:
+        logger.info(
+            "內省排除 %d 個後綴保留字 schema(_view/_en 結尾不納入快照):%s",
+            len(excluded),
+            ", ".join(str(s) for s in excluded),
+        )
     rows = (await conn.execute(_ALL_TABLES_SQL)).mappings().all()
     names_by_schema: dict[str, list[str]] = {}
     column_counts: dict[tuple[str, str], int] = {}
@@ -197,11 +242,16 @@ async def snapshot_tables(conn: AsyncConnection) -> list[dict[str, int | str]]:
         column_counts[(schema, name)] = int(r["column_count"])
 
     result: list[dict[str, int | str]] = []
+    total = len(rows)
+    probed = 0
     for schema, names in names_by_schema.items():
         row_counts: dict[str, int] = {}
         for start in range(0, len(names), _ROW_PROBE_CHUNK):
             chunk = names[start : start + _ROW_PROBE_CHUNK]
             row_counts.update(await _bounded_row_counts(conn, schema, chunk))
+            probed += len(chunk)
+            if on_progress is not None:
+                await on_progress(probed, total)
         for name in names:
             result.append(
                 {

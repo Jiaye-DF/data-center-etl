@@ -74,6 +74,17 @@ export interface SchemaStatSummary {
   capped_count: number
 }
 
+/** 快照 refresh / 套用執行進度(後端寫 Redis;無進行中作業時 active=false;
+ *  由全局聚合端點 GET /progress 一併回傳,見 progressApi.ts) */
+export interface SnapshotRefreshProgress {
+  active: boolean
+  /** introspect(內省探測)/ dictionary(字典查詢)/ persist(寫入快照)/ schedules(維護排程) */
+  phase: string
+  done: number
+  /** 0 代表尚未可知(顯示不定進度) */
+  total: number
+}
+
 export interface ListTablesParams extends TableFilters {
   dataset: Dataset
   schema: string
