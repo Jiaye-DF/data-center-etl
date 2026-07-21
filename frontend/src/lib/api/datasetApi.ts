@@ -74,6 +74,16 @@ export interface SchemaStatSummary {
   capped_count: number
 }
 
+/** 快照 refresh 執行進度(後端寫 Redis;無進行中 refresh 時 active=false) */
+export interface SnapshotRefreshProgress {
+  active: boolean
+  /** introspect(內省探測)/ dictionary(字典查詢)/ persist(寫入快照)/ schedules(維護排程) */
+  phase: string
+  done: number
+  /** 0 代表尚未可知(顯示不定進度) */
+  total: number
+}
+
 export interface ListTablesParams extends TableFilters {
   dataset: Dataset
   schema: string
@@ -168,6 +178,13 @@ export const datasetApi = baseApi
           response: ApiEnvelope<SchemaStatSummary>,
         ): SchemaStatSummary => unwrap(response),
       }),
+      // 快照 refresh 進度:僅 refresh 進行中輪詢(呼叫端以 skip 控制),不掛 tag
+      snapshotRefreshProgress: build.query<SnapshotRefreshProgress, Dataset>({
+        query: (dataset) => `/datasets/${dataset}/snapshot/refresh/progress`,
+        transformResponse: (
+          response: ApiEnvelope<SnapshotRefreshProgress>,
+        ): SnapshotRefreshProgress => unwrap(response),
+      }),
       // 重整快照:對 RDS 重新內省 + JOIN 業務名稱寫回自有 DB,成功後兩個查詢皆需重抓
       refreshDatasetSnapshot: build.mutation<boolean, Dataset>({
         query: (dataset) => ({
@@ -189,5 +206,6 @@ export const {
   useListSchemaModulesQuery,
   useListDatasetTablesQuery,
   useDatasetSchemaSummaryQuery,
+  useSnapshotRefreshProgressQuery,
   useRefreshDatasetSnapshotMutation,
 } = datasetApi

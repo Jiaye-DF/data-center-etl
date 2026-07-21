@@ -1,13 +1,13 @@
 """語意化 view 產生器(task-005,propose A4)。
 
 以本地副本(task-003 `semantic_mappings`)的 confirmed 映射,迴圈目標 RDS 各帳套 schema,
-對「該 schema 實際存在且有 confirmed 表層級映射」的表產生 `<schema>_en.<english_table>`
+對「該 schema 實際存在且有 confirmed 表層級映射」的表產生 `<schema>_view.<english_table>`
 語意化 view;schema 差異只在 view 層處理,不動鏡像表結構本身。
 
 - 只用 confirmed 列;draft 一律不進 view。表層級(`column_name=''`)決定 view 名,
   欄層級決定 SELECT alias。
 - 迴圈以目標 RDS `information_schema` 內省得到的實際帳套 schema 為準(排除 DS /
-  erp_metadata / 自身 `*_en`);跨帳套共用主檔(propose A4:GEM/GEN/ABM 集中託管 G2203、
+  erp_metadata / 自身 `*_view` 與舊制 `*_en`);跨帳套共用主檔(propose A4:GEM/GEN/ABM 集中託管 G2203、
   M2201/S2202 為 synonym)不需特判 — 只看「該 schema 實際存在的表」即自然涵蓋。
 - 表實際欄位 ∩ confirmed 欄位;交集為空跳過該表。
 - 不刪表:僅 `CREATE SCHEMA IF NOT EXISTS` + `CREATE OR REPLACE VIEW`;僅當 REPLACE 失敗
@@ -27,7 +27,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
@@ -44,8 +45,12 @@ from app.repositories.semantic_mapping_repo import SemanticMappingRepository
 
 logger = logging.getLogger(__name__)
 
-# view schema 命名慣例:帳套 schema 的語意化 view 落在 `<schema>_en`
-VIEW_SCHEMA_SUFFIX = "_en"
+# view schema 命名慣例:帳套 schema 的語意化 view 落在 `<schema>_view`
+# (v1.5.1 由 `_en` 改名;RDS 既有 schema 由 user ALTER RENAME 平移,見 propose 變更紀錄)
+VIEW_SCHEMA_SUFFIX = "_view"
+
+# 重生進度回報 callback:(已處理表數, 總表數);由呼叫端決定落地方式(如寫 Redis)
+ProgressCallback = Callable[[int, int], Awaitable[None]]
 
 # Postgres SQLSTATE:CREATE OR REPLACE VIEW 因既有 view 欄名 / 型別 / 順序不可變更而拒絕
 # (「欄位集合不相容」,AD-112)——僅此代碼才允許走 DROP VIEW + CREATE 重建。
@@ -62,6 +67,7 @@ _SCHEMAS_SQL = text(
     FROM information_schema.tables
     WHERE table_type = 'BASE TABLE'
       AND table_schema NOT IN ('pg_catalog', 'information_schema', :ds_schema, :semantic_schema)
+      AND table_schema NOT LIKE '%\\_view' ESCAPE '\\'
       AND table_schema NOT LIKE '%\\_en' ESCAPE '\\'
     """
 )
@@ -152,7 +158,8 @@ def build_view_select_sql(schema: str, table: str, col_aliases: Mapping[str, str
 
 
 async def _list_target_schemas(conn: AsyncConnection) -> list[str]:
-    """列目標 RDS 實際存在的帳套 schema:排除系統 schema / DS / erp_metadata / 自身 `*_en`。"""
+    """列目標 RDS 實際存在的帳套 schema:排除系統 schema / DS / erp_metadata /
+    自身 `*_view`(含舊制 `*_en`)。"""
     rows = (
         await conn.execute(
             _SCHEMAS_SQL, {"ds_schema": DS_SCHEMA, "semantic_schema": SEMANTIC_SCHEMA}
@@ -206,13 +213,18 @@ async def _create_or_replace_view(
 
 
 async def generate_views_for_schema(
-    conn: AsyncConnection, schema: str, confirmed: Mapping[str, Mapping[str, str]]
+    conn: AsyncConnection,
+    schema: str,
+    confirmed: Mapping[str, Mapping[str, str]],
+    on_table_done: Callable[[], Awaitable[None]] | None = None,
 ) -> tuple[list[str], list[str]]:
     """對單一帳套 schema:實際存在且有 confirmed 表層級映射的表逐一產生 view。
 
     回傳 `(建立 / 更新的 view 全名清單, 失敗表清單)`;失敗表清單為 `<schema>.<table>`
     格式(AD-113,供上層決定是否寫入重生簽名)。單表失敗不中斷同 schema 其餘表(對齊
     mirror_sync 單表失敗不中斷整輪的慣例)。
+    `on_table_done` 於每張「有表層級映射」的表處理完(成功 / 失敗 / 交集為空跳過)呼叫,
+    供進度回報(分母見 `count_eligible_tables`)。
     """
     created: list[str] = []
     failed: list[str] = []
@@ -225,42 +237,75 @@ async def generate_views_for_schema(
         view_name = table_map.get("")
         if not view_name:
             continue  # 無表層級英文名 → 不產生 view
-        table_columns = await _list_table_columns(conn, schema, table)
-        col_aliases = select_view_columns(table_columns, table_map)
-        if not col_aliases:
-            continue  # 交集為空 → 跳過該表
         try:
-            if view_schema is None:
-                view_schema = f"{schema}{VIEW_SCHEMA_SUFFIX}"
-                await conn.execute(
-                    text(f"CREATE SCHEMA IF NOT EXISTS {quote_ident(view_schema)}")
+            table_columns = await _list_table_columns(conn, schema, table)
+            col_aliases = select_view_columns(table_columns, table_map)
+            if not col_aliases:
+                continue  # 交集為空 → 跳過該表
+            try:
+                if view_schema is None:
+                    view_schema = f"{schema}{VIEW_SCHEMA_SUFFIX}"
+                    await conn.execute(
+                        text(f"CREATE SCHEMA IF NOT EXISTS {quote_ident(view_schema)}")
+                    )
+                qualified_view = f"{quote_ident(view_schema)}.{quote_ident(view_name)}"
+                select_sql = build_view_select_sql(schema, table, col_aliases)
+                await _create_or_replace_view(conn, qualified_view, select_sql)
+                created.append(f"{view_schema}.{view_name}")
+            except Exception:
+                logger.warning(
+                    "view 產生失敗,略過該表:%s.%s", schema, table, exc_info=True
                 )
-            qualified_view = f"{quote_ident(view_schema)}.{quote_ident(view_name)}"
-            select_sql = build_view_select_sql(schema, table, col_aliases)
-            await _create_or_replace_view(conn, qualified_view, select_sql)
-            created.append(f"{view_schema}.{view_name}")
-        except Exception:
-            logger.warning("view 產生失敗,略過該表:%s.%s", schema, table, exc_info=True)
-            failed.append(f"{schema}.{table}")
+                failed.append(f"{schema}.{table}")
+        finally:
+            if on_table_done is not None:
+                await on_table_done()
     return created, failed
 
 
+def count_eligible_tables(
+    schema_tables: Mapping[str, Sequence[str]], confirmed: Mapping[str, Mapping[str, str]]
+) -> int:
+    """計算「有 confirmed 表層級映射」的 (schema, table) 總數(進度分母;純函式)。"""
+    return sum(
+        1
+        for tables in schema_tables.values()
+        for table in tables
+        if confirmed.get(table, {}).get("")
+    )
+
+
 async def generate_views(
-    engine: AsyncEngine, confirmed: Mapping[str, Mapping[str, str]]
+    engine: AsyncEngine,
+    confirmed: Mapping[str, Mapping[str, str]],
+    on_progress: ProgressCallback | None = None,
 ) -> tuple[list[str], list[str]]:
     """迴圈目標 RDS 實際存在的帳套 schema,依 confirmed 映射產生語意化 view。
 
     回傳 `(建立清單, 失敗表清單)`(AD-113)。連線以 AUTOCOMMIT 執行(逐表 DDL 各自即時
     生效):單表失敗不會讓交易中止而波及同一 schema / 其餘 schema 尚未處理的表。
+    `on_progress` 每處理完一張表回報一次(先預掃各 schema 表清單求得分母)。
     """
     created: list[str] = []
     failed: list[str] = []
     async with engine.connect() as conn:
         conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
         schemas = await _list_target_schemas(conn)
+        # 預掃分母:各 schema 表清單只查一次,快取供逐 schema 產生時重用語意
+        # (information_schema 查詢便宜;view 產生本體仍逐 schema 重查以維持原行為)
+        schema_tables = {s: await _list_schema_tables(conn, s) for s in schemas}
+        total = count_eligible_tables(schema_tables, confirmed)
+        done = 0
+
+        async def _tick() -> None:
+            nonlocal done
+            done += 1
+            if on_progress is not None:
+                await on_progress(done, total)
+
         for schema in schemas:
             schema_created, schema_failed = await generate_views_for_schema(
-                conn, schema, confirmed
+                conn, schema, confirmed, on_table_done=_tick
             )
             created.extend(schema_created)
             failed.extend(schema_failed)
@@ -270,9 +315,23 @@ async def generate_views(
 # ── worker 掛點本體(task-003 預留簽名)────────────────────────────────────
 
 
+@dataclass(frozen=True)
+class ViewRegenResult:
+    """view 重生結果(v1.5.1 task-005:供手動「同步 view」回報統計)。
+
+    regenerated=False 代表本輪略過(無 confirmed 映射或內容未異動)。
+    """
+
+    regenerated: bool
+    created: int = 0
+    failed: int = 0
+
+
 async def regenerate_views_if_changed(
-    session: AsyncSession, repo: SemanticMappingRepository
-) -> None:
+    session: AsyncSession,
+    repo: SemanticMappingRepository,
+    on_progress: ProgressCallback | None = None,
+) -> ViewRegenResult:
     """view 重生本體(task-005):confirmed 映射內容有異動才重生,否則略過。
 
     `repo` 保留於簽名維持向後相容(task-003 掛點介面);本體改直接以 `session` 一次性
@@ -284,15 +343,15 @@ async def regenerate_views_if_changed(
     confirmed = await fetch_confirmed_mapping(session)
     if not confirmed:
         logger.info("尚無 confirmed 映射,略過 view 重生")
-        return
+        return ViewRegenResult(regenerated=False)
     signature = compute_confirmed_signature(confirmed)
     cached = await cache.cache_get(_SIGNATURE_CACHE_KEY)
     if cached == signature:
         logger.info("confirmed 映射內容未異動,略過 view 重生")
-        return
+        return ViewRegenResult(regenerated=False)
     engine = create_async_engine(rds_database_url(RDS_TARGET_DB_ENV))
     try:
-        created, failed = await generate_views(engine, confirmed)
+        created, failed = await generate_views(engine, confirmed, on_progress=on_progress)
     finally:
         await engine.dispose()
     if failed:
@@ -304,3 +363,4 @@ async def regenerate_views_if_changed(
             _SIGNATURE_CACHE_KEY, signature, ttl_seconds=_SIGNATURE_TTL_SECONDS
         )
     logger.info("view 重生完成:%d 個 view(失敗 %d 個表)", len(created), len(failed))
+    return ViewRegenResult(regenerated=True, created=len(created), failed=len(failed))

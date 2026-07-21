@@ -6,6 +6,8 @@ import { useAuth } from '@/lib/auth/useAuth'
 import { Header } from '@/components/layout/Header'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { SyncProgress } from '@/components/sync/SyncProgress'
+import { SnapshotProgress } from '@/components/sync/SnapshotProgress'
+import { ApplyProgress } from '@/components/sync/ApplyProgress'
 import {
   buildSsoAuthorizeUrl,
   clearReauthAttempts,
@@ -102,6 +104,8 @@ export default function MainLayout({
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
       <SyncProgress />
+      <SnapshotProgress />
+      <ApplyProgress />
       <div className="flex flex-1">
         <Sidebar />
         <main className="min-w-0 flex-1 p-4 md:p-6 lg:p-8">{children}</main>

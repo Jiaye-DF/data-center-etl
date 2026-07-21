@@ -25,6 +25,7 @@ from app.schemas.rawdata import (
     SchemaListResponse,
     SchemaStatSummary,
     SchemaSummary,
+    SnapshotRefreshProgress,
     SnapshotRefreshResponse,
     TableListResponse,
     TableSummary,
@@ -33,6 +34,11 @@ from app.utils.datetime import db_now
 
 # cache TTL:快照為手動 refresh 觸發,短 TTL 防髒讀無限存活即可
 _CACHE_TTL_SECONDS = 300
+
+# refresh 進度 key TTL:refresh 異常中斷未清 key 時,靠 TTL 自然過期(不會卡住前端進度條)
+_PROGRESS_TTL_SECONDS = 600
+# persist 階段每 N 表回報一次進度(逐表回報會多打上萬次 Redis)
+_PROGRESS_PERSIST_STEP = 200
 
 # 自動建排程為系統動作,無登入使用者 → 全零 UUID 系統帳號(同 worker / audit_service 約定)
 _SYSTEM_ACTOR_UID = UUID("00000000-0000-0000-0000-000000000000")
@@ -106,37 +112,77 @@ class SnapshotService:
 
     # ── refresh(唯一打 RDS 的路徑)──────────────────────────────────────
     async def refresh(self, dataset_value: str, actor_uid: UUID) -> SnapshotRefreshResponse:
-        """內省 dataset RDS + 字典查業務名 → upsert 快照 → 失效對應 cache → 回統計。"""
+        """內省 dataset RDS + 字典查業務名 → upsert 快照 → 失效對應 cache → 回統計。
+
+        全程把階段進度寫 Redis(`_report_progress`),供 `get_refresh_progress` 輪詢;
+        結束(含異常)一律清進度 key,異常中斷漏清靠 TTL 過期。
+        """
         dataset = Dataset(dataset_value)
         snapshot_at = db_now()
-        collected = await self._collect_from_rds(dataset_value)
-        for item in collected:
-            await self._repo.upsert_snapshot(
-                dataset=dataset,
-                schema_name=item.schema_name,
-                table_name=item.table_name,
-                business_name=item.business_name,
-                module_code=item.module_code,
-                column_count=item.column_count,
-                row_count=item.row_count,
-                snapshot_at=snapshot_at,
-                actor_uid=actor_uid,
-            )
-        # 僅 source:同交易維護逐表排程(避免「表有快照、無排程」中間態)
-        if dataset is Dataset.SOURCE:
-            await self._sync_source_schedules(collected)
-        await cache.delete_pattern(cache.cache_key("datasets", dataset_value, "*"))
+        try:
+            await self._report_progress(dataset_value, "introspect", 0, 0)
+            collected = await self._collect_from_rds(dataset_value)
+            total = len(collected)
+            await self._report_progress(dataset_value, "persist", 0, total)
+            for index, item in enumerate(collected, start=1):
+                await self._repo.upsert_snapshot(
+                    dataset=dataset,
+                    schema_name=item.schema_name,
+                    table_name=item.table_name,
+                    business_name=item.business_name,
+                    module_code=item.module_code,
+                    column_count=item.column_count,
+                    row_count=item.row_count,
+                    snapshot_at=snapshot_at,
+                    actor_uid=actor_uid,
+                )
+                if index % _PROGRESS_PERSIST_STEP == 0 or index == total:
+                    await self._report_progress(dataset_value, "persist", index, total)
+            # 僅 source:同交易維護逐表排程(避免「表有快照、無排程」中間態)
+            if dataset is Dataset.SOURCE:
+                await self._report_progress(dataset_value, "schedules", 0, total)
+                await self._sync_source_schedules(collected)
+            await cache.delete_pattern(cache.cache_key("datasets", dataset_value, "*"))
+        finally:
+            await cache.delete_pattern(self._progress_key(dataset_value))
         return SnapshotRefreshResponse(
             dataset=dataset_value,
             table_count=len(collected),
             snapshot_at=snapshot_at,
         )
 
+    # ── refresh 進度(Redis;供前端輪詢進度條)────────────────────────────
+    @staticmethod
+    def _progress_key(dataset_value: str) -> str:
+        return cache.cache_key("datasets", dataset_value, "refresh-progress")
+
+    async def _report_progress(
+        self, dataset_value: str, phase: str, done: int, total: int
+    ) -> None:
+        payload = SnapshotRefreshProgress(active=True, phase=phase, done=done, total=total)
+        await cache.cache_set(
+            self._progress_key(dataset_value),
+            payload.model_dump_json(),
+            ttl_seconds=_PROGRESS_TTL_SECONDS,
+        )
+
+    async def get_refresh_progress(self, dataset_value: str) -> SnapshotRefreshProgress:
+        """回當前 refresh 進度;無進行中 refresh(key 不存在)回 active=False。"""
+        cached = await cache.cache_get(self._progress_key(dataset_value))
+        if cached is None:
+            return SnapshotRefreshProgress(active=False)
+        return SnapshotRefreshProgress.model_validate_json(cached)
+
     async def _collect_from_rds(self, dataset_value: str) -> list[_CollectedTable]:
         """同一連線內:內省全 schema 全表(唯讀)+ 逐表查 DS 字典 GAT_FILE 業務名(唯讀)。"""
         engine = introspect.get_engine(dataset_value)
+
+        async def on_probe(done: int, total: int) -> None:
+            await self._report_progress(dataset_value, "introspect", done, total)
+
         async with engine.connect() as conn:
-            tables = await introspect.snapshot_tables(conn)
+            tables = await introspect.snapshot_tables(conn, on_progress=on_probe)
+            await self._report_progress(dataset_value, "dictionary", len(tables), len(tables))
             # 批量查全部表名的字典業務名 + 模組代碼(各一次 RDS 來回,取代逐表 N 次)
             names = [str(t["name"]) for t in tables]
             comments = await fetch_table_comments(conn, names)

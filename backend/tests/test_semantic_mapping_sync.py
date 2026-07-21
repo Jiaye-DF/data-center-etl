@@ -319,7 +319,9 @@ async def test_mirror_sync_replaces_mapping_and_invalidates_cache(
 
     hook_calls: list[bool] = []
 
-    async def _fake_hook(session: object, repo: object) -> None:
+    async def _fake_hook(
+        session: object, repo: object, on_progress: object = None
+    ) -> None:
         hook_calls.append(True)
 
     invalidated: list[str] = []

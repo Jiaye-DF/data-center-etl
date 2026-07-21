@@ -22,6 +22,7 @@ from app.schemas.rawdata import (
     ModuleListResponse,
     SchemaListResponse,
     SchemaStatSummary,
+    SnapshotRefreshProgress,
     SnapshotRefreshResponse,
     TableListResponse,
 )
@@ -177,4 +178,18 @@ async def refresh_snapshot(
     user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[SnapshotRefreshResponse]:
     data = await SnapshotService(db).refresh(dataset, actor_uid=user.uid)
+    return success(data=data)
+
+
+@router.get(
+    "/{dataset}/snapshot/refresh/progress",
+    response_model=ApiResponse[SnapshotRefreshProgress],
+    summary="查快照重建執行進度(讀 Redis;無進行中 refresh 回 active=false)",
+)
+async def refresh_snapshot_progress(
+    dataset: Dataset,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[SnapshotRefreshProgress]:
+    data = await SnapshotService(db).get_refresh_progress(dataset)
     return success(data=data)

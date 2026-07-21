@@ -42,6 +42,7 @@ from app.repositories.semantic_mapping_repo import (
     SemanticMappingRepository,
     SemanticMappingRow,
 )
+from app.schemas.rawdata import SnapshotRefreshProgress
 from app.utils.datetime import db_now, now_tw, to_tw
 from app.worker.broker import broker
 
@@ -275,10 +276,56 @@ async def _fetch_semantic_mapping_rows() -> list[SemanticMappingRow] | None:
 
 
 async def regenerate_views_if_changed(
-    session: AsyncSession, repo: SemanticMappingRepository
-) -> None:
+    session: AsyncSession,
+    repo: SemanticMappingRepository,
+    on_progress: view_generator.ProgressCallback | None = None,
+) -> view_generator.ViewRegenResult:
     """view 重生掛點:語意映射副本重灌完成後呼叫,委派 view_generator 實作本體(task-005)。"""
-    await view_generator.regenerate_views_if_changed(session, repo)
+    return await view_generator.regenerate_views_if_changed(
+        session, repo, on_progress=on_progress
+    )
+
+
+# ── 套用進度(Redis;供前端全局進度條輪詢,對齊快照 refresh 進度慣例)────────
+# key 刻意不落在 `semantic-mappings:*`(該 pattern 於副本重灌後整批失效,會誤刪進度)
+APPLY_PROGRESS_KEY = cache.cache_key("semantic-apply", "progress")
+_APPLY_PROGRESS_TTL_SECONDS = 600
+
+
+async def _report_apply_progress(phase: str, done: int, total: int) -> None:
+    payload = SnapshotRefreshProgress(active=True, phase=phase, done=done, total=total)
+    await cache.cache_set(
+        APPLY_PROGRESS_KEY, payload.model_dump_json(), ttl_seconds=_APPLY_PROGRESS_TTL_SECONDS
+    )
+
+
+async def refresh_semantic_copy_and_views(
+    session: AsyncSession,
+) -> tuple[int, view_generator.ViewRegenResult] | None:
+    """整表重灌語意映射副本 + view 重生(v1.5.1 task-005 共用化)。
+
+    mirror_sync 收尾與手動「套用變更」端點共用同一實作;來源表不存在回 None
+    (呼叫端自行決定 warning / 錯誤語意)。回傳 `(副本筆數, view 重生結果)`。
+    全程寫套用進度至 Redis(copy → views 兩階段),結束(含異常)一律清 key。
+    """
+    try:
+        await _report_apply_progress("copy", 0, 0)
+        mapping_rows = await _fetch_semantic_mapping_rows()
+        if mapping_rows is None:
+            return None
+        semantic_repo = SemanticMappingRepository(session)
+        await semantic_repo.replace_all(mapping_rows, actor_uid=SYSTEM_ACTOR_UID)
+        await cache.delete_pattern(cache.cache_key("semantic-mappings", "*"))
+        await _report_apply_progress("views", 0, 0)
+        # 走模組層 wrapper(而非直呼 view_generator),維持既有測試的 monkeypatch 攔截點
+        regen = await regenerate_views_if_changed(
+            session,
+            semantic_repo,
+            on_progress=lambda done, total: _report_apply_progress("views", done, total),
+        )
+        return len(mapping_rows), regen
+    finally:
+        await cache.delete_pattern(APPLY_PROGRESS_KEY)
 
 
 @broker.task(task_name="mirror_sync")
@@ -422,20 +469,13 @@ async def mirror_sync(
             # 本步驟為附加同步(非主鏡像流程一部分):graceful 範圍涵蓋來源表不存在、
             # 連線層失敗(缺 env / 連線失敗)、寫入異常等任何情況,一律 log warning 略過,
             # 不得讓其失敗波及本輪主鏡像同步已完成的 run 結果。
+            # v1.5.1 task-005:本體抽至 refresh_semantic_copy_and_views,與手動「同步 view」共用。
             try:
-                mapping_rows = await _fetch_semantic_mapping_rows()
-                if mapping_rows is None:
+                outcome = await refresh_semantic_copy_and_views(session)
+                if outcome is None:
                     logger.warning(
                         "RDS erp_metadata.semantic_mappings 不存在,略過語意映射副本重灌"
                     )
-                else:
-                    semantic_repo = SemanticMappingRepository(session)
-                    await semantic_repo.replace_all(
-                        mapping_rows, actor_uid=SYSTEM_ACTOR_UID
-                    )
-                    await cache.delete_pattern(cache.cache_key("semantic-mappings", "*"))
-                    # view 重生掛點(task-005 實作本體,現階段 no-op 佔位)
-                    await regenerate_views_if_changed(session, semantic_repo)
             except Exception:
                 logger.warning(
                     "語意映射副本重灌失敗,略過本輪(不影響主鏡像同步結果)", exc_info=True

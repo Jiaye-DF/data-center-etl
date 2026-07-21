@@ -39,7 +39,7 @@ export function SyncProgress(): React.ReactNode {
       <div className="mx-auto flex max-w-7xl flex-col gap-1.5">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm md:text-base">
           <span className="font-medium text-foreground">
-            同步中({triggerLabel})— 已完成 {data.processed_tables} / 共{' '}
+            ETL 同步中({triggerLabel})— 已完成 {data.processed_tables} / 共{' '}
             {data.total_tables} 表({percent}%)
           </span>
           <span className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
