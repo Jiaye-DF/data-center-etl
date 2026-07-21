@@ -34,7 +34,11 @@ from app.worker.tasks import APPLY_PROGRESS_KEY, refresh_semantic_copy_and_views
 
 _QUALIFIED = f"{quote_ident(SEMANTIC_SCHEMA)}.{quote_ident(SEMANTIC_TABLE)}"
 
-_SELECT_COLUMNS = "table_name, column_name, english_name, zh_name, status, updated_by, updated_at"
+# updated_by 於 RDS 為 uuid(v1.5.1 fixed #3),API schema 對外為字串 → SELECT 即轉 text
+_SELECT_COLUMNS = (
+    "table_name, column_name, english_name, zh_name, status,"
+    " CAST(updated_by AS text) AS updated_by, updated_at"
+)
 
 # 表層級列(column_name='')的中英文名一併帶出,供前端表名 combobox 中英搜尋
 _TABLES_SQL = text(
@@ -125,10 +129,11 @@ class SemanticAdminService:
         self, payload: SemanticMappingUpdateRequest, actor_uid: UUID
     ) -> SemanticMappingItem:
         sets: list[str] = []
+        # actor 綁 UUID 物件(欄位為 uuid 型別,v1.5.1 fixed #3)
         params: dict[str, object] = {
             "t": payload.table_name,
             "c": payload.column_name,
-            "actor": str(actor_uid),
+            "actor": actor_uid,
         }
         fields_set = payload.model_fields_set
         if payload.english_name is not None:
@@ -162,7 +167,7 @@ class SemanticAdminService:
     ) -> SemanticAffectedResponse:
         async with self._engine.begin() as conn:
             result = await conn.execute(
-                _CONFIRM_TABLE_SQL, {"t": table_name, "actor": str(actor_uid)}
+                _CONFIRM_TABLE_SQL, {"t": table_name, "actor": actor_uid}
             )
         affected = int(result.rowcount or 0)
         return SemanticAffectedResponse(affected=affected)

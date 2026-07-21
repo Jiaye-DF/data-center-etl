@@ -38,7 +38,7 @@ _CREATE_TABLE_SQL = text(
         zh_name text,
         status text NOT NULL DEFAULT 'draft'
             CONSTRAINT ck_semantic_mappings_status CHECK (status IN ('draft', 'confirmed')),
-        updated_by text,
+        updated_by uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
         updated_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'Asia/Taipei'),
         PRIMARY KEY (table_name, column_name)
     )
@@ -49,6 +49,48 @@ _CREATE_TABLE_SQL = text(
 _UPDATED_AT_TYPE_SQL = text(
     "SELECT data_type FROM information_schema.columns"
     " WHERE table_schema = :s AND table_name = :t AND column_name = 'updated_at'"
+)
+
+# v1.5.1 fixed #3:updated_by 由 text 冪等轉 uuid(對齊 04-databases 必備欄位型別;
+# 合法 UUID 字串原值轉型,工具標記等非 UUID 值一律轉系統帳號全零 UUID,NULL 保留)
+_UPDATED_BY_TYPE_SQL = text(
+    "SELECT data_type FROM information_schema.columns"
+    " WHERE table_schema = :s AND table_name = :t AND column_name = 'updated_by'"
+)
+
+_UUID_REGEX = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+
+# 系統帳號全零 UUID(user 決議 2026-07-21:updated_by 無值一律填全零,欄位 NOT NULL DEFAULT)
+_ZERO_UUID = "00000000-0000-0000-0000-000000000000"
+
+_MIGRATE_UPDATED_BY_SQL = text(
+    f"""
+    ALTER TABLE {_QUALIFIED}
+        ALTER COLUMN updated_by TYPE uuid
+            USING (CASE
+                WHEN updated_by IS NULL THEN NULL
+                WHEN updated_by ~ '{_UUID_REGEX}' THEN updated_by::uuid
+                ELSE '{_ZERO_UUID}'::uuid
+            END)
+    """
+)
+
+# 既有 NULL 回填全零 + 補上 DEFAULT / NOT NULL(冪等:僅欄位仍可 NULL 時執行)
+_UPDATED_BY_NULLABLE_SQL = text(
+    "SELECT is_nullable FROM information_schema.columns"
+    " WHERE table_schema = :s AND table_name = :t AND column_name = 'updated_by'"
+)
+
+_BACKFILL_UPDATED_BY_SQL = text(
+    f"UPDATE {_QUALIFIED} SET updated_by = '{_ZERO_UUID}'::uuid WHERE updated_by IS NULL"
+)
+
+_ENFORCE_UPDATED_BY_SQL = text(
+    f"""
+    ALTER TABLE {_QUALIFIED}
+        ALTER COLUMN updated_by SET DEFAULT '{_ZERO_UUID}'::uuid,
+        ALTER COLUMN updated_by SET NOT NULL
+    """
 )
 
 _MIGRATE_UPDATED_AT_SQL = text(
@@ -64,8 +106,9 @@ _MIGRATE_UPDATED_AT_SQL = text(
 async def ensure_semantic_schema(conn: AsyncConnection) -> None:
     """冪等建置 `erp_metadata.semantic_mappings`:存在則略過,不刪除既有結構。
 
-    另冪等遷移舊版 `updated_at` 型別:偵測到 timestamptz 即轉為 timestamp(UTC+8 naive,
-    datetime2 等價;USING 轉換保留既有資料),已是 timestamp 則不動作。
+    另冪等遷移舊版欄位型別(USING 轉換保留既有資料,已是目標型別則不動作):
+    - `updated_at`:timestamptz → timestamp(UTC+8 naive,datetime2 等價)。
+    - `updated_by`:text → uuid(v1.5.1 fixed #3;非 UUID 的工具標記轉系統全零 UUID)。
     """
     await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {quote_ident(SEMANTIC_SCHEMA)}"))
     await conn.execute(_CREATE_TABLE_SQL)
@@ -76,3 +119,18 @@ async def ensure_semantic_schema(conn: AsyncConnection) -> None:
     ).first()
     if row is not None and row[0] == "timestamp with time zone":
         await conn.execute(_MIGRATE_UPDATED_AT_SQL)
+    row = (
+        await conn.execute(
+            _UPDATED_BY_TYPE_SQL, {"s": SEMANTIC_SCHEMA, "t": SEMANTIC_TABLE}
+        )
+    ).first()
+    if row is not None and row[0] == "text":
+        await conn.execute(_MIGRATE_UPDATED_BY_SQL)
+    row = (
+        await conn.execute(
+            _UPDATED_BY_NULLABLE_SQL, {"s": SEMANTIC_SCHEMA, "t": SEMANTIC_TABLE}
+        )
+    ).first()
+    if row is not None and row[0] == "YES":
+        await conn.execute(_BACKFILL_UPDATED_BY_SQL)
+        await conn.execute(_ENFORCE_UPDATED_BY_SQL)

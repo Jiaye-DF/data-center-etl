@@ -158,6 +158,95 @@ async def test_updated_at_is_naive_timestamp(target_engine: AsyncEngine) -> None
     assert row[0] == "timestamp without time zone"
 
 
+_UPDATED_BY_TYPE_SQL = text(
+    "SELECT data_type FROM information_schema.columns"
+    " WHERE table_schema = :schema AND table_name = :table AND column_name = 'updated_by'"
+)
+
+
+_UPDATED_BY_META_SQL = text(
+    "SELECT data_type, is_nullable, column_default FROM information_schema.columns"
+    " WHERE table_schema = :schema AND table_name = :table AND column_name = 'updated_by'"
+)
+
+
+async def test_updated_by_is_uuid_not_null_with_zero_default(
+    target_engine: AsyncEngine,
+) -> None:
+    """updated_by 為 uuid NOT NULL,DEFAULT 全零(04-databases 型別 + user 決議 2026-07-21)。"""
+    async with target_engine.begin() as conn:
+        await ensure_semantic_schema(conn)
+
+    async with target_engine.connect() as conn:
+        row = (
+            await conn.execute(
+                _UPDATED_BY_META_SQL,
+                {"schema": SEMANTIC_SCHEMA, "table": SEMANTIC_TABLE},
+            )
+        ).first()
+    assert row is not None
+    assert row[0] == "uuid"
+    assert row[1] == "NO"
+    assert "00000000-0000-0000-0000-000000000000" in str(row[2])
+
+
+async def test_ensure_migrates_legacy_text_updated_by(target_engine: AsyncEngine) -> None:
+    """舊版 text 欄位:ensure 冪等轉 uuid;合法 UUID 原值保留、工具標記與 NULL 皆轉全零。"""
+    async with target_engine.begin() as conn:
+        await ensure_semantic_schema(conn)
+        # 模擬舊版部署狀態:欄位改回 text nullable 並塞三種值(僅測試用;非破壞性型別轉換)
+        await conn.execute(
+            text(
+                f"ALTER TABLE {_QUALIFIED} ALTER COLUMN updated_by DROP NOT NULL,"
+                " ALTER COLUMN updated_by DROP DEFAULT"
+            )
+        )
+        await conn.execute(
+            text(
+                f"ALTER TABLE {_QUALIFIED} ALTER COLUMN updated_by TYPE text"
+                " USING (updated_by::text)"
+            )
+        )
+        for suffix, updated_by in [
+            ("U1", "22222222-2222-2222-2222-222222222222"),
+            ("U2", "bulk-confirm-tool-marker"),
+            ("U3", None),
+        ]:
+            await conn.execute(
+                text(
+                    f"INSERT INTO {_QUALIFIED}"
+                    " (table_name, column_name, english_name, status, updated_by)"
+                    " VALUES (:t, :c, :e, 'draft', :u)"
+                ),
+                {"t": "LEGACY_BY_FILE", "c": suffix, "e": f"col_{suffix.lower()}", "u": updated_by},
+            )
+
+    async with target_engine.begin() as conn:
+        await ensure_semantic_schema(conn)
+
+    async with target_engine.connect() as conn:
+        type_row = (
+            await conn.execute(
+                _UPDATED_BY_TYPE_SQL,
+                {"schema": SEMANTIC_SCHEMA, "table": SEMANTIC_TABLE},
+            )
+        ).first()
+        values = dict(
+            (
+                await conn.execute(
+                    text(
+                        f"SELECT column_name, CAST(updated_by AS text) FROM {_QUALIFIED}"
+                        " WHERE table_name = 'LEGACY_BY_FILE'"
+                    )
+                )
+            ).all()
+        )
+    assert type_row is not None and type_row[0] == "uuid"
+    assert values["U1"] == "22222222-2222-2222-2222-222222222222"
+    assert values["U2"] == "00000000-0000-0000-0000-000000000000"
+    assert values["U3"] == "00000000-0000-0000-0000-000000000000"  # NULL 回填全零
+
+
 async def test_ensure_migrates_legacy_timestamptz(target_engine: AsyncEngine) -> None:
     """舊版 timestamptz 欄位:ensure 冪等轉為 naive timestamp 且既有資料保留。"""
     async with target_engine.begin() as conn:

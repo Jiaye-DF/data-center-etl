@@ -15,3 +15,13 @@
 - **根因**:2026-07-20 17:02 的手動全量同步跑到 681 表時 worker **容器層中斷**(stop / rebuild),行程死亡無人收尾;既有 `_mark_failed_if_dangling` 只接得住行程內例外,接不住 SIGKILL → `etl_runs.status` 永遠 `running`,`/runs/active` 持續回傳。
 - **修法**:手動 UPDATE 標 `failed`(run + 2 筆卡 running 的逐表 log;`finished_at` 依通則寫 UTC+8 naive);**治本待做**:worker 啟動時掃「running 且 started_at 早於 worker 啟動」的 run 自動補標 failed(v1.4.0 遺留「殭屍 run」項,建議下版納 scope)。
 - **影響檔案**:無程式改動(資料修正);治本項未實作。
+
+## 3. semantic_mappings `updated_by` 型別偏離規範(text → uuid)
+
+- **症狀**:user 查 RDS `erp_metadata.semantic_mappings` 發現 `updated_by` 是 text(值混雜 UUID 字串 / 工具標記 / NULL),與 `04-databases/00-overview.md` 必備欄位「updated_by = UUID」不符;自有 DB 副本的 `source_updated_by` 亦為 String(2026-07-21 user 指正)。
+- **根因**:propose v1.5.0 A1 只寫「欄位含 updated_by」未指定型別;task-001 拆解時**自行具體化為 text**,實作照拆解檔執行;v1.5.0 scan 未比對必備欄位型別 → 雙重漏網。非 user 核可的例外。
+- **修法**:
+  - RDS 端:`ensure_semantic_schema` 冪等轉型(text → uuid,合法 UUID 原值保留、工具標記與 NULL 一律轉系統全零 UUID)+ 補 `NOT NULL DEFAULT 全零`(user 決議 2026-07-21:無值一律填全零);建表 DDL 同步修正。已對真實 RDS 執行(12,192 全零 / 54 真實 UUID / 34 NULL 回填全零)。
+  - 自有 DB 副本:`source_updated_by` String → UUID(alembic v152,round-trip 驗證過);`SemanticMappingRow` / `_coerce_uuid` / admin service 綁定型別連動修正。
+- **影響檔案**:`backend/app/etl/semantic_schema.py`、`backend/alembic/versions/v151_semantic_source_updated_by_uuid.py`、`backend/app/models/semantic_mapping.py`、`backend/app/repositories/semantic_mapping_repo.py`、`backend/app/worker/tasks.py`、`backend/app/services/semantic_admin_service.py`、對應測試。
+- **升規候選**:scan 檢查清單應加「表結構 vs `04-databases` 必備欄位型別比對」;拆解階段 orchestrator 對 propose 未指定的型別應回查規範地板而非自行發明。

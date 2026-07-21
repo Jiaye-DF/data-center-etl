@@ -42,7 +42,7 @@ os.environ.setdefault("INIT_ADMIN_PASSWORD", "init-admin-password-for-test")
 import logging  # noqa: E402
 from collections.abc import AsyncIterator  # noqa: E402
 from datetime import datetime  # noqa: E402
-from uuid import uuid4  # noqa: E402
+from uuid import UUID, uuid4  # noqa: E402
 
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
@@ -74,6 +74,9 @@ from app.repositories.semantic_mapping_repo import (  # noqa: E402
 from app.worker import tasks  # noqa: E402
 
 _QUALIFIED_SOURCE = f"{quote_ident(SEMANTIC_SCHEMA)}.{quote_ident(SEMANTIC_TABLE)}"
+
+# 來源端 updated_by 為 uuid(v1.5.1 fixed #3)
+_SOURCE_ACTOR = UUID("11111111-1111-1111-1111-111111111111")
 
 _INSERT_SOURCE_SQL = text(
     f"INSERT INTO {_QUALIFIED_SOURCE}"
@@ -203,7 +206,7 @@ async def test_replace_all_matches_source_and_full_refresh(
             english_name="zzz_task003_file",
             zh_name=None,
             status="draft",
-            source_updated_by="etl",
+            source_updated_by=_SOURCE_ACTOR,
             source_updated_at=None,
         ),
         SemanticMappingRow(
@@ -212,7 +215,7 @@ async def test_replace_all_matches_source_and_full_refresh(
             english_name="account_no",
             zh_name="帳號",
             status="confirmed",
-            source_updated_by="etl",
+            source_updated_by=_SOURCE_ACTOR,
             source_updated_at=datetime(2026, 7, 1, 10, 0, 0),
         ),
     ]
@@ -247,7 +250,7 @@ async def test_replace_all_matches_source_and_full_refresh(
             english_name="account_name",
             zh_name="戶名",
             status="confirmed",
-            source_updated_by="etl",
+            source_updated_by=_SOURCE_ACTOR,
             source_updated_at=None,
         ),
     ]
@@ -309,7 +312,7 @@ async def test_mirror_sync_replaces_mapping_and_invalidates_cache(
             english_name="zzz_task003_file",
             zh_name=None,
             status="draft",
-            source_updated_by="etl",
+            source_updated_by=_SOURCE_ACTOR,
             source_updated_at=None,
         ),
     ]
@@ -360,7 +363,7 @@ async def test_fetch_semantic_mapping_rows_reads_source_table(
                 "e": "account_no",
                 "z": "帳號",
                 "s": "confirmed",
-                "u": "etl-user",
+                "u": _SOURCE_ACTOR,
             },
         )
 
@@ -374,7 +377,7 @@ async def test_fetch_semantic_mapping_rows_reads_source_table(
     assert row.english_name == "account_no"
     assert row.zh_name == "帳號"
     assert row.status == "confirmed"
-    assert row.source_updated_by == "etl-user"
+    assert row.source_updated_by == _SOURCE_ACTOR
     assert row.source_updated_at is not None
     assert row.source_updated_at.tzinfo is None
 

@@ -262,9 +262,7 @@ async def _fetch_semantic_mapping_rows() -> list[SemanticMappingRow] | None:
             english_name=str(row["english_name"]),
             zh_name=None if row["zh_name"] is None else str(row["zh_name"]),
             status=str(row["status"]),
-            source_updated_by=(
-                None if row["updated_by"] is None else str(row["updated_by"])
-            ),
+            source_updated_by=_coerce_uuid(row["updated_by"]),
             source_updated_at=(
                 None
                 if row["updated_at"] is None
@@ -273,6 +271,19 @@ async def _fetch_semantic_mapping_rows() -> list[SemanticMappingRow] | None:
         )
         for row in rows
     ]
+
+
+def _coerce_uuid(value: object) -> UUID:
+    """RDS updated_by 轉 UUID;NULL / 未轉型前殘留的非 UUID 文字一律回系統全零 UUID
+    (user 決議 2026-07-21:無值就填全零,不 fail 同步)。"""
+    if isinstance(value, UUID):
+        return value
+    if value is None:
+        return SYSTEM_ACTOR_UID
+    try:
+        return UUID(str(value))
+    except ValueError:
+        return SYSTEM_ACTOR_UID
 
 
 async def regenerate_views_if_changed(
