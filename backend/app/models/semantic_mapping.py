@@ -1,6 +1,8 @@
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import CheckConstraint, DateTime, Index, String, text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel
@@ -42,12 +44,12 @@ class SemanticMapping(BaseModel):
         server_default=text("'draft'"),
         comment="審核狀態(draft/confirmed)/ Review status (draft/confirmed)",
     )
-    source_updated_by: Mapped[str | None] = mapped_column(
-        String(100),
+    source_updated_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
         nullable=True,
         comment=(
-            "RDS 來源端 updated_by 原始文字(非本表審計者 updated_by)"
-            "/ Source-side updated_by (raw text, not this table's auditor)"
+            "RDS 來源端 updated_by(UUID;非本表審計者 updated_by)"
+            "/ Source-side updated_by (UUID, not this table's auditor)"
         ),
     )
     source_updated_at: Mapped[datetime | None] = mapped_column(

@@ -42,6 +42,7 @@ from app.repositories.semantic_mapping_repo import (
     SemanticMappingRepository,
     SemanticMappingRow,
 )
+from app.schemas.rawdata import SnapshotRefreshProgress
 from app.utils.datetime import db_now, now_tw, to_tw
 from app.worker.broker import broker
 
@@ -261,9 +262,7 @@ async def _fetch_semantic_mapping_rows() -> list[SemanticMappingRow] | None:
             english_name=str(row["english_name"]),
             zh_name=None if row["zh_name"] is None else str(row["zh_name"]),
             status=str(row["status"]),
-            source_updated_by=(
-                None if row["updated_by"] is None else str(row["updated_by"])
-            ),
+            source_updated_by=_coerce_uuid(row["updated_by"]),
             source_updated_at=(
                 None
                 if row["updated_at"] is None
@@ -274,11 +273,147 @@ async def _fetch_semantic_mapping_rows() -> list[SemanticMappingRow] | None:
     ]
 
 
+def _coerce_uuid(value: object) -> UUID:
+    """RDS updated_by 轉 UUID;NULL / 未轉型前殘留的非 UUID 文字一律回系統全零 UUID
+    (user 決議 2026-07-21:無值就填全零,不 fail 同步)。"""
+    if isinstance(value, UUID):
+        return value
+    if value is None:
+        return SYSTEM_ACTOR_UID
+    try:
+        return UUID(str(value))
+    except ValueError:
+        return SYSTEM_ACTOR_UID
+
+
 async def regenerate_views_if_changed(
-    session: AsyncSession, repo: SemanticMappingRepository
-) -> None:
+    session: AsyncSession,
+    repo: SemanticMappingRepository,
+    on_progress: view_generator.ProgressCallback | None = None,
+) -> view_generator.ViewRegenResult:
     """view 重生掛點:語意映射副本重灌完成後呼叫,委派 view_generator 實作本體(task-005)。"""
-    await view_generator.regenerate_views_if_changed(session, repo)
+    return await view_generator.regenerate_views_if_changed(
+        session, repo, on_progress=on_progress
+    )
+
+
+# ── 套用進度(Redis;供前端全局進度條輪詢,對齊快照 refresh 進度慣例)────────
+# key 刻意不落在 `semantic-mappings:*`(該 pattern 於副本重灌後整批失效,會誤刪進度)
+APPLY_PROGRESS_KEY = cache.cache_key("semantic-apply", "progress")
+_APPLY_PROGRESS_TTL_SECONDS = 600
+
+# AD-120:跨 process 套用互斥鎖(SET NX + TTL)。手動「套用變更」(semantic_apply)與
+# mirror_sync 收尾共用 refresh_semantic_copy_and_views,無鎖併發會互踩(replace_all 撞
+# 唯一鍵 / 互刪 APPLY_PROGRESS_KEY / view DDL 互撞);鎖與進度 key 各司其職(鎖=互斥,
+# 進度=呈現),TTL 防持鎖端異常未釋放時死鎖。
+APPLY_LOCK_KEY = cache.cache_key("semantic-apply", "lock")
+
+
+async def acquire_apply_lock() -> bool:
+    """取套用互斥鎖(SET NX);True=取得。呼叫端須以 finally 保證 release。"""
+    return await cache.cache_set_nx(
+        APPLY_LOCK_KEY, "1", ttl_seconds=_APPLY_PROGRESS_TTL_SECONDS
+    )
+
+
+async def release_apply_lock() -> None:
+    """釋放套用互斥鎖。"""
+    await cache.cache_delete(APPLY_LOCK_KEY)
+
+
+async def is_apply_in_progress() -> bool:
+    """套用是否進行中(鎖或進度 key 任一存在);API 派工前預檢用,真互斥在 task 內鎖。"""
+    if await cache.cache_get(APPLY_LOCK_KEY) is not None:
+        return True
+    return await cache.cache_get(APPLY_PROGRESS_KEY) is not None
+
+
+async def get_apply_progress() -> SnapshotRefreshProgress:
+    """回當前「套用變更」進度;無進行中套用(key 不存在)回 active=False。
+
+    進度 payload 結構與快照 refresh 共用(active/phase/done/total),phase:
+    copy(更新名稱對照)/ views(重建英文資料檢視)。
+    """
+    cached = await cache.cache_get(APPLY_PROGRESS_KEY)
+    if cached is None:
+        return SnapshotRefreshProgress(active=False)
+    return SnapshotRefreshProgress.model_validate_json(cached)
+
+
+async def _report_apply_progress(phase: str, done: int, total: int) -> None:
+    payload = SnapshotRefreshProgress(active=True, phase=phase, done=done, total=total)
+    await cache.cache_set(
+        APPLY_PROGRESS_KEY, payload.model_dump_json(), ttl_seconds=_APPLY_PROGRESS_TTL_SECONDS
+    )
+
+
+async def refresh_semantic_copy_and_views(
+    session: AsyncSession,
+) -> tuple[int, view_generator.ViewRegenResult] | None:
+    """整表重灌語意映射副本 + view 重生(v1.5.1 task-005 共用化)。
+
+    mirror_sync 收尾與手動「套用變更」端點共用同一實作;來源表不存在回 None
+    (呼叫端自行決定 warning / 錯誤語意)。回傳 `(副本筆數, view 重生結果)`。
+    全程寫套用進度至 Redis(copy → views 兩階段),結束(含異常)一律清 key。
+    """
+    try:
+        await _report_apply_progress("copy", 0, 0)
+        mapping_rows = await _fetch_semantic_mapping_rows()
+        if mapping_rows is None:
+            return None
+        semantic_repo = SemanticMappingRepository(session)
+        await semantic_repo.replace_all(mapping_rows, actor_uid=SYSTEM_ACTOR_UID)
+        await cache.delete_pattern(cache.cache_key("semantic-mappings", "*"))
+        await _report_apply_progress("views", 0, 0)
+        # 走模組層 wrapper(而非直呼 view_generator),維持既有測試的 monkeypatch 攔截點
+        regen = await regenerate_views_if_changed(
+            session,
+            semantic_repo,
+            on_progress=lambda done, total: _report_apply_progress("views", done, total),
+        )
+        return len(mapping_rows), regen
+    finally:
+        await cache.delete_pattern(APPLY_PROGRESS_KEY)
+
+
+@broker.task(task_name="semantic_apply")
+async def semantic_apply() -> dict[str, object]:
+    """手動「套用變更」worker task(AD-122):副本重灌 + view 重生移出 HTTP request。
+
+    - 跨 process 互斥(AD-120):取不到鎖(排程收尾 / 另一手動套用進行中)→ log info 略過。
+    - 異常一律吞下只記 log(對照 mirror_sync 收尾慣例),不 raise 給 broker 重試造成重複執行。
+    - 統計(copied/created/failed)以 log 記錄;進度呈現靠 APPLY_PROGRESS_KEY(前端聚合輪詢)。
+    """
+    if not await acquire_apply_lock():
+        logger.info("套用變更進行中(他處持鎖),略過本次手動套用")
+        return {"skipped": "locked"}
+    try:
+        async with AsyncSessionLocal() as session:
+            try:
+                outcome = await refresh_semantic_copy_and_views(session)
+            except Exception:
+                await session.rollback()
+                logger.warning("套用變更失敗,略過本次(不重試)", exc_info=True)
+                return {"skipped": "error"}
+        if outcome is None:
+            logger.warning("RDS erp_metadata.semantic_mappings 不存在,略過本次套用")
+            return {"skipped": "source-missing"}
+        copied, regen = outcome
+        logger.info(
+            "套用變更完成:copied=%d regenerated=%s created=%d failed=%d",
+            copied,
+            regen.regenerated,
+            regen.created,
+            regen.failed,
+        )
+        return {
+            "copied": copied,
+            "regenerated": regen.regenerated,
+            "created": regen.created,
+            "failed": regen.failed,
+        }
+    finally:
+        await release_apply_lock()
 
 
 @broker.task(task_name="mirror_sync")
@@ -422,20 +557,20 @@ async def mirror_sync(
             # 本步驟為附加同步(非主鏡像流程一部分):graceful 範圍涵蓋來源表不存在、
             # 連線層失敗(缺 env / 連線失敗)、寫入異常等任何情況,一律 log warning 略過,
             # 不得讓其失敗波及本輪主鏡像同步已完成的 run 結果。
+            # v1.5.1 task-005:本體抽至 refresh_semantic_copy_and_views,與手動「同步 view」共用。
+            # AD-120:與手動「套用變更」跨 process 互斥;取不到鎖略過本輪,下輪簽名機制自然補跑。
             try:
-                mapping_rows = await _fetch_semantic_mapping_rows()
-                if mapping_rows is None:
-                    logger.warning(
-                        "RDS erp_metadata.semantic_mappings 不存在,略過語意映射副本重灌"
-                    )
+                if not await acquire_apply_lock():
+                    logger.info("套用變更進行中(他處持鎖),略過本輪語意映射副本重灌")
                 else:
-                    semantic_repo = SemanticMappingRepository(session)
-                    await semantic_repo.replace_all(
-                        mapping_rows, actor_uid=SYSTEM_ACTOR_UID
-                    )
-                    await cache.delete_pattern(cache.cache_key("semantic-mappings", "*"))
-                    # view 重生掛點(task-005 實作本體,現階段 no-op 佔位)
-                    await regenerate_views_if_changed(session, semantic_repo)
+                    try:
+                        outcome = await refresh_semantic_copy_and_views(session)
+                        if outcome is None:
+                            logger.warning(
+                                "RDS erp_metadata.semantic_mappings 不存在,略過語意映射副本重灌"
+                            )
+                    finally:
+                        await release_apply_lock()
             except Exception:
                 logger.warning(
                     "語意映射副本重灌失敗,略過本輪(不影響主鏡像同步結果)", exc_info=True

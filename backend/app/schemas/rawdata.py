@@ -72,3 +72,18 @@ class SnapshotRefreshResponse(BaseModel):
     dataset: str = Field(description="重新快照的資料集(source / target)")
     table_count: int = Field(description="本次快照落地的表數")
     snapshot_at: datetime = Field(description="快照擷取時間(UTC+8)")
+
+
+class SnapshotRefreshProgress(BaseModel):
+    """快照 refresh 執行進度(寫 Redis 供前端輪詢;無進行中 refresh 時 active=False)。"""
+
+    active: bool = Field(description="是否有進行中的 refresh")
+    phase: str = Field(
+        default="",
+        description=(
+            "階段:introspect(內省探測)/ dictionary(字典查詢)"
+            "/ persist(寫入快照)/ schedules(維護排程)"
+        ),
+    )
+    done: int = Field(default=0, description="當前階段已完成數(introspect / persist 為表數)")
+    total: int = Field(default=0, description="當前階段總數;0 代表尚未可知(前端顯示不定進度)")

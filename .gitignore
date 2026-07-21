@@ -57,7 +57,7 @@ docs/Arch/ai-data-hub.html
 
 # ERP 分析原始資料與大型 HTML 報告(本地保留,不進版控)
 docs/ERP-Analyze/data/
-docs/ERP-Analyze/output/*.html
+
 
 # ERP 分析連線機密(僅 db.properties.example 進版控)
 docs/ERP-Analyze/**/db.properties

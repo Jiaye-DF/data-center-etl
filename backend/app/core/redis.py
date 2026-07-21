@@ -32,7 +32,12 @@ class _InMemoryRedis:
     async def get(self, name: str) -> str | None:
         return self._store.get(name)
 
-    async def set(self, name: str, value: str, ex: int | None = None) -> bool:
+    async def set(
+        self, name: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool | None:
+        # 對齊 redis-py 語意:nx=True 且 key 已存在 → 不寫入,回 None
+        if nx and name in self._store:
+            return None
         self._store[name] = value
         return True
 
@@ -77,6 +82,17 @@ async def cache_get(key: str) -> str | None:
 async def cache_set(key: str, value: str, *, ttl_seconds: int) -> None:
     """寫快取(帶 TTL,避免髒讀無限存活)。"""
     await get_redis().set(key, value, ex=ttl_seconds)
+
+
+async def cache_set_nx(key: str, value: str, *, ttl_seconds: int) -> bool:
+    """SET NX(帶 TTL):key 不存在才寫入,回是否寫入成功(跨 process 互斥鎖用)。"""
+    result = await get_redis().set(key, value, ex=ttl_seconds, nx=True)
+    return bool(result)
+
+
+async def cache_delete(key: str) -> None:
+    """刪除單一 key(釋放互斥鎖 / 清進度 key 用)。"""
+    await get_redis().delete(key)
 
 
 async def delete_pattern(pattern: str) -> None:
