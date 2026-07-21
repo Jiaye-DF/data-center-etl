@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23232F3E'/%3E%3Cpath d='M30 50h40M50 30v40' stroke='%23FF9900' stroke-width='8' stroke-linecap='round'/%3E%3Ccircle cx='50' cy='50' r='34' stroke='%23FF9900' stroke-width='6' fill='none'/%3E%3C/svg%3E">
+<title>Data Hub API Gateway · 設計文件</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --navy:#232F3E;--navy-2:#2f3d4f;--orange:#FF9900;--orange-d:#EC7211;
+    --ink:#1b2733;--muted:#5b6b7b;--soft:#7c8a99;--line:#e2e8f0;--line-2:#eef2f6;
+    --bg:#f5f7fa;--card:#ffffff;
+    --ok:#1f9d55;--warn:#d97706;--danger:#dc2626;--info:#2563eb;--purple:#7c3aed;
+    --radius:16px;--shadow:0 1px 3px rgba(16,24,40,.07),0 8px 26px rgba(16,24,40,.07);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:"Segoe UI","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+    color:var(--ink);background:var(--bg);line-height:1.75;font-size:17px;-webkit-font-smoothing:antialiased}
+  h1,h2,h3,h4{margin:0;font-weight:800}
+  p{margin:0 0 12px}
+  a{color:var(--info);text-decoration:none}
+
+  .wrap{max-width:1280px;margin:0 auto;padding:0 clamp(20px,4vw,64px)}
+
+  /* ===== Hero ===== */
+  header.hero{background:
+      radial-gradient(1100px 460px at 88% -12%,rgba(255,153,0,.16),transparent 60%),
+      radial-gradient(900px 480px at -8% 8%,rgba(37,99,235,.10),transparent 55%),
+      linear-gradient(160deg,#f3f8fe,#eef4fb 55%,#f6f9fc);
+    border-bottom:1px solid var(--line);padding:58px 0 44px}
+  .kicker{display:inline-flex;align-items:center;gap:8px;letter-spacing:.14em;font-size:16px;font-weight:800;
+    text-transform:uppercase;color:var(--orange-d);background:rgba(255,153,0,.12);
+    border:1px solid rgba(255,153,0,.35);padding:6px 14px;border-radius:999px;margin-bottom:18px}
+  .hero h1{font-size:clamp(32px,4.2vw,46px);color:var(--navy);line-height:1.22;margin-bottom:16px}
+  .hero h1 .hl{color:var(--orange-d)}
+  .hero .lead{font-size:19px;color:#42566a;max-width:880px;line-height:1.7;margin-bottom:22px}
+  .flow-line{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:6px 0 22px;font-size:16px;font-weight:700}
+  .flow-line .node{background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px 14px;color:var(--navy);box-shadow:0 1px 2px rgba(16,24,40,.05)}
+  .flow-line .node.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .flow-line .arw{color:var(--orange-d);font-weight:800}
+  .cover-meta{display:flex;flex-wrap:wrap;gap:14px 26px;font-size:16px;color:var(--muted)}
+  .cover-meta b{color:var(--navy)}
+
+  /* ===== Sections ===== */
+  section{padding:50px 0;border-bottom:1px solid var(--line-2)}
+  section:last-of-type{border-bottom:none}
+  .sec-head{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+  .sec-num{flex:none;width:40px;height:40px;border-radius:11px;background:var(--navy);color:#fff;
+    display:grid;place-items:center;font-size:18px;font-weight:800}
+  .sec-head h2{font-size:28px;color:var(--navy);line-height:1.25}
+  .sec-sub{font-size:17px;color:var(--muted);margin:0 0 24px;padding-left:54px;line-height:1.65;max-width:980px}
+
+  /* 卡片 / 網格 */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px 24px;margin:14px 0}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr}}
+  .grid-2 .card,.grid-3 .card{margin:0}
+  .card h3{font-size:19px;color:var(--navy);margin-bottom:8px;display:flex;align-items:center;gap:9px}
+  .card h3 .ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:17px;flex:none;background:rgba(37,99,235,.1)}
+  .card p{font-size:16px;color:#42566a;margin:0 0 6px}
+  .card ul{margin:6px 0 0;padding-left:20px;font-size:16px;color:#3a4b5c}
+  .card li{margin:4px 0}
+  .mark{color:#c8102e;font-weight:750;font-style:normal}
+
+  table{width:100%;border-collapse:collapse;font-size:16px;margin:12px 0;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#eaf1f9;color:var(--navy);font-weight:700;font-size:16px}
+  tr:last-child td{border-bottom:none}
+  tr:nth-child(even) td{background:#fafbfc}
+  td code,li code,p code{background:#eef2f6;color:#b4234a;padding:1px 6px;border-radius:5px;font-family:"Cascadia Code",Consolas,monospace;font-size:16px}
+  .tblwrap{overflow-x:auto}
+  .good{color:var(--ok);font-weight:800}
+  .bad{color:var(--danger);font-weight:800}
+  .meh{color:var(--warn);font-weight:800}
+
+  .pill{display:inline-block;font-size:16px;font-weight:800;padding:3px 12px;border-radius:999px}
+  .pill.done{background:#e6f6ec;color:#15803d}
+  .pill.wip{background:#fff2dc;color:#b45309}
+  .pill.gap{background:#fdecec;color:#b91c1c}
+
+  .callout{border-left:4px solid var(--info);background:#eff6ff;border-radius:0 10px 10px 0;padding:13px 17px;margin:16px 0;font-size:16px}
+  .callout.warn{border-color:var(--warn);background:#fffbeb}
+  .callout.ok{border-color:var(--ok);background:#f0fdf4}
+  .callout.danger{border-color:var(--danger);background:#fef2f2}
+  .callout .h{display:block;font-weight:800;margin-bottom:2px;color:var(--navy)}
+
+  /* mermaid */
+  .diagram{position:relative;background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin:14px 0;text-align:center;overflow-x:auto}
+  .diagram .cap{font-size:16px;color:var(--muted);margin-top:8px}
+  .mermaid{font-size:16px;max-width:100%}
+  .mermaid svg{height:auto!important;max-width:100%}
+  .popbtn{position:absolute;top:10px;right:10px;z-index:3;background:var(--orange-d);color:#fff;border:none;
+    padding:6px 12px;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;opacity:.9;font-family:inherit}
+  .popbtn:hover{opacity:1}
+
+  footer{background:var(--navy);color:#c6d6e8;padding:30px 0;font-size:16px}
+  footer b{color:#fff}
+  footer a{color:var(--orange)}
+
+  @media print{
+    .popbtn{display:none!important}
+    body{background:#fff;font-size:14px}
+    section{break-inside:avoid;border-color:#ddd}
+    .card,.diagram{box-shadow:none}
+    header.hero{background:#f4f7fb}
+  }
+</style>
+</head>
+<body>
+
+<!-- ═════════ Hero ═════════ -->
+<header class="hero">
+  <div class="wrap">
+    <span class="kicker">◆ Phase 3A · 架構設計</span>
+    <h1>Data Hub <span class="hl">API Gateway</span> — 統一資料出入口設計</h1>
+    <p class="lead">把 ETL-Hub／語意層的高品質資料，以單一出入口對外供應：<b>權限管理落 RDS</b>、
+      <b>讀寫拆成兩個獨立應用</b>、由 Coolify 部署於 <b>2 台 EC2</b> —— 一邊故障不影響另一邊。</p>
+    <div class="flow-line">
+      <span class="node on">業務系統 / Agent</span><span class="arw">→</span>
+      <span class="node">DF-SSO / API Key 驗證</span><span class="arw">→</span>
+      <span class="node on">API Gateway（讀 / 寫分離）</span><span class="arw">→</span>
+      <span class="node">權限檢核（RDS）</span><span class="arw">→</span>
+      <span class="node">ETL-Hub / 語意層</span>
+    </div>
+    <div class="cover-meta">
+      <span><b>定位</b>　治理架構第四層 Data Hub 中央平台的對外供應層</span>
+      <span><b>現況</b>　讀取側已在 data-center-etl；寫入側為本設計新建</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═════════ 1 · 設計目標 ═════════ -->
+<section id="s1">
+  <div class="wrap">
+    <div class="sec-head"><div class="sec-num">1</div><h2>設計目標 — 為什麼需要 API Gateway</h2></div>
+    <p class="sec-sub">應用系統目前若要用資料，只能直連資料庫 —— 權限難控管、行為無法稽核、任何一個應用都可能拖垮共用資源。Gateway 要一次解決這四件事。</p>
+    <div class="grid-2">
+      <div class="card"><h3><span class="ic">🚪</span>統一出入口</h3>
+        <p>應用系統與 Agent <span class="mark">一律經 API 取用、不直連資料庫</span>。新應用接入只需申請權限，不需重新接資料來源。</p></div>
+      <div class="card"><h3><span class="ic" style="background:rgba(217,119,6,.12)">🔐</span>權限收斂</h3>
+        <p>誰能讀哪些資料集、誰能寫哪些表，<span class="mark">授權定義集中存 RDS</span>，一處管理、兩個應用共用同一套授權事實。</p></div>
+      <div class="card"><h3><span class="ic" style="background:rgba(31,157,85,.12)">🧱</span>故障隔離</h3>
+        <p>讀取與寫入拆成<span class="mark">兩個獨立應用、兩台 EC2</span>：寫入服務故障或被打掛，查詢供應完全不受影響（反之亦然）。</p></div>
+      <div class="card"><h3><span class="ic" style="background:rgba(124,58,237,.12)">🧾</span>行為可稽核</h3>
+        <p>誰、何時、取／寫了什麼，<span class="mark">全數留痕</span>；搭配 Rate Limit 防止單一消費端耗盡資源。</p></div>
+    </div>
+    <div class="callout"><span class="h">設計原則（延續整體架構）</span>Private First · 最小權限（DB 帳號也分讀寫）· 沿用既有元件（DF-SSO、Redis／Taskiq、Coolify）不重造輪子。</div>
+  </div>
+</section>
+
+<!-- ═════════ 2 · 整體架構 ═════════ -->
+<section id="s2">
+  <div class="wrap">
+    <div class="sec-head"><div class="sec-num">2</div><h2>整體架構 — 2 台 EC2、2 個獨立應用、1 套授權事實</h2></div>
+    <p class="sec-sub">Coolify 統一部署與反向代理；讀取應用就是現有 data-center-etl，寫入應用為獨立新專案。兩者只共用 RDS 與授權表，互不依賴。</p>
+    <div class="diagram">
+      <div class="mermaid">
+flowchart LR
+  subgraph CLIENTS["消費端"]
+    BIZ["業務系統"]
+    AGENT["AI Agent / 分析"]
+  end
+  SSO["DF-SSO 中央驗證"]
+  subgraph CO["Coolify（統一部署 / 反向代理 / 回滾）"]
+    direction TB
+    subgraph EC2R["EC2-A ｜ 讀取應用（現有 data-center-etl）"]
+      RAPI["Read API<br/>資料集瀏覽 / 查詢 / 語意層 JSON"]
+    end
+    subgraph EC2W["EC2-B ｜ 寫入應用（新專案）"]
+      WAPI["Write API<br/>驗證 → 佇列 → 落庫"]
+    end
+  end
+  subgraph RDS["RDS PostgreSQL"]
+    HUB[("ETL-Hub / _view")]
+    PERM[("授權表<br/>api_clients · scopes · grants")]
+    AUD[("稽核<br/>api_access_logs")]
+  end
+
+  BIZ ==> RAPI
+  AGENT ==> RAPI
+  BIZ ==> WAPI
+  RAPI -. "Token 驗證" .-> SSO
+  WAPI -. "Token 驗證" .-> SSO
+  RAPI == "唯讀 DB 帳號" ==> HUB
+  WAPI == "寫入 DB 帳號（限定 schema）" ==> HUB
+  RAPI --> PERM
+  WAPI --> PERM
+  RAPI --> AUD
+  WAPI --> AUD
+
+  classDef c fill:#fde8d8,stroke:#EC7211,color:#7a3b10;
+  classDef app fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
+  classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  classDef sso fill:#f0ecf8,stroke:#5b4a8a,color:#3f3361;
+  class BIZ,AGENT c; class RAPI,WAPI app; class HUB,PERM,AUD db; class SSO sso;
+      </div>
+      <div class="cap">整體架構 — 讀 / 寫兩應用僅共用 RDS 與授權表；DB 帳號依讀寫分離（最小權限）</div>
+    </div>
+    <div class="callout ok"><span class="h">✅ 故障隔離的關鍵</span>兩個應用<span class="mark">沒有互相呼叫</span>、不共用程式碼進程、不共用主機 —— 唯一交集是 RDS。寫入側全掛時，讀取供應照常；讀取側被查詢打滿時，寫入不受影響。</div>
+  </div>
+</section>
+
+<!-- ═════════ 3 · 權限管理 ═════════ -->
+<section id="s3">
+  <div class="wrap">
+    <div class="sec-head"><div class="sec-num">3</div><h2>權限管理 — 授權資料落 RDS，一套模型兩應用共用</h2></div>
+    <p class="sec-sub">人用 DF-SSO 登入管理介面維護授權；系統對系統（業務系統呼叫 API）用 API Key + scope。授權定義全部存 RDS，讀寫應用各自檢核、不互相依賴。</p>
+    <div class="grid-2">
+      <div>
+        <div class="card"><h3><span class="ic">🗄️</span>授權資料模型（RDS）</h3>
+          <ul>
+            <li><code>api_clients</code> — 消費端註冊：名稱、API Key（hash 存放）、狀態、負責單位</li>
+            <li><code>api_scopes</code> — 能力範圍：<code>read:dataset</code> / <code>write:table</code></li>
+            <li><code>api_grants</code> — client ↔ 資料集（schema / table 粒度）的授權對應，<span class="mark">含到期日與軟刪除</span></li>
+            <li><code>api_access_logs</code> — 每次呼叫留痕：client、動作、資料集、筆數、結果</li>
+          </ul></div>
+        <div class="callout warn"><span class="h">⚠ 底線</span>API Key 只存 hash、不落明碼；授權異動本身也要寫稽核（誰授的權）。</div>
+      </div>
+      <div class="diagram">
+        <div class="mermaid">
+flowchart TB
+  REQ["API 請求<br/>Bearer Token 或 API Key"] --> A1["① 驗證身分<br/>DF-SSO（人）/ api_clients（系統）"]
+  A1 --> A2["② 檢查 scope<br/>read / write 能力"]
+  A2 --> A3["③ 資料集範圍檢核<br/>api_grants（schema / table 粒度）"]
+  A3 --> A4["④ Rate Limit<br/>依 client 配額"]
+  A4 --> A5["⑤ 執行查詢 / 寫入"]
+  A5 --> A6["⑥ 稽核留痕<br/>api_access_logs"]
+  A1 -- "401" --> REJ["拒絕"]
+  A2 -- "403" --> REJ
+  A3 -- "403" --> REJ
+  A4 -- "429" --> REJ
+
+  classDef s fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
+  classDef r fill:#fdecec,stroke:#dc2626,color:#7f1d1d;
+  class REQ,A1,A2,A3,A4,A5,A6 s; class REJ r;
+        </div>
+        <div class="cap">六道檢核 — 讀寫應用各自內建同一條檢核鏈，共用 RDS 授權表</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ 4 · 讀取應用 ═════════ -->
+<section id="s4">
+  <div class="wrap">
+    <div class="sec-head"><div class="sec-num">4</div><h2>讀取應用 — 落在現有 data-center-etl <span class="pill done" style="margin-left:6px">已有基礎</span></h2></div>
+    <p class="sec-sub">資料集瀏覽、查詢、語意層 JSON 轉換與 SSO 整合都已存在 —— 缺的是把「對外供應」的權限中介層與稽核掛上去。</p>
+    <div class="tblwrap"><table>
+      <thead><tr><th>元件</th><th>現況</th><th>本設計要補的</th></tr></thead>
+      <tbody>
+        <tr><td>資料集瀏覽 / 查詢 API</td><td><span class="pill done">已建置</span>（管理平台內部用）</td><td>對外版 endpoint：介面版本化（<code>/api/v1/datasets</code>）、分頁與筆數上限</td></tr>
+        <tr><td>語意層</td><td><span class="pill done">已建置</span>（英文 key JSON / <code>_view</code>）</td><td>對外回傳一律走語意層，不暴露原始代號欄位</td></tr>
+        <tr><td>身分驗證</td><td><span class="pill done">已建置</span>（DF-SSO，人員登入）</td><td>加上 <code>api_clients</code> API Key 驗證（系統對系統）</td></tr>
+        <tr><td>權限範圍 / 稽核</td><td><span class="pill gap">缺口</span></td><td>掛上六道檢核鏈（授權表 + access_logs）</td></tr>
+        <tr><td>Rate Limit / 安全 Headers</td><td><span class="pill gap">缺口</span>（scan 遺留 High）</td><td><span class="mark">部署前必補</span>：依 client 配額限流</td></tr>
+        <tr><td>DB 帳號</td><td>單一帳號</td><td>Read API 改用<span class="mark">唯讀 DB 帳號</span>（最小權限）</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout"><span class="h">為什麼讀取放這裡</span>資料、語意層、SSO 都在這個專案，重用成本最低；且讀取是「供應」的主力流量，與既有管理平台同一個故障域可接受 —— 真正要隔離的是寫入。</div>
+  </div>
+</section>
+
+<!-- ═════════ 5 · 寫入應用 ═════════ -->
+<section id="s5">
+  <div class="wrap">
+    <div class="sec-head"><div class="sec-num">5</div><h2>寫入應用 — 獨立新專案 + 第二台 EC2 <span class="pill gap" style="margin-left:6px">目前缺口</span></h2></div>
+    <p class="sec-sub">寫入路徑風險本質上高於讀取（改資料、鎖表、量突發），所以獨立成專案、獨立部署。寫入不直接落庫 —— 走佇列非同步，天生具備削峰與重試。</p>
+    <div class="diagram">
+      <div class="mermaid">
+flowchart LR
+  WREQ["寫入請求<br/>POST /api/v1/ingest"] --> VAL["驗證 + 檢核<br/>六道檢核鏈 + Schema 白名單"]
+  VAL -- "401 / 403 / 422" --> REJ["拒絕"]
+  VAL --> Q["Redis 佇列<br/>（沿用 Taskiq 基礎）"]
+  Q --> WK["Write Worker<br/>批次寫入 / 冪等鍵去重"]
+  WK --> RDSW[("RDS<br/>限定寫入 schema")]
+  WK --> AUD[("寫入稽核<br/>批次結果 / 筆數")]
+  WREQ -. "202 Accepted + 追蹤 id" .-> POLL["GET /ingest/{id}<br/>查詢寫入結果"]
+
+  classDef s fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
+  classDef q fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
+  classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  classDef r fill:#fdecec,stroke:#dc2626,color:#7f1d1d;
+  class WREQ,VAL,POLL s; class Q,WK q; class RDSW,AUD db; class REJ r;
+      </div>
+      <div class="cap">寫入路徑 — 收單即回 202，佇列非同步落庫；冪等鍵防重送、白名單限定可寫 schema</div>
+    </div>
+    <div class="grid-3">
+      <div class="card"><h3><span class="ic">🧬</span>與 ETL 的邊界</h3><p>寫入目標是<span class="mark">獨立的應用資料 schema</span>（如 <code>app_ingest</code>），<span class="mark">不寫 Raw、不寫 ETL-Hub 同步表</span> —— 不與 DMS / mirror_sync 打架。</p></div>
+      <div class="card"><h3><span class="ic" style="background:rgba(217,119,6,.12)">♻️</span>沿用既有技術</h3><p>Redis 佇列、Taskiq Worker、Docker Compose、Coolify 部署 —— 與 ETL 同一套技術棧，維運心智成本最低。</p></div>
+      <div class="card"><h3><span class="ic" style="background:rgba(31,157,85,.12)">🔑</span>專用 DB 帳號</h3><p>寫入帳號只授權指定 schema 的 INSERT / UPDATE；<span class="mark">無 DDL、無跨 schema</span>，錯誤半徑鎖死。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════ 6 · 故障隔離 ═════════ -->
+<section id="s6">
+  <div class="wrap">
+    <div class="sec-head"><div class="sec-num">6</div><h2>故障隔離 — 拆兩台的理由：故障域分析</h2></div>
+    <p class="sec-sub">「一個壞了不影響另一個」不是口號 —— 逐一檢視故障情境，確認隔離邊界真的成立。</p>
+    <div class="tblwrap"><table>
+      <thead><tr><th>故障情境</th><th>影響範圍</th><th>另一側</th><th>恢復手段</th></tr></thead>
+      <tbody>
+        <tr><td>寫入應用 crash / OOM</td><td>EC2-B 的 Write API</td><td class="good">讀取照常 ✓</td><td>Coolify 自動重啟；佇列訊息不遺失、重啟續跑</td></tr>
+        <tr><td>讀取應用被查詢打滿</td><td>EC2-A 的 Read API 變慢</td><td class="good">寫入照常 ✓</td><td>Rate Limit 降載；查詢筆數上限擋大查詢</td></tr>
+        <tr><td>EC2 整台故障</td><td>該台上的單一應用</td><td class="good">另一台不受影響 ✓</td><td>Coolify 重新部署到替補機</td></tr>
+        <tr><td>部署出錯（壞版本上線）</td><td>單一應用</td><td class="good">另一應用不同專案、不同 pipeline ✓</td><td>Coolify 一鍵回滾</td></tr>
+        <tr><td>Redis 故障</td><td>寫入暫停收單（回 503）</td><td class="good">讀取不依賴 Redis ✓</td><td>Redis 重啟後續跑；client 依 202/503 重試</td></tr>
+        <tr><td>RDS 故障</td><td class="bad">讀寫皆停 ✗（唯一共用點）</td><td>—</td><td>RDS 是既有共同依賴：Multi-AZ（正式環境）+ 備份還原</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout warn"><span class="h">⚠ 誠實面對唯一單點</span>RDS 是兩側唯一共用資源 —— 這是刻意的取捨（資料只有一份事實）。緩解靠 RDS 本身的可用性手段（Multi-AZ / 快照），而不是在應用層做花活。</div>
+  </div>
+</section>
+
+<!-- ═════════ 7 · 方案比較 ═════════ -->
+<section id="s7">
+  <div class="wrap">
+    <div class="sec-head"><div class="sec-num">7</div><h2>方案比較（討論）— 為什麼選讀寫分離雙機</h2></div>
+    <p class="sec-sub">把「省成本」與「隔離強度」攤開比較 —— 結論是採方案 A，但列出 B 作為預算受限時的退路。</p>
+    <div class="tblwrap"><table>
+      <thead><tr><th style="width:18%">面向</th><th>A · 雙 EC2 讀寫分離<br><small>（本設計）</small></th><th>B · 單 EC2 雙容器</th><th>C · 單一應用含讀寫</th></tr></thead>
+      <tbody>
+        <tr><td>故障隔離</td><td class="good">✓ 主機級隔離，最強</td><td class="meh">△ 容器級：應用互不影響，但主機掛全掛</td><td class="bad">✗ 同進程，一個 bug 全倒</td></tr>
+        <tr><td>部署風險</td><td class="good">✓ 兩條 pipeline，互不牽連</td><td class="good">✓ 可分開部署</td><td class="bad">✗ 改寫入也要重佈讀取</td></tr>
+        <tr><td>資源競爭</td><td class="good">✓ 完全獨立</td><td class="meh">△ 需設容器資源上限</td><td class="bad">✗ 大查詢與大寫入互搶</td></tr>
+        <tr><td>成本</td><td class="meh">△ 多一台 EC2</td><td class="good">✓ 單台</td><td class="good">✓ 單台</td></tr>
+        <tr><td>維運複雜度</td><td class="meh">△ 兩專案兩機（Coolify 統一管理可控）</td><td class="meh">△ 兩專案一機</td><td class="good">✓ 最簡單</td></tr>
+        <tr><td>擴展路徑</td><td class="good">✓ 讀寫各自水平擴展、可各自加機</td><td class="meh">△ 擴展時終究要拆機</td><td class="bad">✗ 只能整包放大</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout ok"><span class="h">✅ 結論</span>採 <b>方案 A</b>：寫入路徑風險高、且讀取是對外供應的生命線，主機級隔離值回一台 EC2 的成本。若初期預算受限，<b>方案 B 為可接受的過渡</b>（同機雙容器 + 資源上限），日後把寫入容器搬到第二台即可、應用程式碼零改動。</div>
+  </div>
+</section>
+
+<!-- ═════════ 8 · 建議增強 ═════════ -->
+<section id="s8">
+  <div class="wrap">
+    <div class="sec-head"><div class="sec-num">8</div><h2>建議增強（討論）— 在原設計上追加五項</h2></div>
+    <p class="sec-sub">方向不變（雙機讀寫分離 + 權限落 RDS），以下是讓它更穩、更好維運的增強項，供討論取捨。</p>
+    <div class="grid-2">
+      <div class="card"><h3><span class="ic">🌐</span>① 統一入口網域</h3>
+        <p>用 Coolify 內建反向代理給兩個應用<span class="mark">同一個網域、不同路徑</span>（<code>api.example.com/read/*</code>、<code>/write/*</code>）或子網域。消費端只記一個入口，底層搬機、擴機不影響對接。</p></div>
+      <div class="card"><h3><span class="ic" style="background:rgba(217,119,6,.12)">🔑</span>② DB 帳號讀寫分離</h3>
+        <p>Read API 用唯讀帳號、Write Worker 用限定 schema 的寫入帳號 —— <span class="mark">就算應用被打穿，資料庫層還有一道最小權限防線</span>。</p></div>
+      <div class="card"><h3><span class="ic" style="background:rgba(31,157,85,.12)">📥</span>③ 寫入一律走佇列</h3>
+        <p>收單即回 <code>202 + 追蹤 id</code>，落庫交給 Worker：<span class="mark">天生削峰、可重試、可冪等</span>；寫入量暴增時排隊而不是壓垮 RDS。</p></div>
+      <div class="card"><h3><span class="ic" style="background:rgba(124,58,237,.12)">🧾</span>④ 檢核鏈做成共用套件</h3>
+        <p>六道檢核鏈以<span class="mark">共用套件</span>形式讓兩個專案引用（同一套邏輯、各自部署），避免規則兩邊漂移；限流計數放 Redis（讀取側可用獨立 Redis db 或記憶體限流，維持不依賴）。</p></div>
+    </div>
+    <div class="card"><h3><span class="ic">📈</span>⑤ 預留讀取擴展位：RDS Read Replica</h3>
+      <p>讀取量若成長，優先開 <span class="mark">RDS 讀取複本</span>讓 Read API 指向 replica —— 讀寫在資料庫層也分流，寫入鎖表不影響查詢。這一步<b>現在不做</b>，但連線設定先以環境變數區分 reader / writer endpoint，日後零改碼切換。</p></div>
+  </div>
+</section>
+
+<!-- ═════════ 9 · 落地步驟 ═════════ -->
+<section id="s9">
+  <div class="wrap">
+    <div class="sec-head"><div class="sec-num">9</div><h2>落地步驟 — 從現況到上線：六步走</h2></div>
+    <p class="sec-sub">先把授權模型立起來（兩側共用），再讓讀取先上線供應、寫入隨後 —— 每一步都可獨立驗收。</p>
+    <div class="tblwrap"><table>
+      <thead><tr><th>#</th><th>步驟</th><th>範圍</th><th>驗收</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>授權表 schema 落 RDS</td><td><code>api_clients / scopes / grants / access_logs</code> + Alembic migration</td><td>管理介面可建 client、發 Key（hash 存放）</td></tr>
+        <tr><td>2</td><td>Read API 掛檢核鏈</td><td>現有 data-center-etl：對外 endpoint 版本化 + 六道檢核 + 唯讀 DB 帳號</td><td>未授權 401/403、授權 client 可查、access_logs 有痕</td></tr>
+        <tr><td>3</td><td>Rate Limit + 安全 Headers</td><td>讀取側（<span class="mark">scan 遺留 High，部署前必補</span>）</td><td>超額回 429；安全掃描過</td></tr>
+        <tr><td>4</td><td>Write 專案 scaffold</td><td>新 repo：FastAPI + Taskiq Worker + 檢核共用套件 + <code>app_ingest</code> schema</td><td>本地 Docker Compose 全流程通（202 → 落庫 → 稽核）</td></tr>
+        <tr><td>5</td><td>第二台 EC2 + Coolify 接入</td><td>寫入應用獨立部署、專用寫入 DB 帳號</td><td>雙機各自部署 / 回滾互不影響</td></tr>
+        <tr><td>6</td><td>上線驗證</td><td>故障演練：關掉寫入側驗證讀取不受影響（反之亦然）</td><td>故障域表逐項打勾</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout"><span class="h">待決事項（需要拍板）</span>
+      ① 第二台 EC2 規格與成本上限（或先走方案 B 過渡）；
+      ② 允許寫入的資料範圍（<code>app_ingest</code> 收哪些業務資料）；
+      ③ 與 ERP 回寫議題的關係 —— 本設計<span class="mark">只寫自有 RDS，不回寫 ERP</span>（回寫另案評估）；
+      ④ Rate Limit 配額標準（依 client 或依部門）。
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <b>Data Hub API Gateway · 設計文件</b> — Phase 3A 統一資料出入口　｜　整體架構見 <a href="aws-to-local-infra-arch.html">aws-to-local-infra-arch.html</a>
+  </div>
+</footer>
+
+<script>
+  // ===== mermaid：載入即渲染，完成後注入放大按鈕 =====
+  var mermaidReady = typeof mermaid !== 'undefined';
+  if (mermaidReady) {
+    mermaid.initialize({
+      startOnLoad: false, theme: 'base',
+      themeVariables: { fontFamily: '"Segoe UI","Noto Sans TC",sans-serif', primaryColor: '#eef4fb',
+        primaryBorderColor: '#2E5C8A', lineColor: '#5b6b7b', fontSize: '16px' },
+      flowchart: { curve: 'basis', useMaxWidth: true, nodeSpacing: 50, rankSpacing: 58, padding: 12 }
+    });
+    mermaid.run().then(function () {
+      document.querySelectorAll('.diagram').forEach(function (d) {
+        if (d.querySelector('svg') && !d.querySelector('.popbtn')) {
+          var b = document.createElement('button');
+          b.className = 'popbtn';
+          b.type = 'button';
+          b.textContent = '⤢ 開新視窗放大';
+          b.addEventListener('click', function () { popDiagram(b); });
+          d.insertBefore(b, d.firstChild);
+        }
+      });
+    });
+  }
+
+  // ===== 開新視窗放大：拖曳平移 · Z 放大 / X 縮小 =====
+  function popDiagram(btn) {
+    var wrapEl = btn.closest('.diagram');
+    var svg = wrapEl ? wrapEl.querySelector('svg') : null;
+    if (!svg) { return; }
+    var title = (wrapEl.querySelector('.cap') || {}).textContent || '架構圖';
+    var w = window.open('', '_blank');
+    if (!w) { alert('瀏覽器封鎖了新視窗，請允許彈出視窗。'); return; }
+    w.document.open();
+    w.document.write(
+      '<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">' +
+      '<title>' + title + '</title><style>' +
+      'html,body{margin:0;height:100%;background:#f5f7fa;font-family:"Segoe UI","Noto Sans TC",sans-serif;overflow:hidden}' +
+      '.bar{position:fixed;top:0;left:0;right:0;z-index:5;background:#232F3E;color:#fff;padding:10px 16px;font-size:15px;font-weight:700;' +
+      'display:flex;gap:12px;align-items:center;flex-wrap:wrap}' +
+      '.bar button{background:#FF9900;color:#3a2400;border:none;border-radius:7px;padding:6px 12px;' +
+      'font-weight:700;font-size:14px;cursor:pointer}' +
+      '.stage{position:absolute;top:52px;left:0;right:0;bottom:0;overflow:hidden;cursor:grab}' +
+      '.stage.dragging{cursor:grabbing}' +
+      '#pz{transform-origin:0 0;will-change:transform;display:inline-block}' +
+      '#pz svg{display:block;width:96vw;max-width:none;height:auto}' +
+      '@media print{.bar{display:none}html,body{overflow:visible}.stage{position:static;overflow:visible}#pz{transform:none!important}}' +
+      '</style></head><body>' +
+      '<div class="bar"><span>' + title + '</span>' +
+      '<button onclick="window.print()">列印 / 存 PDF</button>' +
+      '<button id="zin">Z 放大</button><button id="zout">X 縮小</button><button id="zreset">重設</button>' +
+      '<span style="opacity:.7;font-weight:400;font-size:13px">滑鼠拖曳平移 · 鍵盤 Z 放大 / X 縮小</span></div>' +
+      '<div class="stage" id="stage"><div id="pz">' + svg.outerHTML + '</div></div>' +
+      '<script>' +
+      'var scale=1,tx=24,ty=24,drag=null;' +
+      'var stage=document.getElementById("stage"),pz=document.getElementById("pz");' +
+      'function apply(){pz.style.transform="translate("+tx+"px,"+ty+"px) scale("+scale+")";}' +
+      'function zoom(f){var ns=Math.min(8,Math.max(0.2,scale*f));' +
+      'var cx=stage.clientWidth/2,cy=stage.clientHeight/2;' +
+      'tx=cx-(cx-tx)*(ns/scale);ty=cy-(cy-ty)*(ns/scale);scale=ns;apply();}' +
+      'stage.addEventListener("mousedown",function(e){drag={x:e.clientX-tx,y:e.clientY-ty};stage.classList.add("dragging");e.preventDefault();});' +
+      'window.addEventListener("mousemove",function(e){if(!drag){return;}tx=e.clientX-drag.x;ty=e.clientY-drag.y;apply();});' +
+      'window.addEventListener("mouseup",function(){drag=null;stage.classList.remove("dragging");});' +
+      'window.addEventListener("keydown",function(e){var k=(e.key||"").toLowerCase();' +
+      'if(k==="z"){zoom(1.2);}else if(k==="x"){zoom(1/1.2);}});' +
+      'document.getElementById("zin").onclick=function(){zoom(1.2);};' +
+      'document.getElementById("zout").onclick=function(){zoom(1/1.2);};' +
+      'document.getElementById("zreset").onclick=function(){scale=1;tx=24;ty=24;apply();};' +
+      'apply();' +
+      '<\/script></body></html>'
+    );
+    w.document.close();
+  }
+</script>
+</body>
+</html>
