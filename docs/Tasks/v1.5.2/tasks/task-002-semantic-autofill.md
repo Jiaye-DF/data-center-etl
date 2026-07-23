@@ -1,7 +1,7 @@
 ---
 id: task-002
 title: 語意映射自動補列模組(confirmed + 表層級 + 別名查重 + DS 字典 zh)
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:
@@ -26,9 +26,9 @@ estimated_hours: 4
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest tests/test_semantic_autofill.py` 全綠,含:(a) 缺欄列補 confirmed(english=小寫原欄名 / updated_by=全零);(b) 既有 draft 與 confirmed 列不覆寫;(c) 表層級缺列補表名小寫;(d) 撞名走 `_col` / 序號規避;(e) ON CONFLICT 重跑冪等;(f) zh_name 取字典值、缺則空
-- [ ] `uv run ruff check app tests` + `uv run mypy app` 無新增錯誤
-- [ ] `grep -n "ON CONFLICT" backend/app/etl/semantic_autofill.py` 有命中;模組無任何 UPDATE / DELETE 語句(`grep -nE "UPDATE|DELETE" backend/app/etl/semantic_autofill.py` 無 SQL 命中)
+- [x] `cd backend && uv run pytest tests/test_semantic_autofill.py` 全綠,含:(a) 缺欄列補 confirmed(english=小寫原欄名 / updated_by=全零);(b) 既有 draft 與 confirmed 列不覆寫;(c) 表層級缺列補表名小寫;(d) 撞名走 `_col` / 序號規避;(e) ON CONFLICT 重跑冪等;(f) zh_name 取字典值、缺則空 — 12 passed
+- [x] `uv run ruff check app tests` + `uv run mypy app` 無新增錯誤(schedule_repo.py:528 rowcount 為既有未觸碰檔錯誤,非本 task 新增)
+- [x] `grep -n "ON CONFLICT" backend/app/etl/semantic_autofill.py` 有命中;模組無任何 UPDATE / DELETE 語句(`grep -nE "UPDATE|DELETE" backend/app/etl/semantic_autofill.py` 無命中)
 
 ## 必讀檔(Just-in-time)
 
