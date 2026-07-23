@@ -429,6 +429,13 @@ flowchart TB
       CDCDB[("RDS ｜ erp_cdc_event_logs")]
     end
 
+    subgraph Z1W["CDC 異常監控"]
+      direction LR
+      EVB["EventBridge<br/>(DMS 事件 + 心跳排程)"]
+      WDG["Lambda (CDC Watchdog)"]
+      SESM["SES ｜ Mail 通知負責人"]
+    end
+
     subgraph Z2["Phase 2 ｜ ETL（Catalog + 自架 Taskiq）"]
       direction LR
       GLUE["Glue Crawler + Data Catalog"]
@@ -459,6 +466,10 @@ flowchart TB
   DMS == "異動紀錄（CDC event log）" ==> KDS
   KDS == "event source 觸發" ==> LMB
   LMB == "寫入異動事件" ==> CDCDB
+  DMS -. "Task 狀態變更事件" .-> EVB
+  EVB -. "事件 / 心跳觸發檢核" .-> WDG
+  WDG -. "可自復 → 重啟 Task" .-> DMS
+  WDG -. "異常告警" .-> SESM
   RAW == "掃描 Metadata" ==> GLUE
   RAW == "讀取" ==> WORKER
   WORKER == "寫入" ==> HUB
@@ -471,8 +482,9 @@ flowchart TB
   classDef aws fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
   classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
   classDef gw fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
+  classDef alert fill:#fef2f2,stroke:#dc2626,color:#7f1d1d;
   class ERP,BIZ src; class DMS,KDS,LMB,GLUE,SCHED,REDIS,WORKER,EC2,S3,ATH,RS,AIDH,KB,RAG,MCP,AGENT aws;
-  class RAW,CDCDB,HUB db; class VGW gw;
+  class RAW,CDCDB,HUB db; class VGW gw; class EVB,WDG,SESM alert;
             </div>
             <div class="cap">端到端 Infra 流程圖（VPC 內各服務與資料流，跨 Phase 1–4）</div>
           </div>
@@ -540,11 +552,14 @@ GRANT SELECT ON SYS.DBA_TAB_COLUMNS TO &amp;DMS_USER;</pre>
           以 AWS DMS 將地端資料搬入雲端：<span class="mark">Full Load 全量複製已實測驗證</span>；
           CDC 異動擷取推送 Kinesis，由 Lambda 消費寫入異動事件紀錄，作為後續擴充項。
           白名單 Table Mapping 控管同步範圍，網路面以 VPC / Security Group 分層隔離、禁開放公網。
+          並建立 <span class="mark">CDC 異常監控</span>：EventBridge 捕捉 DMS Task 異常事件＋心跳排程雙保險，
+          觸發 Lambda（Watchdog）啟動應變（可自復即重啟 Task、否則標記人工），並經 SES <span class="mark">發送 Mail 通知負責人</span>。
         </p>
         <div class="chips">
           <span class="chip"><span class="dot"></span><b>DMS</b>&nbsp;Full Load ✅</span>
           <span class="chip"><span class="dot"></span><b>CDC</b>&nbsp;Kinesis → Lambda（擴充）</span>
           <span class="chip"><span class="dot"></span><b>異動紀錄</b>&nbsp;erp_cdc_event_logs</span>
+          <span class="chip"><span class="dot"></span><b>CDC 監控</b>&nbsp;EventBridge → Watchdog → Mail</span>
           <span class="chip"><span class="dot"></span><b>Table Mapping</b>&nbsp;白名單</span>
           <span class="chip"><span class="dot"></span><b>VPC / SG</b>&nbsp;私網隔離</span>
         </div>
@@ -731,6 +746,59 @@ flowchart LR
               </tbody>
             </table></div>
             <div class="callout warn"><span class="h">⚠ 共享資源注意</span>Route Table 與 Security Group 屬共享資源：新增前確認不影響既有正式流量；任何 Route 移除或 SG 開 <code>0.0.0.0/0</code> 需負責人複核。</div>
+
+            <h4>CDC 異常監控與 Mail 通知（EventBridge + Lambda Watchdog + SES）</h4>
+            <p>
+              CDC 屬長駐串流，任一環節（DMS Task / Kinesis / Consumer）異常失效時異動會<span class="mark">靜默斷流</span>，
+              不主動巡檢就不會被發現。監控面採「<span class="mark">事件 + 心跳</span>」雙保險：異常發生即由 Watchdog 啟動應變功能，
+              並發送 Mail 通知負責人，不依賴人工巡檢。
+            </p>
+            <div class="diagram">
+              <div class="mermaid">
+flowchart LR
+  subgraph DET["偵測（雙保險）"]
+    direction TB
+    EVR["EventBridge Rule<br/>訂閱 DMS Task 狀態事件<br/>(FAILED / STOPPED / 錯誤)"]
+    SCHW["EventBridge Scheduler<br/>心跳排程（每 5 分）"]
+  end
+  WDG["Lambda (CDC Watchdog)<br/>檢核 + 啟動應變"]
+  subgraph CHK["停滯檢核依據"]
+    direction TB
+    LAG["Kinesis IteratorAge"]
+    LASTE["erp_cdc_event_logs<br/>最新事件時間 vs 門檻"]
+    TSTAT["DMS Task 即時狀態"]
+  end
+  DMSK["DMS Migration Task"]
+  SES["SES 發送 Mail"]
+  OWNER["負責人信箱"]
+
+  EVR == "事件觸發" ==> WDG
+  SCHW == "定時觸發" ==> WDG
+  WDG --> LAG
+  WDG --> LASTE
+  WDG --> TSTAT
+  WDG -- "可自復 → 重啟 Task（次數上限）" --> DMSK
+  WDG == "異常摘要 + 已採取動作" ==> SES
+  SES == "Mail 通知" ==> OWNER
+
+  classDef aws fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
+  classDef mig fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
+  classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  classDef alert fill:#fef2f2,stroke:#dc2626,color:#7f1d1d;
+  class EVR,SCHW,WDG aws; class DMSK mig; class LAG,LASTE,TSTAT db; class SES,OWNER alert;
+              </div>
+              <div class="cap">CDC 異常監控流程（事件 + 心跳雙保險 → Watchdog 應變 → SES Mail 通知負責人）</div>
+            </div>
+            <h4>異常情境與應變對照</h4>
+            <div class="tblwrap"><table>
+              <thead><tr><th>情境</th><th>偵測來源</th><th>Watchdog 應變</th><th>Mail 通知內容</th></tr></thead>
+              <tbody>
+                <tr><td>DMS Task FAILED / STOPPED</td><td>EventBridge Rule（DMS 狀態事件，即時）</td><td>可自復 → 嘗試 resume / restart（<span class="mark">次數上限防 flapping</span>）；超限標記人工</td><td>Task 名稱、錯誤訊息、重啟結果</td></tr>
+                <tr><td>CDC 停滯（Task 看似正常但斷流）</td><td>心跳排程 → 檢 Kinesis IteratorAge / <code>erp_cdc_event_logs</code> 最新事件時間超門檻</td><td>標記需人工（<span class="mark">不盲目自動重啟</span>）</td><td>停滯時長、最後事件時間、檢核數據</td></tr>
+                <tr><td>Lambda Consumer 連續失敗</td><td>CloudWatch Alarm → EventBridge</td><td>標記需人工</td><td>錯誤次數、最近錯誤 log 摘要</td></tr>
+              </tbody>
+            </table></div>
+            <div class="callout warn"><span class="h">⚠ 落地前置</span>SES 寄件網域需先完成 DKIM / SPF 驗證（Sandbox 需逐一驗證收件者）；Watchdog 重啟需<span class="mark">冪等 + 次數上限</span>；Mail 內容不得帶連線字串等機密（對齊機密過濾底線）。</div>
           </div>
         </details>
       </section>
@@ -1251,7 +1319,7 @@ flowchart LR
                 <tr><td>VGW + Site-to-Site VPN、Route Table（Local / VGW / NAT，<span class="mark">只增不刪既有</span>）</td><td>1</td></tr>
                 <tr><td>Security Group（Oracle / DMS / RDS / EC2 / Glue，<span class="mark">禁 0.0.0.0/0</span>）</td><td>1</td></tr>
                 <tr><td>VPC Endpoint（STS / Secrets / Logs Interface + S3 Gateway + Kinesis Interface）</td><td>2</td></tr>
-                <tr><td rowspan="3">遷移 / 資料</td><td>DMS Instance + Endpoints（Full Load + CDC）、Kinesis Data Streams、Lambda（CDC Consumer）</td><td>1→2</td></tr>
+                <tr><td rowspan="3">遷移 / 資料</td><td>DMS Instance + Endpoints（Full Load + CDC）、Kinesis Data Streams、Lambda（CDC Consumer）；EventBridge + Lambda（CDC Watchdog）+ SES Mail 告警</td><td>1→2</td></tr>
                 <tr><td>RDS ｜ <code>Raw-Data-Replication</code> / <code>erp_cdc_event_logs</code>（同實例）、RDS ETL-Hub</td><td>1–2</td></tr>
                 <tr><td>DB Subnet Group（≥2 AZ）</td><td>1</td></tr>
                 <tr><td rowspan="2">轉換 / 編排 / 運算</td><td>AWS Glue（Crawler / Data Catalog）、自架 Taskiq + Redis（Docker Compose）、Coolify</td><td>2</td></tr>
@@ -1280,6 +1348,7 @@ flowchart TB
     subgraph PRIV["Private Subnet"]
       DMS["DMS Replication Instance"]
       LMB["Lambda (CDC Consumer)"]
+      WDG["Lambda (CDC Watchdog)"]
     end
     subgraph DBSUB["DB Subnet Group (≥2 AZ)"]
       RAW[("RDS ｜ DB: Raw-Data-Replication")]
@@ -1301,6 +1370,8 @@ flowchart TB
     S3["S3 Data Lake"]
     ATH["Athena"]
     RS["Redshift（評估）"]
+    EVB["EventBridge（CDC 監控）"]
+    SESM["SES（Mail 通知）"]
   end
 
   subgraph CROSS["安全 / 維運（跨資源）"]
@@ -1353,21 +1424,28 @@ flowchart TB
   CW -.->|監控| RAW
   CW -.->|監控| GLUE
   CT -.->|稽核| IAM
+  DMS -.->|Task 狀態事件| EVB
+  EVB -.->|事件 / 心跳觸發| WDG
+  WDG -.->|嘗試重啟 Task| DMS
+  WDG -.->|告警 Mail 通知負責人| SESM
 
   linkStyle 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 stroke:#1f6feb,stroke-width:2.5px
   linkStyle 16,17,18,19 stroke:#94a3b8,stroke-width:1.5px
   linkStyle 20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41 stroke:#8b5cf6,stroke-width:1.5px
+  linkStyle 42,43,44,45 stroke:#dc2626,stroke-width:1.5px
 
   classDef src fill:#fde8d8,stroke:#EC7211,color:#7a3b10;
   classDef net fill:#eef4fb,stroke:#2E5C8A,color:#1a3553;
   classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
   classDef sec fill:#f0ecf8,stroke:#5b4a8a,color:#3f3361;
   classDef sg fill:#fff4e6,stroke:#EC7211,color:#7a3b10;
+  classDef alert fill:#fef2f2,stroke:#dc2626,color:#7f1d1d;
   class ONP src;
   class IGW,VGW,NAT,DMS,KDS,LMB,EC2,VPCE,SCHED,REDIS,WORKER,GLUE,S3,ATH,RS net;
   class RAW,CDCDB,HUB db;
   class IAM,SM,KMS,CW,CT sec;
   class SGD,SGR sg;
+  class EVB,WDG,SESM alert;
               </div>
               <div class="cap">AWS 設施關聯圖（含 / 套用 / 授權 / 帳密 / 加密 / 監控 / 讀寫）</div>
             </div>
@@ -1407,6 +1485,9 @@ flowchart TB
             <tr><td><b>CDC</b></td><td>Change Data Capture</td><td>持續同步來源增刪改；本架構 CDC 目標端點指向 Kinesis 而非直寫 RDS。</td></tr>
             <tr><td><b>Kinesis Data Streams</b></td><td>即時串流服務</td><td>承接 DMS CDC 推送的異動 event log（JSON），保留期內可重放。</td></tr>
             <tr><td><b>Lambda（CDC Consumer）</b></td><td>無伺服器函式</td><td>由 Kinesis event source 觸發，解析異動事件寫入 <code>erp_cdc_event_logs</code>。</td></tr>
+            <tr><td><b>EventBridge</b></td><td>事件匯流排 / 排程</td><td>訂閱 DMS Task 狀態變更事件 + 提供心跳排程；CDC 異常時觸發 Watchdog。</td></tr>
+            <tr><td><b>Lambda（CDC Watchdog）</b></td><td>無伺服器函式</td><td>檢核 CDC 健康（Task 狀態 / Kinesis IteratorAge / 最新事件時間），可自復者嘗試重啟 Task（次數上限）、否則標記人工，並經 SES 發告警。</td></tr>
+            <tr><td><b>SES</b></td><td>Simple Email Service</td><td>CDC 異常告警 Mail 發送給負責人；寄件網域需先完成 DKIM / SPF 驗證。</td></tr>
             <tr><td><b>Table Mapping</b></td><td>表對應規則</td><td>白名單指定只同步哪些 Schema / Table（<code>DS.*</code>、<code>M2201.*</code>）。</td></tr>
             <tr><td><b>LOB</b></td><td>Large Object</td><td>大型欄位（BLOB / CLOB）；本架構 Limited LOB 32KB。</td></tr>
             <tr><td><b>RDS / Multi-AZ / gp3</b></td><td>託管資料庫</td><td>AWS 託管 PostgreSQL；Multi-AZ 待命副本（正式建議）；gp3 SSD 只增不減。</td></tr>
