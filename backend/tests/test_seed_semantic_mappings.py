@@ -82,7 +82,16 @@ async def target_engine() -> AsyncIterator[AsyncEngine]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _clean_semantic_mappings(target_engine: AsyncEngine) -> AsyncIterator[None]:
-    """每測試後清空表資料(非 DROP);對齊 test_semantic_schema.py 清理策略。"""
+    """每測試前後清空表資料(非 DROP);對齊 test_semantic_autofill.py 清理策略。
+
+    v1.5.2 task-004 發現:全套 pytest 執行時,mirror_sync 測試(test_mirror_sync_*.py)
+    會實跑 task-003 掛接的 autofill_semantic_mappings,對共用測試 DB 做全 schema 掃描,
+    連同其他測試檔遺留(CREATE SCHEMA IF NOT EXISTS、依規範禁 DROP 故不清)的舊 schema
+    (AF_TEST / VG_TEST / IX_TEST 等)一併補列,污染本檔預期的精確列數斷言。前置清空可
+    避免依賴「本檔先跑」的執行順序假設。
+    """
+    async with target_engine.begin() as conn:
+        await conn.execute(text(f"DELETE FROM {_QUALIFIED}"))
     yield
     async with target_engine.begin() as conn:
         await conn.execute(text(f"DELETE FROM {_QUALIFIED}"))

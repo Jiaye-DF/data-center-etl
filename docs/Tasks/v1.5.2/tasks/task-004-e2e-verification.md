@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: e2e 驗證 + 收口文件
-status: pending
+status: done
 parallel: false
 depends_on: [task-001, task-002, task-003]
 affected_files:
@@ -25,9 +25,9 @@ estimated_hours: 2
 
 ## Acceptance
 
-- [ ] `cd backend && uv run pytest` 全套全綠;`uv run ruff check app tests` + `uv run mypy app` 無錯誤
-- [ ] `docs/Tasks/v1.5.2/verification-v1.5.2.md` 存在,且上列 1–5 每項有結果記錄(pass/fail + 證據)
-- [ ] 驗證期間 run log 無新增 ERROR 級訊息(`docker compose logs backend worker` 抽查)
+- [x] `cd backend && uv run pytest` 全套全綠(339 passed);`uv run ruff check app tests` 無錯誤;`uv run mypy app` 僅既有 `schedule_repo.py:528` 一筆(非本版新增)
+- [x] `docs/Tasks/v1.5.2/verification-v1.5.2.md` 存在,且上列 1–5 每項有結果記錄(pass/fail + 證據)
+- [x] 驗證期間 run log 無新增 ERROR 級訊息(`docker compose logs backend worker` 抽查)
 
 ## 必讀檔(Just-in-time)
 
