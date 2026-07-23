@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: 同步收尾掛接:autofill → 副本重灌 → view 重生同輪生效
-status: pending
+status: done
 parallel: false
 depends_on: [task-002]
 affected_files:

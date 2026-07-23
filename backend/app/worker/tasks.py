@@ -33,7 +33,7 @@ from app.etl.engine import (
     mask_secrets,
 )
 from app.etl.mirror import MirrorEngine, TableStat, stat_changed
-from app.etl.reader import rds_database_url
+from app.etl.reader import RDS_SOURCE_DB_ENV, rds_database_url
 from app.etl.semantic_schema import SEMANTIC_SCHEMA, SEMANTIC_TABLE
 from app.etl.writer import RDS_TARGET_DB_ENV
 from app.models.rds_table_meta import Dataset, RdsTableMeta
@@ -436,8 +436,10 @@ async def mirror_sync(
     - 單表失敗不中斷整輪:錯誤明細(含 stack trace,機密遮罩)寫入該表 log,續跑下一表;
       任一表失敗 → run 總狀態 failed(對齊既有 run 收尾慣例)。
     - 同步後失效 datasets:source:* 快取(對齊 snapshot_service 失效用法)。
-    - task-003:同步完成後另整表重灌語意映射副本(RDS `erp_metadata.semantic_mappings`
-      → 自有 DB `semantic_mappings`,單向);來源表不存在 graceful 略過(不 fail run)。
+    - task-003:同步完成後先自動補列語意映射(寫 RDS `erp_metadata.semantic_mappings` 真身,
+      補來源新欄位 / 缺表層級列的 confirmed 映射),再整表重灌語意映射副本
+      (RDS → 自有 DB `semantic_mappings`,單向)並重生 view,自動 confirmed 列同輪即生效;
+      來源表不存在 / autofill 例外皆 graceful 略過(不 fail run,不擋既有副本重灌)。
     """
     async with AsyncSessionLocal() as session:
         store = RunStateTracker(make_store(session))
@@ -561,9 +563,60 @@ async def mirror_sync(
             # AD-120:與手動「套用變更」跨 process 互斥;取不到鎖略過本輪,下輪簽名機制自然補跑。
             try:
                 if not await acquire_apply_lock():
-                    logger.info("套用變更進行中(他處持鎖),略過本輪語意映射副本重灌")
+                    logger.info(
+                        "套用變更進行中(他處持鎖),略過本輪語意映射自動補列與副本重灌"
+                    )
                 else:
                     try:
+                        # task-003:自動補列(寫 RDS 真身)須先於副本重灌 —— 自動補的 confirmed
+                        # 列同輪即重灌進副本、觸發簽名變更而重生 view,同步結束全鏈生效。
+                        # 延遲匯入:autofill 僅同步收尾路徑用到,不落頂層以免污染 semantic_apply。
+                        from app.etl.semantic_autofill import autofill_semantic_mappings
+
+                        autofill_target = create_async_engine(
+                            rds_database_url(RDS_TARGET_DB_ENV)
+                        )
+                        autofill_source = create_async_engine(
+                            rds_database_url(RDS_SOURCE_DB_ENV)
+                        )
+                        try:
+                            async with autofill_target.connect() as autofill_conn:
+                                mapping_exists = (
+                                    await autofill_conn.execute(
+                                        _SEMANTIC_MAPPINGS_EXISTS_SQL,
+                                        {
+                                            "schema": SEMANTIC_SCHEMA,
+                                            "table": SEMANTIC_TABLE,
+                                        },
+                                    )
+                                ).first()
+                            # RDS 真身表不存在(尚未建置 / 環境未備妥)→ 對齊既有 graceful,略過補列
+                            if mapping_exists is None:
+                                logger.warning(
+                                    "RDS erp_metadata.semantic_mappings 不存在,"
+                                    "略過語意映射自動補列"
+                                )
+                            else:
+                                autofill_result = await autofill_semantic_mappings(
+                                    autofill_target, autofill_source
+                                )
+                                logger.info(
+                                    "語意映射自動補列(同步收尾):"
+                                    "補欄 %d / 補表層級 %d / 別名規避 %d",
+                                    autofill_result.columns_added,
+                                    autofill_result.tables_added,
+                                    autofill_result.aliases_deduped,
+                                )
+                        except Exception:
+                            # autofill 失敗不擋既有副本重灌(補列為附加,原收尾優先)
+                            logger.warning(
+                                "語意映射自動補列失敗,略過本輪(不影響後續副本重灌)",
+                                exc_info=True,
+                            )
+                        finally:
+                            await autofill_source.dispose()
+                            await autofill_target.dispose()
+
                         outcome = await refresh_semantic_copy_and_views(session)
                         if outcome is None:
                             logger.warning(

@@ -57,9 +57,11 @@ from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.core import db as core_db  # noqa: E402
 from app.core import redis as cache_module  # noqa: E402
+from app.etl import semantic_autofill  # noqa: E402
 from app.etl.comments import quote_ident  # noqa: E402
 from app.etl.mirror import TableStat  # noqa: E402
 from app.etl.reader import rds_database_url  # noqa: E402
+from app.etl.semantic_autofill import AutofillResult  # noqa: E402
 from app.etl.semantic_schema import (  # noqa: E402
     SEMANTIC_SCHEMA,
     SEMANTIC_TABLE,
@@ -283,8 +285,13 @@ async def test_source_table_missing_is_graceful(
         # 模擬「讀取回 None」(涵蓋來源表不存在 / 環境未備妥兩種 graceful 情境)
         return None
 
+    async def _noop_autofill(target: object, source: object) -> AutofillResult:
+        # 本測試聚焦副本重灌 graceful,非 autofill;中和 task-003 autofill 免打真身表
+        return AutofillResult()
+
     monkeypatch.setattr(cache_module, "delete_pattern", _fake_delete_pattern)
     monkeypatch.setattr(tasks, "_fetch_semantic_mapping_rows", _fake_fetch_returns_none)
+    monkeypatch.setattr(semantic_autofill, "autofill_semantic_mappings", _noop_autofill)
 
     with caplog.at_level(logging.WARNING, logger="app.worker.tasks"):
         ret = await _invoke(monkeypatch, schema="DS", table="AAA_FILE")
@@ -321,7 +328,9 @@ async def test_mirror_sync_skips_semantic_refresh_when_apply_locked(
 
     assert ret["status"] == "success"
     assert refresh_calls == []
-    assert any("略過本輪語意映射副本重灌" in message for message in caplog.messages)
+    assert any(
+        "略過本輪語意映射自動補列與副本重灌" in message for message in caplog.messages
+    )
 
 
 # ── 3. mirror_sync 完成階段呼叫 replace_all + 語意映射快取失效被呼叫 ────────
@@ -356,9 +365,14 @@ async def test_mirror_sync_replaces_mapping_and_invalidates_cache(
     async def _fake_delete_pattern(pattern: str) -> None:
         invalidated.append(pattern)
 
+    async def _noop_autofill(target: object, source: object) -> AutofillResult:
+        # 本測試聚焦副本重灌 + 快取失效,非 autofill;中和 task-003 autofill 免打真身表
+        return AutofillResult()
+
     monkeypatch.setattr(tasks, "_fetch_semantic_mapping_rows", _fake_fetch)
     monkeypatch.setattr(tasks, "regenerate_views_if_changed", _fake_hook)
     monkeypatch.setattr(cache_module, "delete_pattern", _fake_delete_pattern)
+    monkeypatch.setattr(semantic_autofill, "autofill_semantic_mappings", _noop_autofill)
 
     ret = await _invoke(monkeypatch, schema="DS", table="AAA_FILE")
 
@@ -431,3 +445,124 @@ async def test_fetch_semantic_mapping_rows_returns_none_when_source_missing(
     result = await tasks._fetch_semantic_mapping_rows()
 
     assert result is None
+
+
+# ── task-003 掛接:autofill → 副本重灌 → view 重生同輪生效(Acceptance 四情境)──────
+async def _ensure_isolated_missing_db() -> None:
+    """建立獨立空白 DB(從未跑過 ensure_semantic_schema)→ 保證真身表恆不存在;非 DROP。"""
+    admin_engine = create_async_engine(
+        ADMIN_DATABASE_URL, poolclass=NullPool, isolation_level="AUTOCOMMIT"
+    )
+    try:
+        async with admin_engine.connect() as conn:
+            exists = (
+                await conn.execute(
+                    text("SELECT 1 FROM pg_database WHERE datname = :n"),
+                    {"n": _ISOLATED_DB_NAME},
+                )
+            ).scalar()
+            if exists is None:
+                await conn.execute(text(f'CREATE DATABASE "{_ISOLATED_DB_NAME}"'))
+    finally:
+        await admin_engine.dispose()
+
+
+# (a) 收尾順序:autofill 先於副本重灌(replace_all)
+async def test_mirror_sync_autofill_runs_before_replace_all(
+    monkeypatch: pytest.MonkeyPatch,
+    target_engine: AsyncEngine,
+) -> None:
+    # 真身表存在(冪等建置)→ autofill 前置存在檢查通過,進入補列
+    async with target_engine.begin() as conn:
+        await ensure_semantic_schema(conn)
+
+    order: list[str] = []
+
+    async def _spy_autofill(target: object, source: object) -> AutofillResult:
+        order.append("autofill")
+        return AutofillResult(columns_added=1, tables_added=0, aliases_deduped=0)
+
+    async def _spy_refresh(session: object) -> None:
+        order.append("replace_all")
+
+    monkeypatch.setattr(semantic_autofill, "autofill_semantic_mappings", _spy_autofill)
+    monkeypatch.setattr(tasks, "refresh_semantic_copy_and_views", _spy_refresh)
+
+    ret = await _invoke(monkeypatch, schema="DS", table="AAA_FILE")
+
+    assert ret["status"] == "success"
+    assert order == ["autofill", "replace_all"]
+
+
+# (b) 真身表不存在 → 略過 autofill,不 fail run,且不呼叫 autofill 本體
+async def test_mirror_sync_autofill_skipped_when_mapping_table_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    await _ensure_isolated_missing_db()
+    monkeypatch.setenv("AWS_RDS_TARGET_DB", _ISOLATED_DB_NAME)
+
+    called: list[bool] = []
+
+    async def _spy_autofill(target: object, source: object) -> AutofillResult:
+        called.append(True)
+        return AutofillResult()
+
+    monkeypatch.setattr(semantic_autofill, "autofill_semantic_mappings", _spy_autofill)
+
+    with caplog.at_level(logging.WARNING, logger="app.worker.tasks"):
+        ret = await _invoke(monkeypatch, schema="DS", table="AAA_FILE")
+
+    assert ret["status"] == "success"
+    assert called == []
+    assert any("略過語意映射自動補列" in message for message in caplog.messages)
+
+
+# (c) autofill 拋例外 → warning 後既有副本重灌照跑(不因補列失敗擋收尾)
+async def test_mirror_sync_autofill_exception_still_triggers_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+    target_engine: AsyncEngine,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async with target_engine.begin() as conn:
+        await ensure_semantic_schema(conn)
+
+    refresh_calls: list[bool] = []
+
+    async def _boom_autofill(target: object, source: object) -> AutofillResult:
+        raise RuntimeError("autofill boom")
+
+    async def _spy_refresh(session: object) -> None:
+        refresh_calls.append(True)
+
+    monkeypatch.setattr(semantic_autofill, "autofill_semantic_mappings", _boom_autofill)
+    monkeypatch.setattr(tasks, "refresh_semantic_copy_and_views", _spy_refresh)
+
+    with caplog.at_level(logging.WARNING, logger="app.worker.tasks"):
+        ret = await _invoke(monkeypatch, schema="DS", table="AAA_FILE")
+
+    assert ret["status"] == "success"
+    assert refresh_calls == [True]
+    assert any("語意映射自動補列失敗" in message for message in caplog.messages)
+
+
+# (d) semantic_apply(手動套用變更)路徑不掛 autofill
+async def test_semantic_apply_does_not_call_autofill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: list[bool] = []
+
+    async def _spy_autofill(target: object, source: object) -> AutofillResult:
+        called.append(True)
+        return AutofillResult()
+
+    async def _fake_fetch_none() -> list[SemanticMappingRow] | None:
+        return None
+
+    monkeypatch.setattr(semantic_autofill, "autofill_semantic_mappings", _spy_autofill)
+    monkeypatch.setattr(tasks, "_fetch_semantic_mapping_rows", _fake_fetch_none)
+
+    task = await tasks.semantic_apply.kiq()
+    result = await task.wait_result(timeout=10)
+    assert not result.is_err, result.error
+    assert called == []

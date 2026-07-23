@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 001 | 同步 schema drift 偵測 + 目標表自動 ADD COLUMN | done | ✓ | — | `backend/app/etl/mirror.py` / `backend/tests/test_mirror.py` |
 | 002 | 語意映射自動補列模組(confirmed + 表層級 + 別名查重 + DS 字典 zh) | done | ✓ | — | `backend/app/etl/semantic_autofill.py` / `backend/tests/test_semantic_autofill.py` |
-| 003 | 同步收尾掛接:autofill → 副本重灌 → view 重生同輪生效 | pending | ✗ | 002 | `backend/app/worker/tasks.py` / `backend/tests/test_semantic_mapping_sync.py` |
+| 003 | 同步收尾掛接:autofill → 副本重灌 → view 重生同輪生效 | done | ✗ | 002 | `backend/app/worker/tasks.py` / `backend/tests/test_semantic_mapping_sync.py` |
 | 004 | e2e 驗證 + 收口文件 | pending | ✗ | 001, 002, 003 | `docs/Tasks/v1.5.2/verification-v1.5.2.md` |
 
 ## 拆解摘要
