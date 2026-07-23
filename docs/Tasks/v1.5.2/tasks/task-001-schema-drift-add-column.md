@@ -1,7 +1,7 @@
 ---
 id: task-001
 title: 同步 schema drift 偵測 + 目標表自動 ADD COLUMN
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:

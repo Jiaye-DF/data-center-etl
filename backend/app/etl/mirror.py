@@ -83,6 +83,11 @@ _TARGET_TABLE_EXISTS_SQL = text(
     " WHERE table_schema = :schema AND table_name = :table"
 )
 
+_TARGET_COLUMNS_SQL = text(
+    "SELECT column_name FROM information_schema.columns"
+    " WHERE table_schema = :schema AND table_name = :table"
+)
+
 _SOURCE_STATS_SQL = text(
     "SELECT schemaname AS schema, relname AS name,"
     " n_tup_ins, n_tup_upd, n_tup_del FROM pg_stat_user_tables"
@@ -254,7 +259,28 @@ async def write_mirror(
         )
     ).first()
     if exists is not None:
-        # 禁 DROP:既有表僅清空重灌,保留結構
+        # 禁 DROP:既有表僅清空重灌,保留結構。TRUNCATE 前先偵測 schema drift——查目標實體欄位
+        # (bind params)與來源比對,來源有 / 目標無 → 逐欄 ADD COLUMN(型別沿用重建規則)。
+        # 只加不刪:目標殘欄(來源已無)一律不動,INSERT 欄位清單只列來源欄,殘欄補 NULL 無害。
+        # ALTER 與後續 TRUNCATE / INSERT 同交易,中途失敗整批 rollback,不出現半補欄位。
+        target_cols = {
+            str(r["column_name"])
+            for r in (
+                await conn.execute(
+                    _TARGET_COLUMNS_SQL.bindparams(schema=schema, table=table)
+                )
+            )
+            .mappings()
+            .all()
+        }
+        for c in columns:
+            if c.name not in target_cols:
+                await conn.execute(
+                    text(
+                        f"ALTER TABLE {qualified}"
+                        f" ADD COLUMN {quote_ident(c.name)} {c.type_sql}"
+                    )
+                )
         await conn.execute(text(f"TRUNCATE TABLE {qualified}"))
     else:
         col_defs = ", ".join(f"{quote_ident(c.name)} {c.type_sql}" for c in columns)

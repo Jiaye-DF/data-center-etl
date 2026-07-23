@@ -17,6 +17,14 @@ from app.etl.mirror import (
 )
 
 
+class _FakeMappings:
+    def __init__(self, rows: Sequence[Any]) -> None:
+        self._rows = rows
+
+    def all(self) -> list[Any]:
+        return list(self._rows)
+
+
 class _FakeResult:
     def __init__(self, rows: Sequence[Any]) -> None:
         self._rows = list(rows)
@@ -24,12 +32,22 @@ class _FakeResult:
     def first(self) -> Any | None:
         return self._rows[0] if self._rows else None
 
+    def mappings(self) -> _FakeMappings:
+        return _FakeMappings(self._rows)
+
 
 class FakeConn:
-    """記錄所有執行的 SQL 文字;可設定目標表是否已存在(供 TRUNCATE / CREATE 分流)。"""
+    """記錄所有執行的 SQL 文字;可設定目標表是否已存在(供 TRUNCATE / CREATE 分流)。
 
-    def __init__(self, *, table_exists: bool) -> None:
+    existing_columns:目標表既有實體欄位名(供 schema drift 偵測比對);None 代表不追蹤
+    (視為目標無任何欄位,drift 偵測會補齊全部來源欄)。
+    """
+
+    def __init__(
+        self, *, table_exists: bool, existing_columns: Sequence[str] | None = None
+    ) -> None:
         self._table_exists = table_exists
+        self._existing_columns = list(existing_columns) if existing_columns else []
         self.executed: list[str] = []
         self.driver_executed: list[str] = []
         self.insert_batches: list[int] = []
@@ -39,6 +57,8 @@ class FakeConn:
         self.executed.append(s)
         if "INSERT INTO" in s and isinstance(params, list):
             self.insert_batches.append(len(params))
+        if "information_schema.columns" in s:
+            return _FakeResult([{"column_name": c} for c in self._existing_columns])
         if "information_schema.tables" in s:
             return _FakeResult([(1,)] if self._table_exists else [])
         return _FakeResult([])
@@ -158,7 +178,7 @@ def test_build_comment_statements_no_table_comment() -> None:
 
 
 async def test_write_mirror_existing_table_truncates_not_drops() -> None:
-    conn = FakeConn(table_exists=True)
+    conn = FakeConn(table_exists=True, existing_columns=["AAA01", "AAA02"])
     columns = [MirrorColumn("AAA01", "VARCHAR(10)"), MirrorColumn("AAA02", "VARCHAR(20)")]
     written = await write_mirror(
         conn,
@@ -199,7 +219,7 @@ async def test_write_mirror_missing_table_creates_with_real_types() -> None:
 
 async def test_write_mirror_streams_in_batches_not_materialized() -> None:
     """分批 INSERT:每批各一次 execute,不整表物化(scan AD-006)。"""
-    conn = FakeConn(table_exists=True)
+    conn = FakeConn(table_exists=True, existing_columns=["AAA01"])
     columns = [MirrorColumn("AAA01", "VARCHAR(10)")]
     batches = [
         [{"AAA01": "a"}, {"AAA01": "b"}],
@@ -221,7 +241,7 @@ async def test_write_mirror_streams_in_batches_not_materialized() -> None:
 
 async def test_write_mirror_comment_with_colon_goes_driver_raw() -> None:
     """COMMENT 內容含冒號(如 "Y":1)須以 driver 直送執行,不得經 text() 誤解析成 bind 參數。"""
-    conn = FakeConn(table_exists=True)
+    conn = FakeConn(table_exists=True, existing_columns=["AZA72"])
     columns = [MirrorColumn("AZA72", "VARCHAR(1)")]
     await write_mirror(
         conn,
@@ -237,7 +257,7 @@ async def test_write_mirror_comment_with_colon_goes_driver_raw() -> None:
 
 
 async def test_write_mirror_skips_empty_batches() -> None:
-    conn = FakeConn(table_exists=True)
+    conn = FakeConn(table_exists=True, existing_columns=["AAA01"])
     columns = [MirrorColumn("AAA01", "VARCHAR(10)")]
     written = await write_mirror(
         conn,
@@ -250,6 +270,77 @@ async def test_write_mirror_skips_empty_batches() -> None:
     )
     assert written == 1
     assert conn.insert_batches == [1]
+
+
+# ---------------------------------------------------------------------------
+# schema drift:既有表 TRUNCATE 前偵測來源 vs 目標欄差,只加不刪
+# ---------------------------------------------------------------------------
+
+
+async def test_write_mirror_adds_missing_source_column() -> None:
+    """(a) 既有表 + 來源多一欄 → TRUNCATE 前 ADD COLUMN,且新欄隨 INSERT 寫入。"""
+    conn = FakeConn(table_exists=True, existing_columns=["AAA01"])
+    columns = [MirrorColumn("AAA01", "VARCHAR(10)"), MirrorColumn("AAA02", "VARCHAR(20)")]
+    written = await write_mirror(
+        conn,
+        schema="DS",
+        table="AAA_FILE",
+        columns=columns,
+        row_batches=_make_batches([[{"AAA01": "1", "AAA02": "x"}]]),
+        table_comment=None,
+        column_comments={},
+    )
+    joined = "\n".join(conn.executed)
+    assert written == 1
+    # 來源多的欄以重建型別 ADD COLUMN(識別字引號化),且不 DROP
+    assert 'ALTER TABLE "DS"."AAA_FILE" ADD COLUMN "AAA02" VARCHAR(20)' in joined
+    assert "DROP" not in joined.upper()
+    # ALTER 必在 TRUNCATE 之前(同交易,補欄後才清空重灌)
+    assert joined.index("ADD COLUMN") < joined.index("TRUNCATE TABLE")
+    # 新欄進 INSERT 欄位清單 → 資料寫入
+    assert any("INSERT INTO" in s and '"AAA02"' in s for s in conn.executed)
+
+
+async def test_write_mirror_keeps_residual_target_column() -> None:
+    """(b) 目標多殘欄(來源已無)→ 不動、不 DROP,INSERT 正常。"""
+    conn = FakeConn(
+        table_exists=True, existing_columns=["AAA01", "AAA02", "LEGACY99"]
+    )
+    columns = [MirrorColumn("AAA01", "VARCHAR(10)"), MirrorColumn("AAA02", "VARCHAR(20)")]
+    written = await write_mirror(
+        conn,
+        schema="DS",
+        table="AAA_FILE",
+        columns=columns,
+        row_batches=_make_batches([[{"AAA01": "1", "AAA02": "x"}]]),
+        table_comment=None,
+        column_comments={},
+    )
+    joined = "\n".join(conn.executed)
+    assert written == 1
+    # 只加不刪:殘欄不觸發 ADD,也不 DROP
+    assert "ADD COLUMN" not in joined
+    assert "DROP" not in joined.upper()
+    assert "TRUNCATE TABLE" in joined
+
+
+async def test_write_mirror_no_drift_no_alter() -> None:
+    """(c) 欄位集合一致 → 無任何 ALTER 往返(僅多一次 information_schema 查詢)。"""
+    conn = FakeConn(table_exists=True, existing_columns=["AAA01", "AAA02"])
+    columns = [MirrorColumn("AAA01", "VARCHAR(10)"), MirrorColumn("AAA02", "VARCHAR(20)")]
+    written = await write_mirror(
+        conn,
+        schema="DS",
+        table="AAA_FILE",
+        columns=columns,
+        row_batches=_make_batches([[{"AAA01": "1", "AAA02": "x"}]]),
+        table_comment=None,
+        column_comments={},
+    )
+    joined = "\n".join(conn.executed)
+    assert written == 1
+    assert "ALTER TABLE" not in joined
+    assert "TRUNCATE TABLE" in joined
 
 
 class _SchemaRaceConn(FakeConn):
@@ -265,7 +356,7 @@ class _SchemaRaceConn(FakeConn):
 
 async def test_write_mirror_swallows_schema_create_race() -> None:
     """多表並行首次同步同 schema:搶建輸掉(IntegrityError)須吞掉續行,不中止鏡像。"""
-    conn = _SchemaRaceConn(table_exists=True)
+    conn = _SchemaRaceConn(table_exists=True, existing_columns=["AAA01"])
     columns = [MirrorColumn("AAA01", "VARCHAR(10)")]
     written = await write_mirror(
         conn,
