@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DataHub API Gateway 細節架構 — 模組拆分 + 組織權限管理</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%230a8ca8'/%3E%3Cg%20fill='none'%20stroke='%23ffffff'%20stroke-width='4'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M32%2011%2051%2019v14c0%2011-8%2018-19%2022-11-4-19-11-19-22V19Z'/%3E%3Cpath%20d='M24%2032l6%206%2011-12'/%3E%3C/g%3E%3C/svg%3E">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  h1, h2, h4, p { margin: 0; }
+  img { max-width: 100%; }
+
+  :root {
+    --bg: #eef1f7;
+    --panel: #ffffff;
+    --ink: #10151f;
+    --ink-soft: #3d4658;
+    --ink-faint: #6b7488;
+    --line: #dce2ec;
+    --line-strong: #c4ccda;
+    --flow: #0a8ca8;
+    --flow-soft: rgba(10,140,168,0.14);
+
+    /* module accent */
+    --c-acc:  #0a8ca8; --bg-acc:  #e3f4f9;   /* API Client 連接層 */
+    --c-adm:  #4256d4; --bg-adm:  #eaeefc;   /* 後台權限管理 */
+    --c-az:   #7c5fb5; --bg-az:   #f0ecf8;   /* 權限引擎 */
+    --c-srv:  #0f8f84; --bg-srv:  #e5f4f2;   /* 資料供應 API */
+    --c-ops:  #4c5a70; --bg-ops:  #eef1f6;   /* 稽核治理 */
+
+    /* 建置狀態 */
+    --st-done: #159a54; --st-done-bg: #e3f6ea;
+    --st-wip:  #b8511c; --st-wip-bg:  #fcecdd;
+    --st-plan: #3a63c4; --st-plan-bg: #e7edfb;
+    --card-done: #eaf7ef;
+    --card-wip:  #fbefe1;
+    --card-plan: #eef2fc;
+
+    --mark: #c8102e;
+    --ok: #1f9d55; --warn: #d97706; --danger: #dc2626; --info: #2563eb;
+
+    --radius: 16px;
+    --radius-sm: 10px;
+    --shadow: 0 1px 2px rgba(16,21,31,.05), 0 8px 26px rgba(16,21,31,.08);
+
+    --mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "Consolas", monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0f16; --panel: #151a24; --ink: #f2f5fb;
+      --ink-soft: #b6c0d2; --ink-faint: #7c86a0;
+      --line: #28303f; --line-strong: #384155;
+      --flow: #3fc0dd; --flow-soft: rgba(63,192,221,0.16);
+      --mark: #ff7b87;
+      --shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 30px rgba(0,0,0,.45);
+      --c-acc:#3fc0dd;  --bg-acc:#0f2c35;
+      --c-adm:#8093f2;  --bg-adm:#1a2039;
+      --c-az:#b39aef;   --bg-az:#251c38;
+      --c-srv:#3ec4b6;  --bg-srv:#123331;
+      --c-ops:#93a1b8;  --bg-ops:#1a1f29;
+      --st-done:#45d183; --st-done-bg:#103322;
+      --st-wip:#f0a05a;  --st-wip-bg:#33230f;
+      --st-plan:#8fa6f5; --st-plan-bg:#1b2440;
+      --card-done:#132b1d; --card-wip:#2b2011; --card-plan:#151d30;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#0c0f16; --panel:#151a24; --ink:#f2f5fb;
+    --ink-soft:#b6c0d2; --ink-faint:#7c86a0;
+    --line:#28303f; --line-strong:#384155;
+    --flow:#3fc0dd; --flow-soft:rgba(63,192,221,0.16);
+    --mark:#ff7b87;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 10px 30px rgba(0,0,0,.45);
+    --c-acc:#3fc0dd; --bg-acc:#0f2c35;
+    --c-adm:#8093f2; --bg-adm:#1a2039;
+    --c-az:#b39aef; --bg-az:#251c38;
+    --c-srv:#3ec4b6; --bg-srv:#123331;
+    --c-ops:#93a1b8; --bg-ops:#1a1f29;
+    --st-done:#45d183; --st-done-bg:#103322;
+    --st-wip:#f0a05a; --st-wip-bg:#33230f;
+    --st-plan:#8fa6f5; --st-plan-bg:#1b2440;
+    --card-done:#132b1d; --card-wip:#2b2011; --card-plan:#151d30;
+  }
+  :root[data-theme="light"] {
+    --bg:#eef1f7; --panel:#ffffff; --ink:#10151f;
+    --ink-soft:#3d4658; --ink-faint:#6b7488;
+    --line:#dce2ec; --line-strong:#c4ccda;
+    --flow:#0a8ca8; --flow-soft:rgba(10,140,168,0.14);
+    --mark:#c8102e;
+    --shadow:0 1px 2px rgba(16,21,31,.05), 0 8px 26px rgba(16,21,31,.08);
+    --c-acc:#0a8ca8; --bg-acc:#e3f4f9;
+    --c-adm:#4256d4; --bg-adm:#eaeefc;
+    --c-az:#7c5fb5; --bg-az:#f0ecf8;
+    --c-srv:#0f8f84; --bg-srv:#e5f4f2;
+    --c-ops:#4c5a70; --bg-ops:#eef1f6;
+    --st-done:#159a54; --st-done-bg:#e3f6ea;
+    --st-wip:#b8511c; --st-wip-bg:#fcecdd;
+    --st-plan:#3a63c4; --st-plan-bg:#e7edfb;
+    --card-done:#eaf7ef; --card-wip:#fbefe1; --card-plan:#eef2fc;
+  }
+
+  body {
+    background:
+      radial-gradient(1200px 620px at 50% -10%, var(--flow-soft), transparent 60%),
+      var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .toolbar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; justify-content: flex-end;
+    padding: 12px 26px;
+  }
+  .theme-btn {
+    font-family: var(--sans); font-size: 16px; font-weight: 600;
+    color: var(--ink-soft); background: var(--panel);
+    border: 1px solid var(--line-strong); border-radius: 999px;
+    padding: 8px 16px; cursor: pointer;
+  }
+  .theme-btn:hover { border-color: var(--flow); color: var(--ink); }
+  .theme-btn:focus-visible { outline: 3px solid var(--flow); outline-offset: 2px; }
+
+  .wrap { max-width: none; margin: 0 auto; padding: 8px clamp(20px, 4vw, 64px) 80px; }
+
+  header.masthead { margin-bottom: 30px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 16px;
+    letter-spacing: .16em; text-transform: uppercase;
+    color: var(--flow); font-weight: 600; margin-bottom: 12px;
+  }
+  h1 {
+    font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1;
+    letter-spacing: -0.02em; margin-bottom: 14px;
+    text-wrap: balance; font-weight: 780;
+  }
+  .lede { color: var(--ink-soft); font-size: 18px; }
+
+  .owner-key {
+    display: flex; flex-wrap: wrap; gap: 12px 18px;
+    margin-top: 20px; padding: 14px 18px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+  }
+  .owner-key .k { display: inline-flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 600; }
+  .owner-key .k .pill { font-size: 16px; }
+
+  .stack { display: flex; flex-direction: column; align-items: stretch; }
+
+  .connector { height: 34px; position: relative; display: flex; justify-content: center; }
+  .connector::before {
+    content: ""; width: 3px; height: 100%;
+    background: linear-gradient(var(--line-strong), var(--flow));
+  }
+  .connector::after {
+    content: ""; position: absolute; bottom: 3px;
+    width: 11px; height: 11px;
+    border-right: 3px solid var(--flow); border-bottom: 3px solid var(--flow);
+    transform: rotate(45deg);
+  }
+
+  .layer {
+    position: relative; background: var(--card, var(--panel));
+    border: 1px solid var(--line);
+    border-left: 7px solid var(--edge, var(--flow));
+    border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 24px 26px 26px;
+  }
+
+  .layer.focus { outline: 3px solid var(--tier); outline-offset: 3px; }
+  .focus-tag {
+    font-family: var(--mono); font-size: 16px; font-weight: 700;
+    color: #fff; background: var(--mark);
+    padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  }
+
+  .layer-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  .tier-tag {
+    font-family: var(--sans); font-size: 16px; font-weight: 700;
+    letter-spacing: .02em; color: #fff; background: var(--tier, var(--flow));
+    padding: 5px 13px; border-radius: 999px; white-space: nowrap;
+  }
+  .phase-tag {
+    font-family: var(--mono); font-size: 16px; font-weight: 700;
+    color: var(--tier, var(--flow)); background: transparent;
+    border: 1.5px solid var(--tier, var(--flow));
+    padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .layer-title { font-size: 25px; font-weight: 760; letter-spacing: -0.015em; }
+  .layer-sub { color: var(--ink-faint); font-size: 16px; font-weight: 500; }
+  .layer-desc { color: var(--ink-soft); font-size: 16.5px; margin-top: 10px; max-width: 76ch; }
+  ul.layer-desc { padding-left: 24px; margin-bottom: 0; }
+  ul.layer-desc li { margin: 4px 0; }
+  ul.layer-desc ul { padding-left: 20px; margin: 4px 0; }
+  ul.lede-list { color: var(--ink-soft); font-size: 17px; margin: 12px 0 0; padding-left: 24px; }
+  ul.lede-list li { margin: 5px 0; }
+  .detail-body ul.plist { font-size: 16px; color: var(--ink-soft); margin: 8px 0; padding-left: 22px; }
+  .detail-body ul.plist li { margin: 4px 0; }
+
+  .owner {
+    margin-left: auto;
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 16px; font-weight: 700; white-space: nowrap;
+    padding: 6px 14px; border-radius: 999px;
+    border: 1.5px solid transparent;
+  }
+  .owner::before { content: ""; width: 9px; height: 9px; border-radius: 50%; }
+  .owner.done { color: var(--st-done); background: var(--st-done-bg); border-color: var(--st-done); }
+  .owner.done::before { background: var(--st-done); }
+  .owner.wip  { color: var(--st-wip);  background: var(--st-wip-bg);  border-color: var(--st-wip); }
+  .owner.wip::before  { background: var(--st-wip); }
+  .owner.plan { color: var(--st-plan); background: var(--st-plan-bg); border-color: var(--st-plan); }
+  .owner.plan::before { background: var(--st-plan); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-weight: 700; padding: 4px 11px; border-radius: 999px; border: 1.5px solid transparent;
+  }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
+  .pill.done { color: var(--st-done); background: var(--st-done-bg); border-color: var(--st-done); }
+  .pill.done::before { background: var(--st-done); }
+  .pill.wip  { color: var(--st-wip);  background: var(--st-wip-bg);  border-color: var(--st-wip); }
+  .pill.wip::before  { background: var(--st-wip); }
+  .pill.plan { color: var(--st-plan); background: var(--st-plan-bg); border-color: var(--st-plan); }
+  .pill.plan::before { background: var(--st-plan); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .chip {
+    font-size: 16px; color: var(--ink-soft); background: var(--panel);
+    border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+    padding: 8px 14px; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--tier, var(--flow)); flex: none; }
+  .chip b { color: var(--ink); font-weight: 700; }
+
+  .mark { color: var(--mark); font-weight: 750; font-style: normal; }
+
+  .infra-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-top: 16px; }
+  @media (max-width: 860px) { .infra-row { grid-template-columns: 1fr; } }
+  .infra-card { border: 1px solid var(--line-strong); background: var(--panel); border-radius: var(--radius-sm); padding: 15px 17px; }
+  .infra-card h4 { font-size: 17px; font-weight: 720; letter-spacing: -0.01em; margin-bottom: 5px; }
+  .infra-card p { font-size: 16px; color: var(--ink-soft); }
+
+  .cross-note { margin-top: 12px; font-size: 16px; color: var(--ink-faint); font-weight: 500; }
+
+  details.detail {
+    margin-top: 18px; border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm); background: var(--panel); overflow: hidden;
+  }
+  details.detail > summary {
+    cursor: pointer; padding: 12px 16px; font-weight: 700; font-size: 16px;
+    color: var(--tier, var(--flow)); list-style: none;
+    display: flex; align-items: center; gap: 9px; user-select: none;
+  }
+  details.detail > summary::-webkit-details-marker { display: none; }
+  details.detail > summary::before { content: "▸"; transition: transform .15s ease; }
+  details.detail[open] > summary::before { transform: rotate(90deg); }
+  details.detail > summary:hover { background: color-mix(in srgb, var(--tier, var(--flow)) 8%, var(--panel)); }
+  details.detail > .detail-body { padding: 2px 18px 18px; border-top: 1px dashed var(--line-strong); }
+  .detail-body h4 { font-size: 16.5px; font-weight: 740; margin: 18px 0 6px; color: var(--ink); }
+  .detail-body p { font-size: 16px; color: var(--ink-soft); margin: 6px 0; }
+  .detail-body table { width: 100%; border-collapse: collapse; font-size: 16px; margin: 10px 0 4px; }
+  .detail-body th, .detail-body td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .detail-body th { background: color-mix(in srgb, var(--tier, var(--flow)) 10%, var(--panel)); font-weight: 700; font-size: 16px; white-space: nowrap; }
+  .detail-body tr:last-child td { border-bottom: none; }
+  .detail-body code, .layer-desc code {
+    font-family: var(--mono); font-size: 16px;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+    padding: 1px 6px; border-radius: 5px;
+  }
+  .detail-body .tblwrap { overflow-x: auto; }
+  pre.code {
+    background: color-mix(in srgb, var(--ink) 6%, var(--panel));
+    color: var(--ink-soft); border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+    padding: 12px 15px; overflow: auto; font-family: var(--mono);
+    font-size: 16px; line-height: 1.6; margin: 10px 0;
+  }
+  .callout {
+    border-left: 4px solid var(--info); background: color-mix(in srgb, var(--info) 8%, var(--panel));
+    border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 12px 0; font-size: 16px; color: var(--ink-soft);
+  }
+  .callout.warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--panel)); }
+  .callout.danger { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--panel)); }
+  .callout.ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 9%, var(--panel)); }
+  .callout .h { display: block; font-weight: 800; color: var(--ink); margin-bottom: 2px; }
+  .chip-io { display: inline-block; font-size: 16px; font-weight: 700; padding: 1px 8px; border-radius: 6px; }
+  .chip-io.in { background: #dcfce7; color: #166534; }
+  .chip-io.out { background: #dbeafe; color: #1e40af; }
+
+  .diagram {
+    position: relative; background: #fff; border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm); padding: 16px; margin: 12px 0;
+    text-align: center; overflow-x: auto;
+  }
+  .diagram .cap { font-size: 16px; color: #5b6b7b; margin-top: 8px; }
+  .mermaid { font-size: 16px; max-width: 100%; }
+  .mermaid svg { height: auto !important; max-width: 100%; }
+  .popbtn {
+    position: absolute; top: 10px; right: 10px; z-index: 3;
+    background: var(--c-acc); color: #fff; border: none;
+    padding: 6px 11px; border-radius: 8px; font-size: 16px; font-weight: 700;
+    cursor: pointer; opacity: .9; font-family: inherit;
+  }
+  .popbtn:hover { opacity: 1; }
+
+  footer.legend {
+    margin-top: 44px; padding-top: 22px; border-top: 1px solid var(--line-strong);
+    display: flex; flex-wrap: wrap; gap: 16px 24px; font-size: 16px; font-weight: 600; color: var(--ink-soft);
+  }
+  .legend-item { display: inline-flex; align-items: center; gap: 9px; }
+  .legend-item .sw { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media print {
+    .toolbar, .popbtn { display: none; }
+    body { background: #fff; }
+    .layer, .connector { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="theme-btn" id="themeToggle" type="button">切換主題</button>
+  </div>
+
+  <div class="wrap">
+    <header class="masthead">
+      <p class="eyebrow">Enterprise Data Hub · Phase 3A · API Gateway 細節設計</p>
+      <h1>DataHub API Gateway 細節架構</h1>
+      <p class="lede">
+        對應〈地端 → AWS 資料中樞架構〉<span class="mark">第六層「DataHub API Gateway」的模組內部展開</span>；各模組可點開「詳細設計」查看流程圖與資料模型。
+      </p>
+      <ul class="lede-list">
+        <li>串接方：<span class="mark">外部應用系統（API Client · 機器對機器）</span></li>
+        <li>驗證：<span class="mark">Client Credentials 換發 15 分鐘短效 JWT</span>（後台管理介面才走 DF-SSO）</li>
+        <li>權限階層：<span class="mark">系統別 → 作業 → 角色權限設定檔 → Role</span>；設定檔授權細到 <span class="mark">Profile → Operation → Table → Column → Read / Edit</span></li>
+        <li>綁定：API Client 只綁 <span class="mark">1 個 Role（0..1）＋ 特例權限 0..N</span>（臨時分派、可設效期）</li>
+        <li>最終欄位 = <span class="mark">設定檔在該作業下勾選的欄位與動作（∩ 作業範圍）；沒給 = 不回傳</span>；Edit = 新增 / 更新 / 刪除（刪除一律軟刪除）</li>
+        <li>每筆請求先完成權限判斷，才以<span class="mark">統一封套回傳只含授權欄位的語意 JSON</span></li>
+      </ul>
+
+      <div class="owner-key">
+        <span class="k"><span class="pill done">已建置</span>&nbsp;已完成建置並驗證運行</span>
+        <span class="k"><span class="pill wip">進行中</span>&nbsp;Phase 3A 當前投入項目</span>
+        <span class="k"><span class="pill plan">規劃中</span>&nbsp;設計已定、待實作</span>
+      </div>
+
+      <details class="detail" style="--tier: var(--c-acc); margin-top:16px;" open>
+        <summary>🗺 端到端請求授權流程總圖（模組視角 · 一次看懂全鏈路）</summary>
+        <div class="detail-body">
+          <div class="diagram">
+            <div class="mermaid">
+flowchart TB
+  subgraph CLIENT["🖥 外部應用系統（API Client）"]
+    APP["CRM · BI · 訂單平台 · Agent"]
+  end
+
+  subgraph GW["DataHub API Gateway（EC2 · FastAPI）"]
+    direction TB
+    subgraph M1["模組① API Client 連接層"]
+      TOK["/token · /refresh_token<br/>驗 secret → 簽短效 JWT"]
+      RL["Rate Limit（per Client）"]
+      AUTHN["JWT 本地驗簽<br/>不回源 · 不查 DB"]
+    end
+    subgraph M3["模組③ 權限引擎 AuthZ"]
+      RESOLVE["權限解析<br/>Role 設定檔 ∪ 特例權限"]
+      TCHECK{"作業已授權?"}
+      CFILTER["逐表欄位過濾<br/>作業範圍 ∩ 表欄位授權"]
+    end
+    subgraph M4["模組④ 資料供應"]
+      QRY["逐表查詢<br/>只 SELECT 可見欄位"]
+      SEM["語意轉換<br/>英文 key JSON"]
+    end
+    AUD["模組⑤ 稽核留痕"]
+  end
+
+  subgraph ADM["模組② DataHub 後台 · 組織權限管理（管理員經 DF-SSO 登入）"]
+    CONSOLE["系統別 · 作業 · 設定檔 · Role<br/>特例權限 · API Client 管理"]
+    PDB[("權限資料表<br/>api_clients · roles · profiles · exceptions")]
+  end
+
+  HUB[("RDS ETL-Hub<br/>語意 View")]
+  E401["401 JWT 過期 / 簽章無效"]
+  E403["403 無作業權限"]
+
+  APP -. "⓪ POST /token（client_id + secret）" .-> TOK
+  TOK -. "短效 JWT（15 分鐘）" .-> APP
+  TOK -. "驗 secret 雜湊 + Client 狀態" .-> PDB
+  APP == "① API 請求（Bearer JWT）" ==> RL --> AUTHN
+  AUTHN -- "驗簽失敗 / 過期" --> E401
+  AUTHN -- "② 通過" --> RESOLVE
+  RESOLVE -. "讀取綁定關係（TTL 快取）" .-> PDB
+  CONSOLE -- "維護" --> PDB
+  RESOLVE --> TCHECK
+  TCHECK -- "否" --> E403
+  TCHECK -- "③ 是" --> CFILTER --> QRY
+  QRY -- "④ 查詢" --> HUB
+  HUB --> SEM
+  SEM == "⑤ 200 統一封套 JSON（僅授權欄位）" ==> APP
+  SEM -. "⑥ 非同步寫入" .-> AUD
+
+  classDef client fill:#fde8d8,stroke:#EC7211,color:#7a3b10;
+  classDef acc fill:#e3f4f9,stroke:#0a8ca8,color:#0b4552;
+  classDef az fill:#f0ecf8,stroke:#5b4a8a,color:#3f3361;
+  classDef srv fill:#e5f4f2,stroke:#0f8f84,color:#0a4d46;
+  classDef adm fill:#eaeefc,stroke:#4256d4,color:#22306e;
+  classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  classDef err fill:#fef2f2,stroke:#dc2626,color:#7f1d1d;
+  classDef ops fill:#eef1f6,stroke:#4c5a70,color:#2b3547;
+  class APP client; class TOK,RL,AUTHN acc; class RESOLVE,TCHECK,CFILTER az;
+  class QRY,SEM srv; class CONSOLE adm; class PDB,HUB db; class E401,E403 err; class AUD ops;
+            </div>
+            <div class="cap">端到端請求授權流程總圖：取得 token（Client Credentials）→ JWT 驗簽 → 權限判斷（作業 → 表 → 欄位）→ 查詢供應 → 稽核；後台維護 Client / 作業 / 權限資料表</div>
+          </div>
+        </div>
+      </details>
+    </header>
+
+    <div class="stack">
+
+      <!-- ── 模組① API Client 連接層 ───────────────────── -->
+      <section class="layer" style="--tier: var(--c-acc); --card: var(--card-wip); --edge: var(--st-wip);">
+        <div class="layer-head">
+          <span class="tier-tag">模組①</span>
+          <h2 class="layer-title">API Client 連接層（JWT 驗證）</h2>
+          <span class="phase-tag">Phase 3A</span>
+          <span class="owner wip">進行中</span>
+        </div>
+        <p class="layer-sub">Client Credentials 取得 token · 短效 JWT 本地驗簽 · 流量控管</p>
+        <ul class="layer-desc">
+          <li>所有外部請求的<span class="mark">唯一入口</span></li>
+          <li>取得 token：client_id + client secret 打 <code>/token</code>（首次）或 <code>/refresh_token</code>（過期換新）→ <span class="mark">15 分鐘短效 JWT</span></li>
+          <li>資料 API：Bearer JWT <span class="mark">本機驗簽 — 不回源、不查資料庫</span>；驗不過直接 <code>401</code>，不進入後續模組</li>
+          <li>通過後組請求上下文（<span class="mark">哪個 Client · 哪個作業 · 哪些欄位</span>）交給權限引擎</li>
+        </ul>
+        <div class="chips">
+          <span class="chip"><span class="dot"></span><b>Client Credentials</b>&nbsp;OAuth2 M2M</span>
+          <span class="chip"><span class="dot"></span><b>短效 JWT</b>&nbsp;15 分鐘</span>
+          <span class="chip"><span class="dot"></span><b>本地驗簽</b>&nbsp;不回源 · 不查 DB</span>
+          <span class="chip"><span class="dot"></span><b>Rate Limit</b>&nbsp;per Client</span>
+          <span class="chip"><span class="dot"></span><b>對外路由</b>&nbsp;/api/client/v1.0/*</span>
+        </div>
+        <details class="detail">
+          <summary>📋 詳細設計 — 路由總表 · token 取得 / 驗簽流程 · 錯誤碼 · 抗壓設計</summary>
+          <div class="detail-body">
+            <h4>路由命名空間：對外 <code>/api/client/{version}/{service}</code> · 後台 <code>/api/v1</code></h4>
+            <ul class="plist">
+              <li>對外串接一律 <code>/api/client/{version}/{service}/...</code>；<code>{service}</code> = 系統別（<code>erp</code> / <code>crm</code> / <code>hrm</code> / <code>bpm</code> / <code>zpos</code>…），<span class="mark">作業歸屬系統別底下，路由 / 授權 / 稽核都好維護</span></li>
+              <li>token 端點不分 service：一個 Client 一份身分，通用全部 service</li>
+              <li><span class="mark">後台管理（模組②，管理員經 DF-SSO）沿用既有 <code>/api/v1/...</code> 不動</span>；兩個命名空間分開，middleware / 限流 / 稽核策略各自掛</li>
+            </ul>
+            <h4>對外路由總表（/api/client/v1.0）</h4>
+            <div class="tblwrap"><table>
+              <thead><tr><th>路由</th><th>驗證方式</th><th>用途</th></tr></thead>
+              <tbody>
+                <tr><td><code>POST /api/client/v1.0/token</code></td><td>client_id + client_secret（比對雜湊）</td><td>首次取得 access token（短效 JWT）；secret 放 body 不放 query</td></tr>
+                <tr><td><code>POST /api/client/v1.0/refresh_token</code></td><td>過期 access token + client_id + client_secret</td><td>換新 token（<span class="mark">語意刷新，不發 refresh token</span>）；額外驗舊 token 簽章有效（忽略 exp）且 <code>sub</code> = client_id，防交叉取得 token</td></tr>
+                <tr><td><code>GET /api/client/v1.0/{service}/operations</code>（選用）</td><td>Bearer JWT（本地驗簽）</td><td>列出該 Client 在此 service 已授權的作業；<span class="mark">未授權的作業連名字都不出現</span></td></tr>
+                <tr><td><code>GET /api/client/v1.0/{service}/operations/{operation}</code></td><td>Bearer JWT（本地驗簽）</td><td>執行作業查詢（需 <code>read</code>）：展開作業的表 × 欄位範圍 ∩ 表欄位授權，<code>data</code> 依表分組回傳；<code>fields</code> / 分頁 / 篩選參數</td></tr>
+                <tr><td><code>POST / PATCH / DELETE /api/client/v1.0/{service}/operations/{operation}</code>（規劃）</td><td>Bearer JWT（本地驗簽）</td><td>作業寫入：需該表欄位 <code>edit</code> 權限；<span class="mark">DELETE 一律軟刪除（<code>is_deleted</code>）</span>，禁物理刪除</td></tr>
+              </tbody>
+            </table></div>
+            <div class="callout"><span class="h">💡 /refresh_token 的定位</span>它同樣要帶 secret，安全上與 <code>/token</code> 等價 — 價值在<span class="mark">語意與稽核</span>：驗舊 token 簽章（擋垃圾字串）、驗 sub 一致（拿 A 系統過期 token + B 系統 secret 不給換），稽核可追蹤 token 世代鏈。</div>
+            <h4>版本策略與資料夾結構（/api/client 專用）</h4>
+            <ul class="plist">
+              <li>不把所有 router 塞進單一 <code>v1/</code> 資料夾</li>
+              <li><span class="mark">共用邏輯與 service 模組「版本無關」，版本層只是薄薄的掛載設定</span></li>
+              <li>新版本只宣告與前版的差異（override），沒改的端點自動沿用 — 避免每出一版就整包複製</li>
+            </ul>
+            <pre class="code">backend/app/
+├── api/v1/                    # 後台管理 API — 現況維持，不動
+└── api_client_router/         # 對外 API Client 串接專用（命名 api-client-router；Python 套件名不允許連字號 → 底線）
+    ├── common/                # 版本無關共用層
+    │   ├── auth.py            #   /token · /refresh_token 簽發、JWT 驗簽
+    │   ├── authz.py           #   權限引擎（作業範圍 ∩ 表欄位授權）
+    │   ├── envelope.py        #   統一回應封套
+    │   └── rate_limit.py      #   Redis 限流 / 失敗鎖定
+    ├── services/              # service 業務模組（版本無關）
+    │   ├── erp.py
+    │   ├── crm.py
+    │   ├── zcar.py
+    │   └── zpos.py
+    └── versions/              # 版本掛載層（薄）
+        ├── registry.py        #   共用註冊方法 mount_version("v1.0", overrides)
+        ├── v1_0.py            #   /api/client/v1.0/{service}/...
+        └── v1_1.py            #   未來版本：只寫與 v1.0 的差異</pre>
+            <div class="callout"><span class="h">💡 共用註冊方法</span><code>registry.mount_version()</code> 走訪 <code>services/</code>，把各 service 端點掛到 <code>/api/client/{version}/{service}/...</code>；新版本檔只提供 <code>overrides</code>（行為有變的端點），其餘自動沿用前版 — <span class="mark">出新版本 = 新增一個薄檔案，不是複製整包 router</span>。</div>
+            <h4>token 取得與驗簽流程</h4>
+            <div class="diagram">
+              <div class="mermaid">
+flowchart LR
+  subgraph T["token 取得（首次 /token · 過期後 /refresh_token）"]
+    direction TB
+    TREQ["POST /token<br/>client_id + client_secret"] --> TRL{"token 限流 /<br/>連續失敗鎖定?"}
+    RREQ["POST /refresh_token<br/>過期 access token<br/>+ client_id + client_secret"] --> RCHK{"舊 token 簽章有效（忽略 exp）<br/>且 sub = client_id?"}
+    RCHK -- "否" --> TE401
+    RCHK -- "是" --> TRL
+    TRL -- "超限" --> TE429["429 / 暫時鎖定"]
+    TRL -- "否" --> TVK{"secret 雜湊比對<br/>+ Client 啟用中?"}
+    TVK -- "否" --> TE401["401 invalid_client"]
+    TVK -- "是" --> TJWT["簽發短效 JWT<br/>sub=client_id · exp=15min"]
+  end
+  subgraph D["資料 API（每筆請求）"]
+    direction TB
+    REQ["GET /api/client/v1.0/{service}/operations/...<br/>Authorization: Bearer JWT"] --> RL2{"流量超限?<br/>（per Client）"}
+    RL2 -- "是" --> E429["429 Too Many Requests"]
+    RL2 -- "否" --> VK{"JWT 驗簽 + 未過期?<br/>（本地驗證）"}
+    VK -- "否" --> E401["401 → 串接方打 /refresh_token 換新 token"]
+    VK -- "是" --> CTX["組請求上下文<br/>client + dataset + fields"]
+    CTX --> NEXT["→ 模組③ 權限引擎"]
+  end
+  TJWT -. "JWT 供後續請求使用" .-> REQ
+  classDef acc fill:#e3f4f9,stroke:#0a8ca8,color:#0b4552;
+  classDef err fill:#fef2f2,stroke:#dc2626,color:#7f1d1d;
+  class TREQ,RREQ,RCHK,TRL,TVK,TJWT,REQ,RL2,VK,CTX,NEXT acc; class TE429,TE401,E429,E401 err;
+              </div>
+              <div class="cap">連接層流程：token 取得（驗 secret 雜湊 → 簽 JWT）低頻；資料 API（本地驗簽 → 組上下文）高頻零依賴</div>
+            </div>
+            <h4>錯誤碼約定</h4>
+            <div class="tblwrap"><table>
+              <thead><tr><th>情境</th><th>回應</th><th>說明</th></tr></thead>
+              <tbody>
+                <tr><td>secret 錯誤 / Client 已停用（<code>/token</code> · <code>/refresh_token</code>）</td><td><code>401 invalid_client</code></td><td>不區分「Client 不存在」與「secret 錯誤」，防列舉</td></tr>
+                <tr><td>舊 token 簽章無效 / <code>sub</code> ≠ client_id（<code>/refresh_token</code>）</td><td><code>401 invalid_client</code></td><td>與 secret 錯誤同一種回應，不透露是哪一項不過</td></tr>
+                <tr><td>JWT 缺失 / 過期 / 簽章無效（資料 API）</td><td><code>401 Unauthorized</code></td><td>串接方收到即打 <code>/refresh_token</code> 換新 token 再重試</td></tr>
+                <tr><td>token 端點爆破 / 連續失敗</td><td><code>429</code> + 暫時鎖定</td><td>以 client_id + 來源 IP 計，低頻上限</td></tr>
+                <tr><td>資料 API 流量超限</td><td><code>429 Too Many Requests</code></td><td>per Client 額度，附 <code>Retry-After</code></td></tr>
+                <tr><td>無資料表權限 / 欄位交集為空</td><td><code>403 Forbidden</code></td><td>由模組③ 權限引擎判定（見該模組）</td></tr>
+              </tbody>
+            </table></div>
+            <ul class="plist">
+              <li>成功與錯誤一律回<span class="mark">統一回應封套</span>（<code>success / response_code / detail / data</code>，見模組④）</li>
+              <li><code>detail</code> 僅基本錯誤資訊，不洩漏內部設計</li>
+            </ul>
+            <h4>抗壓設計（防打崩）</h4>
+            <div class="tblwrap"><table>
+              <thead><tr><th>防線</th><th>做法</th><th>擋什麼</th></tr></thead>
+              <tbody>
+                <tr><td>JWT 本地驗簽</td><td>資料請求的驗證<span class="mark">零外部回源、零 DB 查詢</span></td><td>高頻請求打爆驗證依賴（測試站曾因每請求回源 SSO 驗證 429 → 502）</td></tr>
+                <tr><td><code>/token</code> · <code>/refresh_token</code> 嚴格限流</td><td>token 取得天生低頻（約 15 分鐘一次），設低額度 + 連續失敗鎖定（失敗計數與鎖定旗標同樣放 Redis，帶 TTL 自動解鎖）</td><td>secret 爆破、token 請求風暴</td></tr>
+                <tr><td>per-Client Rate Limit</td><td>各系統獨立額度 + 全域總上限；<span class="mark">計數器放 Redis</span>（<code>INCR</code> + TTL，跨 worker / 實例共用，沿用既有 ETL Redis 加 <code>rl:</code> 前綴隔離）</td><td>單一串接方失控（迴圈狂打）拖垮全體；in-process 計數在多 worker 下額度會 × worker 數失效</td></tr>
+                <tr><td>Redis 故障策略</td><td>限流 / 鎖定 <span class="mark">fail-open</span>（Redis 不通 → 放行 + 大聲告警）</td><td>避免 Redis 變成資料供應的單點故障；內網場景限流是防失控、不是防攻擊</td></tr>
+                <tr><td>分頁強制上限</td><td><code>limit</code> 封頂（如 ≤ 1000）+ 查詢逾時</td><td>一條大查詢拖垮 ETL-Hub</td></tr>
+                <tr><td>網路層</td><td>SG 只放內網 / VPN CIDR，不開公網</td><td>直接砍掉外部攻擊面</td></tr>
+              </tbody>
+            </table></div>
+            <div class="callout ok"><span class="h">✅ 與 DF-SSO 的分工</span>資料 API 完全不經 DF-SSO — JWT 由 Gateway 自簽自驗，token 有效期內對外零依賴；DF-SSO 僅用於<span class="mark">後台管理介面的管理員（人）登入</span>。</div>
+          </div>
+        </details>
+      </section>
+
+      <div class="connector"></div>
+
+      <!-- ── 模組② DataHub 後台 · 組織權限管理（設計焦點） ── -->
+      <section class="layer focus" style="--tier: var(--c-adm); --card: var(--card-plan); --edge: var(--st-plan);">
+        <div class="layer-head">
+          <span class="tier-tag">模組②</span>
+          <h2 class="layer-title">DataHub 後台 · 組織權限管理</h2>
+          <span class="phase-tag">Phase 3A</span>
+          <span class="focus-tag">設計焦點</span>
+          <span class="owner plan">規劃中</span>
+        </div>
+        <p class="layer-sub">權限階層：系統別 → 作業 → 角色權限設定檔 → Role · 特例權限直綁 User · 管理員經 DF-SSO 登入</p>
+        <ul class="layer-desc">
+          <li>權限的<span class="mark">維護面</span>：管理介面是人用的，管理員以 DF-SSO 登入</li>
+          <li>階層由下而上：
+            <ul>
+              <li><span class="mark">系統別（Service）</span>：erp / crm / hrm / bpm / zpos… — 作業的分類容器</li>
+              <li><span class="mark">作業（Operation）</span>：歸屬一個系統別，定義此業務動作需要的表 × 欄位範圍</li>
+              <li><span class="mark">角色權限設定檔（Profile）</span>：授權階層 Profile → Operation → Table → Column → Read / Edit — 欄位與動作授權的主要來源</li>
+              <li><span class="mark">Role</span>：綁定 1 個設定檔（必綁、禁空）</li>
+            </ul>
+          </li>
+          <li>API Client（User）<span class="mark">只綁 1 個 Role（0..1）</span>；臨時需求走<span class="mark">特例權限</span>（結構同設定檔，直綁 User、可設效期）</li>
+          <li>最終權限 = Role 設定檔 ∪ 特例權限；<span class="mark">最終欄位 = 設定檔在該作業下勾選的欄位與動作（∩ 作業範圍），沒給 = 不回傳</span></li>
+          <li><span class="mark">Edit = 新增 / 更新 / 刪除</span>（刪除一律軟刪除，禁物理刪除）</li>
+          <li>Salesforce 式<span class="mark">加法模型：只授予、無 deny</span>；並管理 client secret 的發放 / 輪替 / 停用</li>
+        </ul>
+        <div class="infra-row">
+          <div class="infra-card">
+            <h4>🗂 系統別（Service）</h4>
+            <p><code>erp</code> / <code>crm</code> / <code>hrm</code> / <code>bpm</code> / <code>zpos</code>… 作業的分類容器，對應路由 <code>{service}</code> 分段。</p>
+          </div>
+          <div class="infra-card">
+            <h4>📦 作業（Operation）</h4>
+            <p>歸屬一個系統別。定義此動作需要的表 × 欄位範圍（例：O1 → T1 · T2 · T3 的指定欄位）。查詢入口與範圍上限，<b>不決定最終回傳欄位</b>。</p>
+          </div>
+          <div class="infra-card">
+            <h4>📋 角色權限設定檔（Profile）</h4>
+            <p>授權階層：<b>Profile → Operation → Table → Column → Read / Edit</b>（<code>*</code> = 全欄位）。綁作業後，在每個作業底下逐表逐欄設動作 — <b>欄位與動作授權的主要來源</b>。被 Role 綁定。</p>
+          </div>
+          <div class="infra-card">
+            <h4>🎭 Role 區塊</h4>
+            <p>綁定 <b>1 個</b>角色權限設定檔（必綁、禁空角色）。User 的唯一基準權限包，純為方便管理。</p>
+          </div>
+          <div class="infra-card">
+            <h4>🧩 特例權限</h4>
+            <p>臨時分派用：把某作業 / 某些表欄位直接給某個 User，<b>可設效期</b>；不污染 Role 與設定檔。</p>
+          </div>
+          <div class="infra-card">
+            <h4>🔑 API Client 區塊</h4>
+            <p>一個外部應用系統一個 Client（= User）。<b>只綁 1 個 Role（0..1）</b>＋ 特例權限 0..N，管理 secret 發放 / 輪替 / 停用，可預覽最終可見欄位。</p>
+          </div>
+        </div>
+        <div class="chips">
+          <span class="chip"><span class="dot"></span><b>加法模型</b>&nbsp;只授予、無 deny</span>
+          <span class="chip"><span class="dot"></span><b>聯集</b>&nbsp;Role 設定檔 ∪ 特例權限</span>
+          <span class="chip"><span class="dot"></span><b>系統別</b>&nbsp;erp · crm · hrm · bpm · zpos…</span>
+          <span class="chip"><span class="dot"></span><b>作業</b>&nbsp;授權入口 · 表 × 欄位範圍</span>
+          <span class="chip"><span class="dot"></span><b>粒度</b>&nbsp;資料表 × 欄位（跟表走）</span>
+          <span class="chip"><span class="dot"></span><b>secret</b>&nbsp;只存雜湊 · 雙鑰輪替</span>
+          <span class="chip"><span class="dot"></span><b>對照</b>&nbsp;Salesforce Profile / Permission Set</span>
+        </div>
+        <details class="detail">
+          <summary>📋 詳細設計 — 三區塊綁定關係 · 權限資料模型 · 後台管理流程</summary>
+          <div class="detail-body">
+            <h4>階層綁定關係與聯集計算</h4>
+            <div class="diagram">
+              <div class="mermaid">
+flowchart LR
+  subgraph UB["🔑 API Client（User）"]
+    USER["API Client<br/>（外部應用系統）"]
+  end
+  subgraph RB["🎭 Role"]
+    ROLE["Role<br/>綁定 1 個設定檔<br/>（必綁，禁空角色）"]
+  end
+  subgraph PF["📋 角色權限設定檔"]
+    PROF["設定檔 P1<br/>作業 O1 底下：<br/>T1(C11:Read) · T2(C21:Read/Edit) · T3(C31:Read)"]
+  end
+  subgraph SB["🗂 系統別 → 作業"]
+    SVC["系統別 erp"]
+    OP1["作業 O1<br/>範圍：T1(C11·C12)<br/>T2(C21·C22) · T3(C31·C32)"]
+  end
+  subgraph XB["🧩 特例權限"]
+    EXC["特例 E1<br/>臨時分派作業 / 表欄位<br/>（可設效期）"]
+  end
+  EFF["✅ 最終權限<br/>= 設定檔在 O1 下勾的欄位與動作（∩ 範圍）<br/>讀 = C11 · C21 · C31 ｜ 寫 = C21<br/>（沒給 → 不回傳任何欄位）"]
+
+  USER -- "只綁 0..1" --> ROLE
+  USER -. "臨時直綁 0..N" .-> EXC
+  ROLE -- "綁定 1 個" --> PROF
+  SVC -- "含 N 個作業" --> OP1
+  PROF -- "可讀作業" --> OP1
+  PROF -- "表欄位授權" --> EFF
+  OP1 -- "查詢入口 + 範圍上限" --> EFF
+  EXC -. "納入聯集" .-> EFF
+
+  classDef u fill:#fde8d8,stroke:#EC7211,color:#7a3b10;
+  classDef r fill:#eaeefc,stroke:#4256d4,color:#22306e;
+  classDef o fill:#e3f4f9,stroke:#0a8ca8,color:#0b4552;
+  classDef p fill:#f0ecf8,stroke:#5b4a8a,color:#3f3361;
+  classDef eff fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  class USER u; class ROLE r; class PROF,EXC p; class SVC,OP1 o; class EFF eff;
+              </div>
+              <div class="cap">API Client 只綁 1 個 Role + 特例權限(0..N)；Role 綁設定檔（可讀系統 / 作業 + 表欄位授權）；最終回傳 = 作業範圍 ∩ 表欄位授權</div>
+            </div>
+
+            <h4>權限資料模型（規劃 · PostgreSQL）</h4>
+            <div class="diagram">
+              <div class="mermaid">
+erDiagram
+  api_clients ||--o| client_roles : "只綁 0..1 Role"
+  roles ||--o{ client_roles : ""
+  roles }o--|| permission_profiles : "綁定 1 個設定檔（必綁）"
+  permission_profiles ||--o{ profile_operations : "綁哪些作業"
+  operations ||--o{ profile_operations : ""
+  permission_profiles ||--o{ profile_items : "作業 → 表 → 欄位 → 動作"
+  operations ||--o{ profile_items : ""
+  services ||--o{ operations : "系統別下含 N 個作業"
+  operations ||--o{ operation_items : "定義表 × 欄位範圍"
+  api_clients ||--o{ client_exception_sets : "直綁 0..N 特例（可設效期）"
+  exception_sets ||--o{ client_exception_sets : ""
+  exception_sets ||--o{ exception_operations : "臨時分派作業"
+  operations ||--o{ exception_operations : ""
+  exception_sets ||--o{ exception_items : "臨時表 × 欄位授權"
+
+  api_clients {
+    bigint pid PK "內部主鍵（僅 DB 關聯）"
+    uuid api_client_uid UK "對外識別碼"
+    string client_id "取得 token 用識別"
+    string name "應用系統名"
+    string secret_hash "secret 只存雜湊"
+    string status "enabled / disabled"
+  }
+  roles {
+    bigint pid PK
+    uuid role_uid UK "對外識別碼"
+    bigint permission_profile_pid FK "綁定 1 個設定檔（必綁）"
+    string name "角色名（唯一）"
+    string description
+  }
+  services {
+    bigint pid PK
+    uuid service_uid UK "對外識別碼"
+    string code "erp / crm / hrm / bpm / zpos…"
+    string name "系統別名稱"
+  }
+  operations {
+    bigint pid PK
+    uuid operation_uid UK "對外識別碼"
+    bigint service_pid FK "歸屬系統別"
+    string name "作業名（系統別內唯一）"
+    string description "業務動作說明"
+  }
+  permission_profiles {
+    bigint pid PK
+    uuid permission_profile_uid UK "對外識別碼"
+    string name "角色權限設定檔名（唯一）"
+    string description
+  }
+  exception_sets {
+    bigint pid PK
+    uuid exception_set_uid UK "對外識別碼"
+    string name "特例權限名"
+    string description "臨時分派用"
+  }
+  client_exception_sets {
+    bigint pid PK
+    uuid client_exception_set_uid UK "對外識別碼"
+    bigint api_client_pid FK
+    bigint exception_set_pid FK
+    timestamp expires_at "效期（NULL = 不設限）"
+  }
+  operation_items {
+    bigint pid PK
+    uuid operation_item_uid UK "對外識別碼"
+    bigint operation_pid FK "內部關聯用 pid"
+    string table_name "資料表（語意 view 名）"
+    string column_name "作業涵蓋欄位；* 表全欄位"
+  }
+  profile_items {
+    bigint pid PK
+    uuid profile_item_uid UK "對外識別碼"
+    bigint permission_profile_pid FK "內部關聯用 pid"
+    bigint operation_pid FK "歸屬作業（授權巢狀在作業下）"
+    string table_name "資料表（語意 view 名）"
+    string column_name "授權欄位；* 表全欄位"
+    string action "read / edit（edit = 新增 · 更新 · 刪除）"
+  }
+              </div>
+              <div class="cap">權限資料模型：系統別 → 作業；設定檔（可讀作業 + 表欄位授權）被 Role 綁定；特例權限直綁 Client 可設效期（exception_items 結構同 profile_items）；Role 禁空為應用層檢核；圖中省略 BaseModel 共通欄位</div>
+            </div>
+            <div class="tblwrap"><table>
+              <thead><tr><th>設計點</th><th>決策</th><th>說明</th></tr></thead>
+              <tbody>
+                <tr><td>資料表規範</td><td><span class="mark">全表繼承 BaseModel</span>（<code>04-databases/00-overview</code>）</td><td><code>pid</code> BIGINT 內部主鍵 + <code>&lt;table&gt;_uid</code> UUID 對外 + <code>is_deleted</code> 軟刪除 + <code>created/updated_at·by</code>；FK 用 pid 內部關聯，<span class="mark">API 對外一律用 uid、禁曝 pid</span>；中介表（client_roles 等）同樣適用</td></tr>
+                <tr><td>系統別（Service）</td><td><code>erp</code> / <code>crm</code> / <code>hrm</code> / <code>bpm</code> / <code>zpos</code>…</td><td>作業的分類容器（<code>services</code> 表），對應路由 <code>{service}</code> 分段；新系統別 = 新增一筆資料，不是新程式</td></tr>
+                <tr><td>作業（Operation）</td><td><span class="mark">查詢入口</span>，歸屬系統別，定義<span class="mark">表 × 欄位範圍</span></td><td>作業與 Role 只是<span class="mark">方便管理，不代表最終回傳欄位</span>；單表需求 = 建只涵蓋一張表的作業</td></tr>
+                <tr><td>角色權限設定檔</td><td><span class="mark">Profile → Operation → Table → Column → Read / Edit</span></td><td>常規授權的內容載體，<span class="mark">欄位與動作授權的主要來源</span>；1 個 Role 綁定 1 個設定檔（1:1、必綁）</td></tr>
+                <tr><td>特例權限</td><td><span class="mark">結構同設定檔，直綁 User、可設效期</span></td><td>臨時分派（如臨時把某作業給某 User）；<code>expires_at</code> 到期自動失效，不污染 Role 與設定檔</td></tr>
+                <tr><td>欄位可見度</td><td><span class="mark">最終權限 = 設定檔在該作業下勾的欄位與動作（∩ 作業範圍）</span></td><td>授權巢狀在作業下 — <span class="mark">同一張表在不同作業可設不同欄位與動作</span>；沒給 → 不回傳任何欄位（default-closed）</td></tr>
+                <tr><td>Client 綁定</td><td><span class="mark">只綁 1 個 Role（0..1）＋ 特例 0..N</span></td><td>常規權限一律進 Role 設定檔；不開多 Role、不直綁作業，權限來源單純好稽核</td></tr>
+                <tr><td>Role 內容</td><td><span class="mark">必綁 1 個設定檔（1:1）</span></td><td>禁空角色 — DB 層 <code>permission_profile_pid NOT NULL</code> 即可保證；Role = 名字與指派的載體，設定檔 = 授權內容</td></tr>
+                <tr><td>client secret</td><td><span class="mark">只存雜湊 · 明文僅發放時顯示一次</span></td><td>支援雙 secret 並存輪替（新舊過渡不斷線）；停用 Client 即拒發下一輪 token</td></tr>
+                <tr><td>授權方向</td><td>只加不減（additive）</td><td>無 deny 規則；收權 = 修改設定檔 / 解除綁定 / 特例到期失效</td></tr>
+                <tr><td>欄位粒度</td><td><code>column_name</code> 逐欄；<code>*</code> = 全欄位</td><td>表級授權必須存在（至少一筆該表 item）才進欄位判斷</td></tr>
+                <tr><td>action</td><td><span class="mark"><code>read</code> / <code>edit</code></span></td><td>edit = 新增 / 更新 / 刪除；<span class="mark">刪除一律軟刪除（<code>is_deleted</code>，禁物理刪除）</span>；寫入落地 ETL-Hub，是否寫回 ERP 另案（erp-writeback 評估）</td></tr>
+                <tr><td>表 / 欄位名</td><td>採<span class="mark">語意層英文名</span></td><td>與 API 回傳 JSON key 同一套（semantic_mappings），授權畫面即見即所得</td></tr>
+              </tbody>
+            </table></div>
+
+            <h4>後台管理操作流程（管理員視角）</h4>
+            <div class="diagram">
+              <div class="mermaid">
+flowchart LR
+  subgraph S0["⓪ 建系統別 + 作業"]
+    direction TB
+    NO["新增系統別<br/>erp / crm / hrm / bpm / zpos…"] --> OT["系統別下建作業<br/>勾選表 × 欄位範圍"]
+  end
+  subgraph S1["① 建角色權限設定檔"]
+    direction TB
+    NP["新增設定檔"] --> PO["勾選可讀系統 / 作業"] --> PC["設定資料表 × 欄位授權<br/>（* = 全欄位）"]
+  end
+  subgraph S2["② 組 Role"]
+    direction TB
+    NR["建立 / 編輯 Role"] --> BIND["綁定 1 個設定檔<br/>（必綁，禁空）"]
+  end
+  subgraph S3["③ 接入應用系統"]
+    direction TB
+    AU["建立 API Client<br/>發放 secret（顯示一次）"] --> RO["指派 Role（0..1）"] --> EX["（臨時需求）綁特例權限<br/>可設效期"] --> PV["預覽最終可見欄位"]
+  end
+  FX["權限快取失效"] --> EFFT["下一次 API 請求即生效"]
+  S0 --> S1 --> S2 --> S3 --> FX
+  classDef adm fill:#eaeefc,stroke:#4256d4,color:#22306e;
+  classDef eff fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  class NO,OT,NP,PO,PC,NR,BIND,AU,RO,EX,PV adm; class FX,EFFT eff;
+              </div>
+              <div class="cap">後台管理流程：系統別 + 作業 → 角色權限設定檔（可讀作業 + 表欄位授權）→ Role 打包 → API Client 接入（臨時走特例）；異動後失效快取、下次請求生效</div>
+            </div>
+            <div class="callout"><span class="h">💡 為什麼這樣分層</span>Role（打包）+ 設定檔（常規授權內容）+ 特例權限（臨時分派、可設效期）分離：調整常規授權改設定檔即可全體生效；臨時需求走特例、到期自動失效、不污染 Role。稽核只看兩個地方：設定檔（常規）+ 特例（例外），一目了然。</div>
+            <div class="callout warn"><span class="h">⚠ 範例（default-closed 語意）</span>Client A 的 Role 設定檔可讀作業 O1（範圍 T1(C11·C12)、T2(C21·C22)、T3(C31·C32)）：設定檔<b>沒給表欄位授權</b> → 查 O1 回傳空資料；給了 C11·C21·C31 → 只回這三欄。<span class="mark">作業開門，表欄位授權給欄位 — 兩者缺一不可</span>。</div>
+          </div>
+        </details>
+      </section>
+
+      <div class="connector"></div>
+
+      <!-- ── 模組③ 權限引擎 ─────────────────────────────── -->
+      <section class="layer" style="--tier: var(--c-az); --card: var(--card-plan); --edge: var(--st-plan);">
+        <div class="layer-head">
+          <span class="tier-tag">模組③</span>
+          <h2 class="layer-title">權限引擎（AuthZ Engine）</h2>
+          <span class="phase-tag">Phase 3A</span>
+          <span class="owner plan">規劃中</span>
+        </div>
+        <p class="layer-sub">聯集展開 · 作業 → 表 → 欄位三段式判斷 · 權限快取</p>
+        <ul class="layer-desc">
+          <li>權限的<span class="mark">判斷面</span>：每筆請求執行三段式判斷</li>
+          <li>聯集展開：Role 設定檔 + 特例權限（過濾已過期）→ <span class="mark"><code>{作業: {表: {欄位: read/edit}}}</code></span>；<span class="mark">TTL 快取</span>、後台異動即失效</li>
+          <li>作業級判斷：未授權 → <code>403</code></li>
+          <li>逐表交集：展開作業的表 × 欄位範圍，取<span class="mark">設定檔在該作業下的欄位與動作</span>（查詢需 read、寫入需 edit）</li>
+          <li><span class="mark">沒給表欄位授權 → 交集為空 → 回傳空資料</span>（作業只給入口與範圍）</li>
+          <li>結果交給資料供應模組逐表組 SQL</li>
+        </ul>
+        <div class="chips">
+          <span class="chip"><span class="dot"></span><b>聯集展開</b>&nbsp;{作業: {表: {欄位: R/E}}}</span>
+          <span class="chip"><span class="dot"></span><b>動作</b>&nbsp;查詢 read · 寫入 edit</span>
+          <span class="chip"><span class="dot"></span><b>三段式</b>&nbsp;作業 → 表 → 欄位</span>
+          <span class="chip"><span class="dot"></span><b>403</b>&nbsp;無作業權限</span>
+          <span class="chip"><span class="dot"></span><b>TTL 快取</b>&nbsp;異動即失效</span>
+        </div>
+        <details class="detail">
+          <summary>📋 詳細設計 — 權限判斷流程圖 · 三情境對照</summary>
+          <div class="detail-body">
+            <h4>權限判斷流程（每筆請求）</h4>
+            <div class="diagram">
+              <div class="mermaid">
+flowchart LR
+  CTX["請求上下文<br/>client + 作業 + fields"] --> CACHE{"effective 權限<br/>快取命中?"}
+  CACHE -- "否" --> LOAD["撈 Role 設定檔 + 特例權限<br/>（過濾已過期特例）"]
+  LOAD --> UNION["聯集展開並寫入快取<br/>{作業: {表: {欄位: R/E}}}"]
+  CACHE -- "是" --> OPC
+  UNION --> OPC{"請求的作業<br/>已授權?"}
+  OPC -- "否" --> E403a["403 Forbidden<br/>（無作業權限）"]
+  OPC -- "是" --> EXPAND["展開作業定義<br/>O1 → T1 · T2 · T3 各表欄位範圍"]
+  EXPAND --> INTER["逐表取交集<br/>作業範圍 ∩ 表欄位授權"]
+  INTER --> EMPTY{"全部表的交集<br/>皆為空?"}
+  EMPTY -- "是（如：沒給表欄位授權）" --> NULLR["200 · data 空<br/>不回傳任何欄位"]
+  EMPTY -- "否" --> OUT["彙整各表可見欄位<br/>（交集為空的表省略）"]
+  OUT --> NEXT["→ 模組④ 逐表查詢 · data 依表分組"]
+
+  classDef az fill:#f0ecf8,stroke:#5b4a8a,color:#3f3361;
+  classDef err fill:#fef2f2,stroke:#dc2626,color:#7f1d1d;
+  classDef ok fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  class CTX,CACHE,LOAD,UNION,OPC,EXPAND,INTER,EMPTY az; class E403a err; class NULLR,OUT,NEXT ok;
+              </div>
+              <div class="cap">權限判斷流程：快取 → 聯集展開 → 作業級判斷 → 展開表 × 欄位範圍 → 逐表交集（作業範圍 ∩ 表欄位授權）；沒給表欄位授權 = 回傳空</div>
+            </div>
+            <h4>三情境對照</h4>
+            <div class="tblwrap"><table>
+              <thead><tr><th>情境</th><th>判斷結果</th><th>回應</th></tr></thead>
+              <tbody>
+                <tr><td>請求的作業未授權（或不存在）</td><td>作業級擋下，不查 DB</td><td><code>403</code>（不區分不存在 / 無權限）</td></tr>
+                <tr><td>作業已授權、有表欄位授權</td><td>逐表回傳「作業範圍 ∩ 表欄位授權」；範圍外與授權外欄位<span class="mark">不出現在 JSON</span>，交集為空的表整張省略</td><td><code>200</code> + 過濾後 JSON（例：O1 範圍六欄、設定檔給 C11·C21·C31 → 只回三欄）</td></tr>
+                <tr><td>作業已授權、<span class="mark">設定檔與特例皆未給表欄位授權</span></td><td>交集為空 — 作業只是入口與範圍，<span class="mark">不代表欄位授權</span></td><td><code>200</code> + <code>data</code> 空（不回傳任何欄位）</td></tr>
+              </tbody>
+            </table></div>
+            <div class="callout ok"><span class="h">✅ 未指定 fields 的預設行為</span>請求未帶 <code>fields</code> 參數時，直接以「授權欄位全集」回傳 — 串接方永遠拿到自己權限內的最大欄位集，不需先查權限再組請求。</div>
+            <div class="callout"><span class="h">💡 JWT 不塞權限</span>JWT 只含 <code>client_id</code> 與過期時間，權限每次由引擎查（記憶體快取）— 後台停權 / 調權<span class="mark">即時生效</span>，不必等 token 過期；已停用的 Client 即使持有效 JWT，effective 權限為空、一律 <code>403</code>。</div>
+          </div>
+        </details>
+      </section>
+
+      <div class="connector"></div>
+
+      <!-- ── 模組④ 資料供應 API ─────────────────────────── -->
+      <section class="layer" style="--tier: var(--c-srv); --card: var(--card-wip); --edge: var(--st-wip);">
+        <div class="layer-head">
+          <span class="tier-tag">模組④</span>
+          <h2 class="layer-title">資料供應 API（Query / Serving）</h2>
+          <span class="phase-tag">Phase 3A</span>
+          <span class="owner wip">進行中</span>
+        </div>
+        <p class="layer-sub">SQL 欄位投影 · 語意 View 查詢 · 英文 key JSON 回傳</p>
+        <ul class="layer-desc">
+          <li>依權限引擎輸出的「各表可見欄位」<span class="mark">逐表組 SQL 欄位投影 — 只 SELECT 可見欄位</span>（範圍外欄位在 SQL 層就不取出，非取出後遮罩）</li>
+          <li>查 ETL-Hub 的語意 View（semantic_mappings 驅動的英文欄位名）</li>
+          <li><span class="mark">統一回應封套（success / response_code / detail / data）</span>回傳；<span class="mark"><code>data</code> 依表分組</span>（一個作業 N 張表 = N 個分組）</li>
+        </ul>
+        <div class="chips">
+          <span class="chip"><span class="dot"></span><b>欄位投影</b>&nbsp;SQL 層過濾</span>
+          <span class="chip"><span class="dot"></span><b>語意 View</b>&nbsp;英文欄位名</span>
+          <span class="chip"><span class="dot"></span><b>統一封套</b>&nbsp;success · code · detail · data</span>
+          <span class="chip"><span class="dot"></span><b>分頁 / 篩選</b>&nbsp;標準查詢參數</span>
+          <span class="chip"><span class="dot"></span><b>對外路由</b>&nbsp;/api/client/v1.0</span>
+        </div>
+        <details class="detail">
+          <summary>📋 詳細設計 — 回應組裝流程與範例</summary>
+          <div class="detail-body">
+            <h4>回應組裝流程</h4>
+            <div class="diagram">
+              <div class="mermaid">
+flowchart LR
+  IN["各表可見欄位<br/>（來自模組③）"] --> SQL["逐表組 SQL<br/>SELECT 可見欄位 FROM 語意 view<br/>+ 分頁 / 篩選條件"]
+  SQL --> DB[("RDS ETL-Hub<br/>語意 View")]
+  DB --> ROWS["資料列"]
+  ROWS --> JSON["組統一回應封套<br/>data 依表分組<br/>（英文語意 key）"]
+  JSON --> RESP["200 回應"]
+  classDef srv fill:#e5f4f2,stroke:#0f8f84,color:#0a4d46;
+  classDef db fill:#e7f6ed,stroke:#1f9d55,color:#0f5a2e;
+  class IN,SQL,ROWS,JSON,RESP srv; class DB db;
+              </div>
+              <div class="cap">回應組裝：逐表 SQL 欄位投影 → 語意 View → 統一封套 data 依表分組</div>
+            </div>
+            <h4>統一回應封套（成功 / 失敗一律同構）</h4>
+            <div class="tblwrap"><table>
+              <thead><tr><th>欄位</th><th>型別</th><th>說明</th></tr></thead>
+              <tbody>
+                <tr><td><code>success</code></td><td><code>boolean</code></td><td>是否成功（<code>response_code</code> 為 2xx 時 <code>true</code>）</td></tr>
+                <tr><td><code>response_code</code></td><td><code>int</code></td><td><code>200 · 202 · 400 · 401 · 403 · 429 · 500 …</code>，與 HTTP status 一致</td></tr>
+                <tr><td><code>detail</code></td><td><code>string</code></td><td>結果說明；<span class="mark">嚴禁洩漏 API / 資料表設計</span>，僅呈現基本錯誤資訊</td></tr>
+                <tr><td><code>data</code></td><td><code>Array&lt;Dict&gt;</code></td><td>資料列（英文語意 key、僅授權欄位）；失敗時為空陣列</td></tr>
+              </tbody>
+            </table></div>
+            <h4>範例：作業查詢的請求與回應</h4>
+            <pre class="code">GET /api/client/v1.0/erp/operations/purchase_review
+Authorization: Bearer &lt;短效 JWT（/token 取得）&gt;
+
+// 作業 purchase_review 範圍：purchase_orders（order_no·supplier_name·amount）
+//                          + suppliers（supplier_no·supplier_name）
+// 設定檔表欄位授權僅 order_no · supplier_name · supplier_no（無 amount）→ 交集後 amount 靜默過濾
+// 若設定檔與特例皆未給表欄位授權 → data 為空（作業只是入口）
+{
+  "success": true,
+  "response_code": 200,
+  "detail": "OK",
+  "data": [
+    { "dataset": "purchase_orders",
+      "rows": [ { "order_no": "PO-2026-0001", "supplier_name": "大豐環保" } ] },
+    { "dataset": "suppliers",
+      "rows": [ { "supplier_no": "S001", "supplier_name": "大豐環保" } ] }
+  ]
+}
+
+// 無作業權限（與「作業不存在」回應相同，不洩漏設計）
+{
+  "success": false,
+  "response_code": 403,
+  "detail": "Permission denied.",
+  "data": []
+}</pre>
+            <div class="callout warn"><span class="h">⚠ 資訊揭露原則</span><code>detail</code> 只給基本錯誤訊息：不回傳欄位清單、不區分「作業不存在」與「無權限」、DB / 內部錯誤一律 <code>500</code> + 通用訊息（細節只進伺服器端 log 與稽核）。範圍外 / 規則外欄位<span class="mark">靜默過濾</span>，不在回應中列舉。</div>
+          </div>
+        </details>
+      </section>
+
+      <div class="connector"></div>
+
+      <!-- ── 模組⑤ 稽核與流量治理 ───────────────────────── -->
+      <section class="layer" style="--tier: var(--c-ops); --card: var(--card-plan); --edge: var(--st-plan);">
+        <div class="layer-head">
+          <span class="tier-tag">模組⑤</span>
+          <h2 class="layer-title">稽核與流量治理（Audit / Governance）</h2>
+          <span class="phase-tag">Phase 3A</span>
+          <span class="owner plan">規劃中</span>
+        </div>
+        <p class="layer-sub">取用留痕 · 誰 / 何時 / 取了什麼 · 非同步寫入不擋主流程</p>
+        <ul class="layer-desc">
+          <li>每筆請求（含被 <code>403</code> 擋下的）都<span class="mark">非同步寫入稽核</span>：誰 / 何時 / 哪張表哪些欄位 / 筆數 / 狀態</li>
+          <li>非同步寫入，<span class="mark">不阻塞回應主流程</span></li>
+          <li>配合 Rate Limit 與安全 Headers 構成閘道治理面</li>
+        </ul>
+        <div class="chips">
+          <span class="chip"><span class="dot"></span><b>取用稽核</b>&nbsp;含 403 拒絕紀錄</span>
+          <span class="chip"><span class="dot"></span><b>非同步</b>&nbsp;不擋主流程</span>
+          <span class="chip"><span class="dot"></span><b>安全 Headers</b>&nbsp;scan 遺留必補</span>
+        </div>
+        <details class="detail">
+          <summary>📋 詳細設計 — 稽核紀錄欄位</summary>
+          <div class="detail-body">
+            <div class="tblwrap"><table>
+              <thead><tr><th>欄位</th><th>內容</th><th>用途</th></tr></thead>
+              <tbody>
+                <tr><td><code>client_id / client_name</code></td><td>JWT <code>sub</code> 對應的應用系統</td><td>哪個系統取的</td></tr>
+                <tr><td><code>role / permission_sets</code></td><td>判斷當下的權限來源快照</td><td>事後追溯「當時為什麼拿得到」</td></tr>
+                <tr><td><code>dataset / granted_columns</code></td><td>資料表與實際回傳欄位</td><td>取了什麼</td></tr>
+                <tr><td><code>response_code / row_count</code></td><td><code>200 / 403 / 429</code> 與筆數</td><td>成功與拒絕都留痕；被 <code>detail</code> 隱去的內部錯誤細節記在這裡</td></tr>
+                <tr><td><code>requested_at / latency_ms</code></td><td>時間（naive timestamp · UTC+8）與延遲</td><td>何時取的、效能觀測</td></tr>
+              </tbody>
+            </table></div>
+          </div>
+        </details>
+      </section>
+
+    </div>
+
+    <!-- 端到端時序圖 -->
+    <details class="detail" style="--tier: var(--c-az); margin-top: 34px;" open>
+      <summary>⏱ 端到端請求時序圖（取得 token → JWT 驗簽 → 權限聯集 → 欄位過濾 → JSON 回應 → 稽核）</summary>
+      <div class="detail-body">
+        <div class="diagram">
+          <div class="mermaid">
+sequenceDiagram
+  autonumber
+  participant APP as 外部應用系統（API Client）
+  participant GW as API Client 連接層（模組①）
+  participant AZ as 權限引擎（模組③）
+  participant PDB as 權限資料表（模組②維護）
+  participant HUB as RDS ETL-Hub（語意 View）
+  participant AUD as 稽核（模組⑤）
+
+  rect rgb(232, 242, 250)
+    note over APP,PDB: 取得 token — 首次打 /token；過期後帶舊 token 打 /refresh_token（語意刷新 · 同樣驗 secret）
+    APP->>GW: POST /api/client/v1.0/token（client_id + client_secret）
+    GW->>PDB: secret 雜湊比對 + Client 啟用檢查
+    PDB-->>GW: 通過
+    GW-->>APP: 短效 JWT（expires_in 900）
+  end
+
+  APP->>GW: GET /api/client/v1.0/{service}/operations/{operation}?fields=...（Bearer JWT）
+  GW->>GW: JWT 本地驗簽（不回源 · 不查 DB）
+  GW->>AZ: 解析權限（client + 作業 + fields）
+  AZ->>PDB: 撈 Role 設定檔 + 特例權限（過濾過期 · TTL 快取）
+  PDB-->>AZ: 作業授權 + 表欄位授權
+  AZ->>AZ: 聯集展開 effective 權限（{作業集合} + {表欄位授權}）
+  alt 無作業權限
+    AZ-->>GW: 作業級拒絕
+    GW-->>APP: 403 統一封套（detail 僅基本訊息 · 不洩漏設計）
+  else 作業已授權
+    AZ-->>GW: 各表可見欄位（作業範圍 ∩ 表欄位授權；沒給 → 空）
+    GW->>HUB: 逐表 SELECT 可見欄位 FROM 語意 view（欄位投影）
+    HUB-->>GW: 各表資料列
+    GW-->>APP: 200 統一封套（data 依表分組 · 僅可見欄位）
+  end
+  GW--)AUD: 非同步寫入稽核（Client / 何時 / 表 / 欄位 / 筆數 / 狀態）
+          </div>
+          <div class="cap">端到端時序：token 取得低頻、資料請求高頻且驗簽零外部依賴；兩段式權限判斷完成後才觸碰資料庫；成功與拒絕一律稽核留痕</div>
+        </div>
+      </div>
+    </details>
+
+    <!-- 附錄 · 名詞解說 -->
+    <details class="detail" style="--tier: var(--c-ops); margin-top: 18px;">
+      <summary>📖 附錄 · 名詞解說（權限模型 / 閘道 / 語意層）</summary>
+      <div class="detail-body">
+        <h4>權限模型</h4>
+        <div class="tblwrap"><table>
+          <thead><tr><th>名詞</th><th>對照 / 類型</th><th>說明</th></tr></thead>
+          <tbody>
+            <tr><td><b>Role（角色）</b></td><td>名字與指派的載體</td><td>綁定 1 個角色權限設定檔（1:1、必綁、禁空）；Client 只綁 0..1 個，純為方便管理。</td></tr>
+            <tr><td><b>角色權限設定檔（Profile）</b></td><td>常規授權內容</td><td>授權階層 <span class="mark">Profile → Operation → Table → Column → Read / Edit</span> — 欄位與動作授權的主要來源；沒給 = 不回傳任何欄位。</td></tr>
+            <tr><td><b>特例權限</b></td><td>臨時分派</td><td>結構同設定檔（作業 + 表欄位授權），直接綁 User、可設效期（<code>expires_at</code>）；到期自動失效，不污染 Role 與設定檔。</td></tr>
+            <tr><td><b>作業（Operation）</b></td><td>業務動作單位</td><td>定義此動作需要的表 × 欄位範圍（<code>operation_items</code>）；查詢入口與範圍上限，方便管理 — <span class="mark">不決定最終回傳欄位</span>。歸屬一個系統別。</td></tr>
+            <tr><td><b>系統別（Service）</b></td><td>分類容器 / 路由分段</td><td><code>erp</code> / <code>crm</code> / <code>hrm</code> / <code>bpm</code> / <code>zpos</code>…（<code>services</code> 表）；作業歸屬系統別，路由為 <code>/api/client/{version}/{service}/...</code>；token 端點不分 service。</td></tr>
+            <tr><td><b>權限項</b></td><td><code>profile_items / exception_items</code></td><td>一筆 = 某作業下某表的某欄位 + 動作（<code>read / edit</code>；<code>'*'</code> 為全欄位）；edit 含新增 / 更新 / 刪除，<span class="mark">刪除一律軟刪除</span>。</td></tr>
+            <tr><td><b>聯集 / 加法模型</b></td><td>Additive（無 deny）</td><td>最終權限 = Role 設定檔 ∪ 特例權限；只授予不拒絕，收權靠改設定檔 / 解除綁定 / 特例到期。</td></tr>
+            <tr><td><b>effective 權限</b></td><td><code>{作業集合} + {表: 欄位}</code></td><td>Role 設定檔 + 特例權限聯集展開後供判斷的記憶體結構；TTL 快取、後台異動即失效。</td></tr>
+            <tr><td><b>作業級 / 表級 / 欄位級</b></td><td>三段式判斷</td><td>先看作業授權（無 → 403），展開作業的表 × 欄位範圍，逐表取「範圍 ∩ 表欄位授權」；沒給 → 回傳空。</td></tr>
+          </tbody>
+        </table></div>
+        <h4>閘道 / 語意層</h4>
+        <div class="tblwrap"><table>
+          <thead><tr><th>名詞</th><th>全稱 / 類型</th><th>說明</th></tr></thead>
+          <tbody>
+            <tr><td><b>API Client</b></td><td>機器主體</td><td>一個外部應用系統一個 Client；只綁 1 個 Role + 特例權限 0..N，client secret 只存雜湊、支援雙鑰輪替。</td></tr>
+            <tr><td><b>Client Credentials</b></td><td>OAuth2 M2M 流程</td><td>client_id + secret 打 <code>/token</code> 換短效 JWT；不發 refresh token — secret 本身就是長效憑證，過期直接重換。</td></tr>
+            <tr><td><b>/refresh_token</b></td><td>語意刷新端點</td><td>帶過期 access token + client_id + secret 換新 token；安全上與 <code>/token</code> 等價（同樣驗 secret），另驗舊 token 簽章與 <code>sub</code> 一致，仍不發 refresh token。</td></tr>
+            <tr><td><b>短效 JWT</b></td><td>Access Token（15 分鐘）</td><td>自帶簽章與過期時間，Gateway 本地驗簽零外部依賴；外洩傷害壓縮到分鐘級。</td></tr>
+            <tr><td><b>DF-SSO</b></td><td>公司統一登入</td><td>僅供後台管理介面的管理員（人）登入；對外資料 API 不走 SSO。</td></tr>
+            <tr><td><b>欄位投影</b></td><td>SQL Projection</td><td>只 SELECT 授權欄位 — 未授權資料在 SQL 層就不取出，非取出後遮罩。</td></tr>
+            <tr><td><b>語意 View / semantic_mappings</b></td><td>語意層</td><td>ERP 代號欄位 → 英文語意名的全域映射；授權設定與 API JSON key 用同一套名字。</td></tr>
+            <tr><td><b>ETL-Hub</b></td><td>RDS PostgreSQL</td><td>經 ETL 清洗轉換後的資料庫，Gateway 唯一的資料來源；應用不直連。</td></tr>
+            <tr><td><b>取用稽核</b></td><td>Audit Log</td><td>誰 / 何時 / 取了哪張表哪些欄位 / 筆數 / 狀態；含 403 拒絕紀錄，非同步寫入。</td></tr>
+            <tr><td><b>統一回應封套</b></td><td><code>success / response_code / detail / data</code></td><td>成功失敗同構；<code>detail</code> 僅基本錯誤資訊、嚴禁洩漏 API 與資料表設計；<code>data</code> 恆為陣列。</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </details>
+
+    <footer class="legend">
+      <span class="legend-item"><span class="sw" style="background:var(--c-acc)"></span>API Client 連接層</span>
+      <span class="legend-item"><span class="sw" style="background:var(--c-adm)"></span>後台權限管理</span>
+      <span class="legend-item"><span class="sw" style="background:var(--c-az)"></span>權限引擎</span>
+      <span class="legend-item"><span class="sw" style="background:var(--c-srv)"></span>資料供應 API</span>
+      <span class="legend-item"><span class="sw" style="background:var(--c-ops)"></span>稽核治理</span>
+    </footer>
+  </div>
+
+  <script>
+    // 主題切換
+    (function () {
+      var btn = document.getElementById('themeToggle');
+      var root = document.documentElement;
+      btn.addEventListener('click', function () {
+        var isDark = root.getAttribute('data-theme') === 'dark'
+          || (!root.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+        root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+      });
+    })();
+
+    // mermaid：details 展開時才渲染（避免隱藏狀態下寬度計算錯誤）
+    var mermaidReady = typeof mermaid !== 'undefined';
+    if (mermaidReady) {
+      mermaid.initialize({
+        startOnLoad: false, theme: 'base',
+        themeVariables: { fontFamily: '"Segoe UI","Noto Sans TC",sans-serif', primaryColor: '#eef4fb',
+          primaryBorderColor: '#2E5C8A', lineColor: '#5b6b7b', fontSize: '16px' },
+        flowchart: { curve: 'basis', useMaxWidth: true, nodeSpacing: 50, rankSpacing: 60, padding: 12 }
+      });
+    }
+    function renderDiagramsIn(container) {
+      if (!mermaidReady) { return; }
+      var nodes = container.querySelectorAll('.mermaid:not([data-processed])');
+      if (!nodes.length) { return; }
+      mermaid.run({ nodes: nodes }).then(function () {
+        container.querySelectorAll('.diagram').forEach(function (d) {
+          if (d.querySelector('svg') && !d.querySelector('.popbtn')) {
+            var b = document.createElement('button');
+            b.className = 'popbtn';
+            b.type = 'button';
+            b.textContent = '⤢ 開新視窗放大';
+            b.addEventListener('click', function () { popDiagram(b); });
+            d.insertBefore(b, d.firstChild);
+          }
+        });
+      });
+    }
+    document.querySelectorAll('details.detail').forEach(function (dt) {
+      dt.addEventListener('toggle', function () { if (dt.open) { renderDiagramsIn(dt); } });
+    });
+    // 預設展開（[open]）的 details 於載入完成後直接渲染
+    window.addEventListener('load', function () {
+      document.querySelectorAll('details.detail[open]').forEach(function (dt) { renderDiagramsIn(dt); });
+    });
+
+    // 開新視窗放大：滑鼠拖曳平移 · 鍵盤 Z 放大 / X 縮小
+    function popDiagram(btn) {
+      var wrapEl = btn.closest('.diagram');
+      var svg = wrapEl ? wrapEl.querySelector('svg') : null;
+      if (!svg) { return; }
+      var title = (wrapEl.querySelector('.cap') || {}).textContent || '架構圖';
+      var w = window.open('', '_blank');
+      if (!w) { alert('瀏覽器封鎖了新視窗，請允許彈出視窗。'); return; }
+      w.document.open();
+      w.document.write(
+        '<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8">' +
+        '<title>' + title + '</title><style>' +
+        'html,body{margin:0;height:100%;background:#f5f7fa;font-family:"Segoe UI","Noto Sans TC",sans-serif;overflow:hidden}' +
+        '.bar{position:fixed;top:0;left:0;right:0;z-index:5;background:#232F3E;color:#fff;padding:10px 16px;font-size:15px;font-weight:700;' +
+        'display:flex;gap:12px;align-items:center;flex-wrap:wrap}' +
+        '.bar button{background:#0a8ca8;color:#fff;border:none;border-radius:7px;padding:6px 12px;' +
+        'font-weight:700;font-size:14px;cursor:pointer}' +
+        '.stage{position:absolute;top:52px;left:0;right:0;bottom:0;overflow:hidden;cursor:grab}' +
+        '.stage.dragging{cursor:grabbing}' +
+        '#pz{transform-origin:0 0;will-change:transform;display:inline-block}' +
+        '#pz svg{display:block;width:96vw;max-width:none;height:auto}' +
+        '@media print{.bar{display:none}html,body{overflow:visible}.stage{position:static;overflow:visible}#pz{transform:none!important}}' +
+        '</style></head><body>' +
+        '<div class="bar"><span>' + title + '</span>' +
+        '<button onclick="window.print()">列印 / 存 PDF</button>' +
+        '<button id="zin">Z 放大</button><button id="zout">X 縮小</button><button id="zreset">重設</button>' +
+        '<span style="opacity:.7;font-weight:400;font-size:13px">滑鼠拖曳平移 · 鍵盤 Z 放大 / X 縮小</span></div>' +
+        '<div class="stage" id="stage"><div id="pz">' + svg.outerHTML + '</div></div>' +
+        '<script>' +
+        'var scale=1,tx=24,ty=24,drag=null;' +
+        'var stage=document.getElementById("stage"),pz=document.getElementById("pz");' +
+        'function apply(){pz.style.transform="translate("+tx+"px,"+ty+"px) scale("+scale+")";}' +
+        'function zoom(f){var ns=Math.min(8,Math.max(0.2,scale*f));' +
+        'var cx=stage.clientWidth/2,cy=stage.clientHeight/2;' +
+        'tx=cx-(cx-tx)*(ns/scale);ty=cy-(cy-ty)*(ns/scale);scale=ns;apply();}' +
+        'stage.addEventListener("mousedown",function(e){drag={x:e.clientX-tx,y:e.clientY-ty};stage.classList.add("dragging");e.preventDefault();});' +
+        'window.addEventListener("mousemove",function(e){if(!drag){return;}tx=e.clientX-drag.x;ty=e.clientY-drag.y;apply();});' +
+        'window.addEventListener("mouseup",function(){drag=null;stage.classList.remove("dragging");});' +
+        'window.addEventListener("keydown",function(e){var k=(e.key||"").toLowerCase();' +
+        'if(k==="z"){zoom(1.2);}else if(k==="x"){zoom(1/1.2);}});' +
+        'document.getElementById("zin").onclick=function(){zoom(1.2);};' +
+        'document.getElementById("zout").onclick=function(){zoom(1/1.2);};' +
+        'document.getElementById("zreset").onclick=function(){scale=1;tx=24;ty=24;apply();};' +
+        'apply();' +
+        '<\/script></body></html>'
+      );
+      w.document.close();
+    }
+  </script>
+</body>
+</html>
