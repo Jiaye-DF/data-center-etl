@@ -5,7 +5,6 @@ import {
   useCreateApiClientMutation,
   useListApiClientSecretsQuery,
   useListApiClientsQuery,
-  useRetireApiClientSecretMutation,
   useRevealApiClientSecretMutation,
   useRotateApiClientSecretMutation,
   useUpdateApiClientMutation,
@@ -21,7 +20,6 @@ import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatDateTime } from '@/utils/datetime'
 
 const PAGE_SIZE = 20
-const MAX_ACTIVE_SECRETS = 2
 const SECRET_MASK = '••••••••'
 
 /* ---------------------------------------------------------------------- */
@@ -229,7 +227,7 @@ function IssuedSecretPanel({
           密鑰核發成功
         </h2>
         <p className="rounded-lg bg-warning/15 px-3 py-2 text-sm text-warning md:text-base">
-          請立即複製並交付該使用者;關閉後仍可在清單「Secret」欄重新檢視明文。
+          請立即複製並交付該使用者;關閉後仍可在清單「ClientID-Secret」欄重新檢視明文。
         </p>
         <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-foreground md:text-base">Client ID</span>
@@ -261,7 +259,7 @@ function IssuedSecretPanel({
         onConfirm={handleConfirmClose}
         onCancel={handleCancelClose}
       >
-        <p>請確認已複製此密鑰明文;關閉後可在清單「Secret」欄重新檢視。</p>
+        <p>請確認已複製此密鑰明文;關閉後可在清單「ClientID-Secret」欄重新檢視。</p>
       </ConfirmDialog>
     </div>
   )
@@ -609,195 +607,64 @@ function EditClientDialog({
 }
 
 /* ---------------------------------------------------------------------- */
-/* 密鑰紀錄(伺服器資料)                                                     */
-/* ---------------------------------------------------------------------- */
-
-interface SecretItemProps {
-  client: ApiClientListItem
-  secret: ApiClientSecretItem
-  retiring: boolean
-  onRequestRetire: (client: ApiClientListItem, secret: ApiClientSecretItem) => void
-}
-
-const SecretItem = memo(function SecretItem({
-  client,
-  secret,
-  retiring,
-  onRequestRetire,
-}: SecretItemProps): React.ReactNode {
-  const handleClick = useCallback(
-    (): void => onRequestRetire(client, secret),
-    [onRequestRetire, client, secret],
-  )
-
-  return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-card px-3 py-2">
-      <span className="text-sm text-foreground md:text-base">
-        核發於 {formatDateTime(secret.created_at)} ·{' '}
-        {secret.status === 'active' ? (
-          <span className="text-success">有效</span>
-        ) : (
-          <span className="text-muted-foreground">已汰換</span>
-        )}
-      </span>
-      <SecretRevealControl clientUid={client.uid} secret={secret} />
-      <button
-        type="button"
-        disabled={secret.status === 'retired' || retiring}
-        onClick={handleClick}
-        className="df-btn-danger-soft px-3 py-1.5 text-sm"
-      >
-        汰換
-      </button>
-    </li>
-  )
-})
-
-interface SecretHistoryPanelProps {
-  client: ApiClientListItem
-  retiringSecretUid: string | null
-  onRequestRetire: (client: ApiClientListItem, secret: ApiClientSecretItem) => void
-}
-
-function SecretHistoryPanel({
-  client,
-  retiringSecretUid,
-  onRequestRetire,
-}: SecretHistoryPanelProps): React.ReactNode {
-  const { data, isLoading, isError } = useListApiClientSecretsQuery(client.uid)
-
-  if (isLoading) {
-    return <p className="text-sm text-muted-foreground md:text-base">載入密鑰紀錄中…</p>
-  }
-  if (isError || data === undefined) {
-    return (
-      <p role="alert" className="text-sm text-danger md:text-base">
-        載入密鑰紀錄失敗,請稍後再試
-      </p>
-    )
-  }
-  if (data.items.length === 0) {
-    return <p className="text-sm text-muted-foreground md:text-base">尚無密鑰紀錄</p>
-  }
-
-  return (
-    <>
-      <p className="mb-2 text-sm text-muted-foreground md:text-base">
-        密鑰明文以可逆加密保存,admin 可隨時按「顯示」檢視;每次檢視皆寫入稽核紀錄。
-      </p>
-      <ul className="flex flex-col gap-2">
-        {data.items.map((secret) => (
-          <SecretItem
-            key={secret.uid}
-            client={client}
-            secret={secret}
-            retiring={retiringSecretUid === secret.uid}
-            onRequestRetire={onRequestRetire}
-          />
-        ))}
-      </ul>
-    </>
-  )
-}
-
-/* ---------------------------------------------------------------------- */
 /* 清單列                                                                   */
 /* ---------------------------------------------------------------------- */
 
 interface ApiClientRowProps {
   client: ApiClientListItem
-  expanded: boolean
   rotating: boolean
-  retiringSecretUid: string | null
-  onToggleExpand: (uid: string) => void
   onEdit: (client: ApiClientListItem) => void
   onRotate: (client: ApiClientListItem) => void
-  onRequestRetire: (client: ApiClientListItem, secret: ApiClientSecretItem) => void
 }
 
 const ApiClientRow = memo(function ApiClientRow({
   client,
-  expanded,
   rotating,
-  retiringSecretUid,
-  onToggleExpand,
   onEdit,
   onRotate,
-  onRequestRetire,
 }: ApiClientRowProps): React.ReactNode {
-  const handleToggle = useCallback((): void => onToggleExpand(client.uid), [
-    onToggleExpand,
-    client.uid,
-  ])
   const handleEdit = useCallback((): void => onEdit(client), [onEdit, client])
   const handleRotate = useCallback((): void => onRotate(client), [onRotate, client])
 
-  const rotateDisabled = rotating || client.active_secret_count >= MAX_ACTIVE_SECRETS
-
   return (
-    <>
-      <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/50">
-        <td className="px-3 py-3 text-sm font-medium text-foreground md:text-base">
-          {client.name}
-        </td>
-        <td className="px-3 py-3">
+    <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/50">
+      <td className="px-3 py-3">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={handleEdit} className="df-btn-outline px-3 py-1.5 text-sm">
+            編輯
+          </button>
+          <button
+            type="button"
+            onClick={handleRotate}
+            disabled={rotating}
+            className="df-btn-outline px-3 py-1.5 text-sm"
+          >
+            輪替密鑰
+          </button>
+        </div>
+      </td>
+      <td className="px-3 py-3 text-sm font-medium text-foreground md:text-base">
+        {client.name}
+      </td>
+      <td className="px-3 py-3">
+        <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
             <code className="text-sm font-mono text-muted-foreground md:text-base">
               {client.client_id}
             </code>
             <CopyButton value={client.client_id} />
           </div>
-        </td>
-        <td className="px-3 py-3">
           <LatestSecretCell client={client} />
-        </td>
-        <td className="df-td">
-          <ApiClientStatusBadge status={client.status} />
-        </td>
-        <td className="df-td">{client.rate_limit_per_minute}</td>
-        <td className="df-td">{client.rate_limit_per_10min}</td>
-        <td className="df-td">{client.active_secret_count}</td>
-        <td className="df-td text-muted-foreground">{formatDateTime(client.created_at)}</td>
-        <td className="px-3 py-3">
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={handleEdit} className="df-btn-outline px-3 py-1.5 text-sm">
-              編輯
-            </button>
-            <button
-              type="button"
-              onClick={handleRotate}
-              disabled={rotateDisabled}
-              title={
-                client.active_secret_count >= MAX_ACTIVE_SECRETS
-                  ? '已有 2 把有效密鑰,請先汰換舊密鑰'
-                  : undefined
-              }
-              className="df-btn-outline px-3 py-1.5 text-sm"
-            >
-              核發新密鑰
-            </button>
-            <button
-              type="button"
-              onClick={handleToggle}
-              className="df-btn-outline px-3 py-1.5 text-sm"
-            >
-              {expanded ? '收合密鑰' : '密鑰紀錄'}
-            </button>
-          </div>
-        </td>
-      </tr>
-      {expanded ? (
-        <tr className="border-b border-border bg-muted/30 last:border-b-0">
-          <td colSpan={9} className="px-3 py-3">
-            <SecretHistoryPanel
-              client={client}
-              retiringSecretUid={retiringSecretUid}
-              onRequestRetire={onRequestRetire}
-            />
-          </td>
-        </tr>
-      ) : null}
-    </>
+        </div>
+      </td>
+      <td className="df-td">
+        <ApiClientStatusBadge status={client.status} />
+      </td>
+      <td className="df-td whitespace-nowrap">
+        {client.rate_limit_per_minute} / 分 · {client.rate_limit_per_10min} / 10 分
+      </td>
+      <td className="df-td text-muted-foreground">{formatDateTime(client.created_at)}</td>
+    </tr>
   )
 })
 
@@ -815,11 +682,7 @@ export default function ApiClientsPage(): React.ReactNode {
     clientId: string
     secret: string
   } | null>(null)
-  const [expandedUid, setExpandedUid] = useState<string | null>(null)
-  const [retireTarget, setRetireTarget] = useState<{
-    client: ApiClientListItem
-    secret: ApiClientSecretItem
-  } | null>(null)
+  const [rotateTarget, setRotateTarget] = useState<ApiClientListItem | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
   const { data, isLoading, isError, isFetching } = useListApiClientsQuery({
@@ -829,7 +692,6 @@ export default function ApiClientsPage(): React.ReactNode {
   const [createApiClient, { isLoading: isCreating }] = useCreateApiClientMutation()
   const [updateApiClient, { isLoading: isUpdating }] = useUpdateApiClientMutation()
   const [rotateApiClientSecret, { isLoading: isRotating }] = useRotateApiClientSecretMutation()
-  const [retireApiClientSecret, { isLoading: isRetiring }] = useRetireApiClientSecretMutation()
 
   const handlePageChange = useCallback((next: number): void => setPage(next), [])
 
@@ -879,43 +741,24 @@ export default function ApiClientsPage(): React.ReactNode {
     [updateApiClient],
   )
 
-  const handleToggleExpand = useCallback((uid: string): void => {
-    setExpandedUid((prev) => (prev === uid ? null : uid))
-  }, [])
-
-  const handleRotate = useCallback(
-    async (client: ApiClientListItem): Promise<void> => {
-      setActionError(null)
-      const result = await rotateApiClientSecret(client.uid)
-      if ('error' in result) {
-        setActionError(extractApiErrorDetail(result.error, '核發新密鑰失敗,請稍後再試'))
-        return
-      }
-      setExpandedUid(client.uid)
-      setIssuedSecret({ clientId: client.client_id, secret: result.data.client_secret })
-    },
-    [rotateApiClientSecret],
-  )
-
-  const handleRequestRetire = useCallback(
-    (client: ApiClientListItem, secret: ApiClientSecretItem): void => {
-      setActionError(null)
-      setRetireTarget({ client, secret })
-    },
-    [],
-  )
-  const cancelRetire = useCallback((): void => setRetireTarget(null), [])
-
-  const handleConfirmRetire = useCallback(async (): Promise<void> => {
-    if (retireTarget === null) return
+  const handleRequestRotate = useCallback((client: ApiClientListItem): void => {
     setActionError(null)
-    const { client, secret } = retireTarget
-    const result = await retireApiClientSecret({ uid: client.uid, secretUid: secret.uid })
-    setRetireTarget(null)
+    setRotateTarget(client)
+  }, [])
+  const cancelRotate = useCallback((): void => setRotateTarget(null), [])
+
+  const handleConfirmRotate = useCallback(async (): Promise<void> => {
+    if (rotateTarget === null) return
+    setActionError(null)
+    const target = rotateTarget
+    const result = await rotateApiClientSecret(target.uid)
+    setRotateTarget(null)
     if ('error' in result) {
-      setActionError(extractApiErrorDetail(result.error, '汰換密鑰失敗,請稍後再試'))
+      setActionError(extractApiErrorDetail(result.error, '輪替密鑰失敗,請稍後再試'))
+      return
     }
-  }, [retireTarget, retireApiClientSecret])
+    setIssuedSecret({ clientId: target.client_id, secret: result.data.client_secret })
+  }, [rotateTarget, rotateApiClientSecret])
 
   const closeIssued = useCallback((): void => setIssuedSecret(null), [])
 
@@ -927,7 +770,7 @@ export default function ApiClientsPage(): React.ReactNode {
         <div>
           <h1 className="text-xl font-bold text-foreground md:text-2xl">API Client 設定</h1>
           <p className="mt-1 text-sm text-muted-foreground md:text-base">
-            管理使用者的 API 存取憑證(admin 專用)
+            管理使用者的 API 存取憑證
           </p>
         </div>
         <button type="button" onClick={openCreate} className="df-btn-primary">
@@ -961,18 +804,15 @@ export default function ApiClientsPage(): React.ReactNode {
           <div
             className={`df-card overflow-x-auto transition-opacity ${isFetching ? 'opacity-60' : ''}`}
           >
-            <table className="df-table min-w-[1120px]">
+            <table className="df-table min-w-[920px]">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="df-th">使用者</th>
-                  <th className="df-th">Client ID</th>
-                  <th className="df-th">Secret</th>
-                  <th className="df-th">狀態</th>
-                  <th className="df-th">每分鐘上限</th>
-                  <th className="df-th">每 10 分鐘上限</th>
-                  <th className="df-th">有效密鑰數</th>
-                  <th className="df-th">建立時間</th>
                   <th className="df-th">操作</th>
+                  <th className="df-th">使用者</th>
+                  <th className="df-th">ClientID-Secret</th>
+                  <th className="df-th">狀態</th>
+                  <th className="df-th">流量上限</th>
+                  <th className="df-th">建立時間</th>
                 </tr>
               </thead>
               <tbody>
@@ -980,13 +820,9 @@ export default function ApiClientsPage(): React.ReactNode {
                   <ApiClientRow
                     key={client.uid}
                     client={client}
-                    expanded={expandedUid === client.uid}
                     rotating={isRotating}
-                    retiringSecretUid={isRetiring ? (retireTarget?.secret.uid ?? null) : null}
-                    onToggleExpand={handleToggleExpand}
                     onEdit={openEdit}
-                    onRotate={handleRotate}
-                    onRequestRetire={handleRequestRetire}
+                    onRotate={handleRequestRotate}
                   />
                 ))}
               </tbody>
@@ -1033,21 +869,21 @@ export default function ApiClientsPage(): React.ReactNode {
       ) : null}
 
       <ConfirmDialog
-        open={retireTarget !== null}
-        title="汰換密鑰"
-        confirmLabel="確認汰換"
+        open={rotateTarget !== null}
+        title="輪替密鑰"
+        confirmLabel="確認輪替"
         tone="danger"
-        confirmDisabled={isRetiring}
-        onConfirm={handleConfirmRetire}
-        onCancel={cancelRetire}
+        confirmDisabled={isRotating}
+        onConfirm={handleConfirmRotate}
+        onCancel={cancelRotate}
       >
-        {retireTarget !== null ? (
-          <p>
-            確定要汰換「{retireTarget.client.name}」於{' '}
-            {formatDateTime(retireTarget.secret.created_at)} 核發的密鑰?
-          </p>
+        {rotateTarget !== null ? (
+          <p>確定要為「{rotateTarget.name}」輪替密鑰?</p>
         ) : null}
-        <p>汰換後該密鑰立即失效,持有該密鑰的呼叫端須改用其他有效密鑰。</p>
+        <p>
+          輪替後將核發一把新密鑰,<strong>舊密鑰將立即失效</strong>
+          ,使用中的系統須改用新密鑰。
+        </p>
       </ConfirmDialog>
     </section>
   )

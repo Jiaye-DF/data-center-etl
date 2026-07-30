@@ -189,7 +189,7 @@ class ApiClientService:
         self, uid: UUID, *, actor_uid: UUID
     ) -> ApiClientSecretIssuedResponse:
         client = await self._get_or_404(uid)
-        # active ≥ 2 由 repo 檢核擋下(AppError 409:先汰舊才能再發)
+        # 單一密鑰制:repo.add_secret 於同交易先撤銷全部 active 再核發
         secret, plain_secret = await self._issue_secret(client, actor_uid=actor_uid)
         active_count = len(await self._repo.list_active_secrets(client))
         await self._audit.log(
@@ -198,7 +198,7 @@ class ApiClientService:
             target_type=_TARGET_TYPE,
             target_uid=client.uid,
             detail=(
-                f"核發新密鑰(client_id={client.client_id};"
+                f"核發新密鑰,舊密鑰已自動撤銷(client_id={client.client_id};"
                 f"有效密鑰把數={active_count})"
             ),
         )

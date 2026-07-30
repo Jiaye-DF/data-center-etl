@@ -1,7 +1,7 @@
 """task-005 後台 API Client 管理 API 測試(真實 PostgreSQL 測試 DB)。
 
 涵蓋:非 admin 403;建立回明文 secret 且列表不再出現;列表不含 secret_hash / pid;
-PATCH 限流參數與 status 生效;rotate 第 3 把 active → 409;retire 後 active 數減一;
+PATCH 限流參數與 status 生效;單一密鑰制:rotate 撤舊發新 active 恆 1(task-010);
 軟刪 client 不出現在列表。
 
 task-008 追加:密鑰清單端點(含 retired、欄位僅 uid/status/created_at、不存在 uid → 404)
@@ -355,9 +355,9 @@ async def test_patch_unknown_uid_404(admin_client: AsyncClient) -> None:
     assert resp.json()["success"] is False
 
 
-# ── 輪替 / 汰換 ───────────────────────────────────────────────────────────
-async def test_rotate_second_secret_then_third_conflicts(
-    admin_client: AsyncClient,
+# ── 輪替 / 汰換(單一密鑰制)────────────────────────────────────────────────
+async def test_rotate_retires_old_and_keeps_single_active(
+    admin_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     created, first_secret = await _create_api_client(admin_client)
     uid = created["uid"]
@@ -365,19 +365,21 @@ async def test_rotate_second_secret_then_third_conflicts(
     resp = await admin_client.post(f"{_CLIENTS_URL}/{uid}/rotate-secret")
     assert resp.status_code == 200, resp.text
     rotated = resp.json()["data"]
-    assert rotated["active_secret_count"] == 2
+    assert rotated["active_secret_count"] == 1
     assert isinstance(rotated["client_secret"], str)
     assert rotated["client_secret"] != first_secret
 
-    # 第 3 把 active → 409(先汰舊才能再發)
+    # 再輪替一次仍成功:active 恆 1,retired 逐次累積
     resp = await admin_client.post(f"{_CLIENTS_URL}/{uid}/rotate-secret")
-    assert resp.status_code == 409
-    body = resp.json()
-    assert body["success"] is False
-    assert body["response_code"] == 409
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["active_secret_count"] == 1
+    async with session_factory() as session:
+        rows = (await session.execute(select(ApiClientSecret))).scalars().all()
+        assert len(rows) == 3
+        assert sorted(row.status for row in rows) == ["active", "retired", "retired"]
 
 
-async def test_retire_decreases_active_count_and_allows_new_rotate(
+async def test_retire_then_rotate_restores_single_active(
     admin_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     created, _ = await _create_api_client(admin_client)
@@ -387,20 +389,21 @@ async def test_retire_decreases_active_count_and_allows_new_rotate(
     ]
     secret_uid = rotated["secret_uid"]
 
+    # 手動撤銷唯一 active → 歸零(該使用者無法取證)
     resp = await admin_client.post(f"{_CLIENTS_URL}/{uid}/secrets/{secret_uid}/retire")
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["active_secret_count"] == 1
+    assert resp.json()["data"]["active_secret_count"] == 0
 
     # retired 列仍在(軟性,不刪列)
     async with session_factory() as session:
         rows = (await session.execute(select(ApiClientSecret))).scalars().all()
         assert len(rows) == 2
-        assert sorted(row.status for row in rows) == ["active", "retired"]
+        assert sorted(row.status for row in rows) == ["retired", "retired"]
 
-    # 汰舊後可再發一把
+    # 再輪替即恢復 1 把 active
     resp = await admin_client.post(f"{_CLIENTS_URL}/{uid}/rotate-secret")
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["active_secret_count"] == 2
+    assert resp.json()["data"]["active_secret_count"] == 1
 
 
 async def test_retire_last_active_secret_allowed(
@@ -479,9 +482,13 @@ async def test_secret_list_returns_active_and_retired_minimal_fields(
         initial_secret_uid,
         rotated_secret_uid,
     ]
+    # 單一密鑰制:輪替後初始密鑰自動轉 retired,新密鑰為唯一 active
+    assert {item["uid"]: item["status"] for item in body["items"]} == {
+        initial_secret_uid: "retired",
+        rotated_secret_uid: "active",
+    }
     for item in body["items"]:
         assert set(item.keys()) == {"uid", "status", "created_at", "revealable"}
-        assert item["status"] == "active"
         assert isinstance(item["created_at"], str)
         assert item["revealable"] is True
     assert "secret_hash" not in resp.text
@@ -490,7 +497,7 @@ async def test_secret_list_returns_active_and_retired_minimal_fields(
     assert initial_plain_secret not in resp.text
     assert rotated["client_secret"] not in resp.text
 
-    # 汰換其中一把:該列仍在,狀態轉 retired
+    # 手動汰換唯一 active:該列仍在,狀態轉 retired
     assert (
         await admin_client.post(
             f"{_CLIENTS_URL}/{uid}/secrets/{rotated_secret_uid}/retire"
@@ -499,7 +506,7 @@ async def test_secret_list_returns_active_and_retired_minimal_fields(
     body = (await admin_client.get(f"{_CLIENTS_URL}/{uid}/secrets")).json()["data"]
     assert body["total"] == 2
     assert {item["uid"]: item["status"] for item in body["items"]} == {
-        initial_secret_uid: "active",
+        initial_secret_uid: "retired",
         rotated_secret_uid: "retired",
     }
 

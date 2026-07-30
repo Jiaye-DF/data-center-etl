@@ -1,8 +1,8 @@
 """task-001 API Client 機器身分 model / repository 測試(真實 PostgreSQL 測試 DB)。
 
 涵蓋:
-- 建 client + 雙 active 密鑰並存;第三把被應用層上限擋下(AppError 409)。
-- retire 後 active 只剩一把。
+- 單一密鑰制(task-010):add_secret 同交易撤舊發新,active 恆 1、retired 累積。
+- retire 唯一一把後 active 歸零。
 - get_by_client_id 不回軟刪列。
 - client_id 軟刪後可重建同名(partial unique index)。
 - 兩表 status CHECK 違規丟 IntegrityError。
@@ -32,7 +32,7 @@ from uuid import UUID  # noqa: E402
 
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import select, text  # noqa: E402
 from sqlalchemy.exc import IntegrityError  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncEngine,
@@ -44,7 +44,6 @@ from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app import models  # noqa: E402, F401  匯入全部 model 讓 create_all 建齊資料表
 from app.core.db import Base  # noqa: E402
-from app.core.exceptions import AppError  # noqa: E402
 from app.models.api_client_secret import (  # noqa: E402
     SECRET_STATUS_ACTIVE,
     SECRET_STATUS_RETIRED,
@@ -57,10 +56,7 @@ from app.models.api_client_user import (  # noqa: E402
     DEFAULT_RATE_LIMIT_PER_MINUTE,
     ApiClientUser,
 )
-from app.repositories.api_client_repo import (  # noqa: E402
-    MAX_ACTIVE_SECRETS,
-    ApiClientRepository,
-)
+from app.repositories.api_client_repo import ApiClientRepository  # noqa: E402
 
 _ZERO_UID = UUID(int=0)
 
@@ -163,41 +159,50 @@ async def test_create_applies_status_and_rate_limit_defaults(
     assert client.is_deleted is False
 
 
-# ── 雙鑰輪替 ─────────────────────────────────────────────────────────────
-async def test_two_active_secrets_coexist_and_third_rejected(
+# ── 單一密鑰制 ───────────────────────────────────────────────────────────
+async def test_add_secret_retires_previous_active(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """輪替 N 次後 active 恆 1(最新一把),retired 逐次累積且不物理刪除。"""
     async with session_factory() as session:
         repo = ApiClientRepository(session)
-        client = await _create_client(session, "dual-key")
+        client = await _create_client(session, "single-key")
         await repo.add_secret(client, secret_hash="$2b$hash-a", actor_uid=_ZERO_UID)
         await repo.add_secret(client, secret_hash="$2b$hash-b", actor_uid=_ZERO_UID)
+        await repo.add_secret(client, secret_hash="$2b$hash-c", actor_uid=_ZERO_UID)
         await session.commit()
 
     async with session_factory() as session:
         repo = ApiClientRepository(session)
-        found = await repo.get_by_client_id("dual-key")
+        found = await repo.get_by_client_id("single-key")
         assert found is not None
         client, secrets = found
-        assert len(secrets) == MAX_ACTIVE_SECRETS
-        assert [s.secret_hash for s in secrets] == ["$2b$hash-a", "$2b$hash-b"]
-        assert all(s.status == SECRET_STATUS_ACTIVE for s in secrets)
+        assert [s.secret_hash for s in secrets] == ["$2b$hash-c"]
+        assert secrets[0].status == SECRET_STATUS_ACTIVE
 
-        # 第三把由應用層上限擋下(DB 無此約束)
-        with pytest.raises(AppError) as exc:
-            await repo.add_secret(client, secret_hash="$2b$hash-c", actor_uid=_ZERO_UID)
-        assert exc.value.status_code == 409
+        retired_hashes = (
+            (
+                await session.execute(
+                    select(ApiClientSecret.secret_hash)
+                    .where(ApiClientSecret.status == SECRET_STATUS_RETIRED)
+                    .order_by(ApiClientSecret.pid)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert list(retired_hashes) == ["$2b$hash-a", "$2b$hash-b"]
 
 
-async def test_retire_leaves_single_active_secret(
+async def test_retire_only_secret_leaves_none_active(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """手動撤銷唯一一把後 active 歸零(該使用者無法取證),再核發即恢復 1 把。"""
     async with session_factory() as session:
         repo = ApiClientRepository(session)
         client = await _create_client(session, "rotate-me")
-        old = await repo.add_secret(client, secret_hash="$2b$old", actor_uid=_ZERO_UID)
-        await repo.add_secret(client, secret_hash="$2b$new", actor_uid=_ZERO_UID)
-        await repo.retire_secret(old, actor_uid=_ZERO_UID)
+        only = await repo.add_secret(client, secret_hash="$2b$old", actor_uid=_ZERO_UID)
+        await repo.retire_secret(only, actor_uid=_ZERO_UID)
         await session.commit()
 
     async with session_factory() as session:
@@ -205,19 +210,9 @@ async def test_retire_leaves_single_active_secret(
         found = await repo.get_by_client_id("rotate-me")
         assert found is not None
         client, secrets = found
-        assert [s.secret_hash for s in secrets] == ["$2b$new"]
-
-        # retired 舊鑰仍在(不物理刪除),且輪替後可再補一把
-        retired = (
-            await session.execute(
-                ApiClientSecret.__table__.select().where(
-                    ApiClientSecret.status == SECRET_STATUS_RETIRED
-                )
-            )
-        ).one()
-        assert retired.secret_hash == "$2b$old"
+        assert secrets == []
         await repo.add_secret(client, secret_hash="$2b$newer", actor_uid=_ZERO_UID)
-        assert len(await repo.list_active_secrets(client)) == MAX_ACTIVE_SECRETS
+        assert len(await repo.list_active_secrets(client)) == 1
 
 
 # ── 軟刪除 ───────────────────────────────────────────────────────────────

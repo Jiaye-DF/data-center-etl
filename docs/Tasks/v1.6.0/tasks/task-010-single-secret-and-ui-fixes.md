@@ -1,7 +1,8 @@
 ---
 id: task-010
 title: 追加修正:單一密鑰制(發新即撤舊)+限流欄位合併+清測試資料(user 裁定)
-status: pending
+status: done
+worker: orchestrator(主線接手,worker-J 三度 529 中斷)
 parallel: false
 depends_on: [task-009]
 affected_files:
@@ -54,6 +55,17 @@ user 裁定三項修正(2026-07-30,推翻原「雙 secret 並存輪替」設計)
 - [ ] 真實 API:建立使用者 → 取證成功 → rotate → 舊 secret 打 `/token` 401、新 secret 200;表格僅單一「流量上限」欄
 - [ ] 開發 DB 測試資料清空:`GET /api/v1/api-clients` 回空,DB 無 `is_deleted=false` 的 api_client_users 列
 - [ ] Arch 文件與 propose 變更紀錄補「單一密鑰制(發新即撤舊)取代雙鑰並存」一筆(比照 task-009 的變更紀錄寫法)
+
+## 完成註記(orchestrator,2026-07-30)
+
+user 於執行中追加四項 UI 裁定,一併落地:「ClientID-Secret」合併單欄(格內上行 client_id+複製、下行 secret 遮罩檢視)、移除「密鑰紀錄」按鈕與展開面板(含手動 retire UI 入口;後端 retire 端點保留)、操作欄(編輯・輪替)移至最左、副標移除「(admin 專用)」。最終表格 6 欄:操作 / 使用者 / ClientID-Secret / 狀態 / 流量上限 / 建立時間。
+
+- 後端:`repo.add_secret` 同交易先 retire 全部 active 再插新列(單一密鑰制);MAX_ACTIVE_SECRETS 與 409 檢核移除;rotate audit 註記「舊密鑰已自動撤銷」。
+- 測試:三檔雙鑰情境改寫為單鑰語意(rotate N 次 active 恆 1、retired 累積、撤銷唯一 active 後歸零可再發),52 測綠;全套 **423 passed**;ruff 乾淨;mypy 僅既存 `schedule_repo.py:528`。
+- 前端:tsc / eslint(--max-warnings=0)/ build 三項乾淨;輪替改二次確認(文案講明舊鑰立即失效)。
+- 真實 API(重建 backend+frontend 容器):建立(active=1)→ 舊 secret 取證 200 → rotate(active_count=1)→ **舊 secret 401 invalid_client、新 secret 200**。
+- 清資料:開發 DB `api_client_secrets` 16 列、`api_client_users` 8 列全部軟刪(UPDATE is_deleted=true,無 DELETE);`GET /api/v1/api-clients` 回空清單(total=0)。
+- 文件:Arch 四處「雙鑰輪替/並存」改「單一密鑰制:輪替發新即自動撤舊」;propose 變更紀錄追加一條。
 
 ## 必讀檔(Just-in-time)
 

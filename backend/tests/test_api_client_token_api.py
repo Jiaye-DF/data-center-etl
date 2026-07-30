@@ -1,7 +1,7 @@
 """task-004 對外 token 端點測試(真實 PostgreSQL 測試 DB + 記憶體 Redis 替身)。
 
 涵蓋:正常取證與 JWT 內容;四種失敗回應體同構且皆 401 invalid_client;/refresh_token
-四情境;雙密鑰並存與汰換;停用即時生效;限流與連續失敗鎖定回 429 + Retry-After。
+四情境;單一密鑰制(輪替發新即撤舊,task-010);停用即時生效;限流與連續失敗鎖定回 429 + Retry-After。
 """
 
 import os
@@ -383,26 +383,34 @@ async def test_disabled_after_success_rejects_next_call(
     assert second.json()["detail"] == "invalid_client"
 
 
-# ── 雙密鑰並存 / 汰換 ─────────────────────────────────────────────────────
-async def test_both_active_secrets_work_and_retired_one_rejected(
+# ── 單一密鑰制:輪替發新即撤舊 ─────────────────────────────────────────────
+async def test_rotate_invalidates_old_secret_immediately(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
+    """核發新密鑰的同交易即撤銷舊鑰:舊 secret 立即 401、新 secret 200。"""
     await _seed_client(session_factory, secrets=(SECRET_A, SECRET_B))
-    for secret in (SECRET_A, SECRET_B):
-        resp = await client.post(
-            _TOKEN_URL, json={"client_id": CLIENT_A, "client_secret": secret}
-        )
-        assert resp.status_code == 200, resp.text
-
-    await _retire_oldest_secret(session_factory, CLIENT_A)
     old = await client.post(
         _TOKEN_URL, json={"client_id": CLIENT_A, "client_secret": SECRET_A}
     )
     assert old.status_code == 401
+    assert old.json()["detail"] == "invalid_client"
     new = await client.post(
         _TOKEN_URL, json={"client_id": CLIENT_A, "client_secret": SECRET_B}
     )
     assert new.status_code == 200, new.text
+
+
+async def test_retire_only_secret_blocks_token(
+    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """手動撤銷唯一 active 後,該使用者無法再取證。"""
+    await _seed_client(session_factory)
+    await _retire_oldest_secret(session_factory, CLIENT_A)
+    resp = await client.post(
+        _TOKEN_URL, json={"client_id": CLIENT_A, "client_secret": SECRET_A}
+    )
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "invalid_client"
 
 
 # ── /refresh_token ───────────────────────────────────────────────────────

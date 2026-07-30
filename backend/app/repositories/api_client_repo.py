@@ -2,7 +2,8 @@
 
 - 讀取一律過濾 `is_deleted`(軟刪除規範 `04-databases/02-soft-delete.md`);
 - client_id 唯一性由 partial unique index 保證(軟刪除後可重建同名);
-- 「同一 Client active 密鑰 ≤ 2」為應用層檢核(DB 無此約束),於 `add_secret` 擋下。
+- 單一密鑰制(user 裁定 2026-07-30,task-010):同一使用者同時僅 1 把 active,
+  `add_secret` 於同交易先撤銷全部 active 再核發新密鑰。
 """
 
 from uuid import UUID, uuid4
@@ -10,7 +11,6 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import AppError
 from app.models.api_client_secret import (
     SECRET_STATUS_ACTIVE,
     SECRET_STATUS_RETIRED,
@@ -23,8 +23,6 @@ from app.models.api_client_user import (
     ApiClientUser,
 )
 from app.utils.datetime import db_now
-
-MAX_ACTIVE_SECRETS = 2
 
 
 class ApiClientRepository:
@@ -137,13 +135,9 @@ class ApiClientRepository:
     async def add_secret(
         self, client: ApiClientUser, *, secret_hash: str, actor_uid: UUID
     ) -> ApiClientSecret:
-        active_count = len(await self.list_active_secrets(client))
-        if active_count >= MAX_ACTIVE_SECRETS:
-            raise AppError(
-                f"同一 API Client 最多 {MAX_ACTIVE_SECRETS} 把有效密鑰,請先停用舊密鑰",
-                response_code=409,
-                status_code=409,
-            )
+        """核發新密鑰;同交易先撤銷該使用者全部 active(單一密鑰制,舊鑰立即失效)。"""
+        for old in await self.list_active_secrets(client):
+            await self.retire_secret(old, actor_uid=actor_uid)
         secret = ApiClientSecret(
             uid=uuid4(),
             api_client_user_pid=client.pid,

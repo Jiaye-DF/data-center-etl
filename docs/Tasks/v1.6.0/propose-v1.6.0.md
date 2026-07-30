@@ -72,3 +72,4 @@ DataHub API Gateway 的第一層——API Client 連接層(JWT 驗證)首發:外
 
 - 2026-07-30(收口後追加,由 task-009 落地):**client_secret 改可逆加密儲存 + 儀表板明文檢視**為 user 明示裁定——推翻本 propose 對外承諾的「明文僅發放時顯示一次」與 `docs/Design-Base/04-databases/03-passwords-and-pii.md`「不可逆雜湊」原則之適用範圍(理由:僅 admin 可及)。實作為雙軌:token 驗證路徑仍只走 bcrypt 雜湊(零變動),另加 `api_client_secrets.secret_encrypted`(Fernet 可逆加密)供 admin 專用 reveal 端點解密,每次檢視寫稽核(`api_client_secret_reveal`,detail 不含明文);task-009 前既有列為 NULL,不可檢視,須輪替後才有明文。新增必填 env `CLIENT_SECRET_ENCRYPTION_KEY`(缺值 fail-fast)。
 - 2026-07-30(收口後追加,由 task-009 落地):**每一個 API Client = 一個使用者**為 user 裁定——「API Client 設定」頁全頁文案改以「使用者」為主體(副標、表頭、建立 / 編輯對話框、錯誤與空狀態文案),不再以「應用系統」稱之。
+- 2026-07-30(收口後追加,由 task-010 落地):**單一密鑰制**為 user 裁定,推翻原 In Scope 的「雙 secret 並存輪替」——每個使用者同時僅 1 把 active,輪替於同交易發新並自動撤舊(舊鑰立即失效,無並存過渡期)。同批 UI 裁定:表格限流合併單一「流量上限」欄、移除「有效密鑰數」欄與「密鑰紀錄」面板、「Client ID」與「Secret」合併為「ClientID-Secret」欄、操作欄移至最左、副標移除「(admin 專用)」字樣。
