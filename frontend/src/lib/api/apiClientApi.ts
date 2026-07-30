@@ -35,7 +35,22 @@ export interface CreateApiClientPayload {
 
 export interface CreateApiClientResult {
   client: ApiClientListItem
+  secret_uid: string
   client_secret: string
+}
+
+/** 密鑰狀態(active 可用於取 token;retired 立即失效但保留紀錄) */
+export type ApiClientSecretStatus = 'active' | 'retired'
+
+export interface ApiClientSecretItem {
+  uid: string
+  status: ApiClientSecretStatus
+  created_at: string
+}
+
+export interface ApiClientSecretListData {
+  items: ApiClientSecretItem[]
+  total: number
 }
 
 export interface UpdateApiClientPayload {
@@ -72,6 +87,15 @@ export const apiClientApi = baseApi
           response: ApiEnvelope<ApiClientListData>,
         ): ApiClientListData => unwrap(response),
       }),
+      listApiClientSecrets: build.query<ApiClientSecretListData, string>({
+        query: (uid) => ({ url: `/api-clients/${uid}/secrets` }),
+        providesTags: (_result, _error, uid) => [
+          { type: 'ApiClient', id: `SECRETS-${uid}` },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<ApiClientSecretListData>,
+        ): ApiClientSecretListData => unwrap(response),
+      }),
       createApiClient: build.mutation<CreateApiClientResult, CreateApiClientPayload>({
         query: (body) => ({ url: '/api-clients', method: 'POST', body }),
         invalidatesTags: [{ type: 'ApiClient', id: 'LIST' }],
@@ -92,7 +116,10 @@ export const apiClientApi = baseApi
       }),
       rotateApiClientSecret: build.mutation<RotateApiClientSecretResult, string>({
         query: (uid) => ({ url: `/api-clients/${uid}/rotate-secret`, method: 'POST' }),
-        invalidatesTags: [{ type: 'ApiClient', id: 'LIST' }],
+        invalidatesTags: (_result, _error, uid) => [
+          { type: 'ApiClient', id: 'LIST' },
+          { type: 'ApiClient', id: `SECRETS-${uid}` },
+        ],
         transformResponse: (
           response: ApiEnvelope<RotateApiClientSecretResult>,
         ): RotateApiClientSecretResult => unwrap(response),
@@ -105,7 +132,10 @@ export const apiClientApi = baseApi
           url: `/api-clients/${uid}/secrets/${secretUid}/retire`,
           method: 'POST',
         }),
-        invalidatesTags: [{ type: 'ApiClient', id: 'LIST' }],
+        invalidatesTags: (_result, _error, { uid }) => [
+          { type: 'ApiClient', id: 'LIST' },
+          { type: 'ApiClient', id: `SECRETS-${uid}` },
+        ],
         transformResponse: (
           response: ApiEnvelope<ApiClientListItem>,
         ): ApiClientListItem => unwrap(response),
@@ -115,6 +145,7 @@ export const apiClientApi = baseApi
 
 export const {
   useListApiClientsQuery,
+  useListApiClientSecretsQuery,
   useCreateApiClientMutation,
   useUpdateApiClientMutation,
   useRotateApiClientSecretMutation,

@@ -53,6 +53,7 @@ class ApiClientCreatedResponse(BaseModel):
     """建立結果;`client_secret` 明文僅此一次回傳,DB 只存 bcrypt 雜湊。"""
 
     client: ApiClientResponse = Field(description="新建的 API Client")
+    secret_uid: UUID = Field(description="初始密鑰公開識別碼(汰換時使用)")
     client_secret: str = Field(description="明文密鑰(僅此一次回傳,請立即保存)")
 
 
@@ -62,3 +63,18 @@ class ApiClientSecretIssuedResponse(BaseModel):
     secret_uid: UUID = Field(description="新密鑰公開識別碼(汰換時使用)")
     client_secret: str = Field(description="明文密鑰(僅此一次回傳,請立即保存)")
     active_secret_count: int = Field(description="核發後有效密鑰把數")
+
+
+class ApiClientSecretResponse(BaseModel):
+    """密鑰單筆回應(永不含 secret_hash / pid;明文只在核發當次出現)。"""
+
+    uid: UUID = Field(description="密鑰公開識別碼(汰換時使用)")
+    status: str = Field(description="狀態(active / retired)")
+    created_at: datetime = Field(description="核發時間(Asia/Taipei wall-clock)")
+
+
+class ApiClientSecretListResponse(BaseModel):
+    items: list[ApiClientSecretResponse] = Field(
+        description="該 Client 全部密鑰(排除軟刪,依核發時間升冪)"
+    )
+    total: int = Field(description="總筆數")

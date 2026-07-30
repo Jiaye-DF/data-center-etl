@@ -3,6 +3,9 @@
 涵蓋:非 admin 403;建立回明文 secret 且列表不再出現;列表不含 secret_hash / pid;
 PATCH 限流參數與 status 生效;rotate 第 3 把 active → 409;retire 後 active 數減一;
 軟刪 client 不出現在列表。
+
+task-008 追加:密鑰清單端點(含 retired、欄位僅 uid/status/created_at、不存在 uid → 404)
+與建立 / rotate 回應的 secret_uid 對得上清單列。
 """
 
 import os
@@ -169,6 +172,7 @@ async def test_member_forbidden_on_all_endpoints(
     assert (
         await client.post(f"{_CLIENTS_URL}/{_FAKE_UID}/secrets/{_FAKE_UID}/retire")
     ).status_code == 403
+    assert (await client.get(f"{_CLIENTS_URL}/{_FAKE_UID}/secrets")).status_code == 403
 
 
 # ── 建立 ─────────────────────────────────────────────────────────────────
@@ -273,6 +277,9 @@ async def test_list_excludes_soft_deleted(
     ).status_code == 404
     assert (
         await admin_client.post(f"{_CLIENTS_URL}/{gone_uid}/rotate-secret")
+    ).status_code == 404
+    assert (
+        await admin_client.get(f"{_CLIENTS_URL}/{gone_uid}/secrets")
     ).status_code == 404
 
 
@@ -417,3 +424,94 @@ async def test_retire_secret_of_other_client_404(admin_client: AsyncClient) -> N
         f"{_CLIENTS_URL}/{first['uid']}/secrets/{other_secret_uid}/retire"
     )
     assert resp.status_code == 404
+
+
+# ── 密鑰清單(task-008)────────────────────────────────────────────────────
+async def _create_api_client_full(
+    client: AsyncClient, name: str = "密鑰清單系統"
+) -> dict[str, object]:
+    resp = await client.post(_CLIENTS_URL, json={"name": name})
+    assert resp.status_code == 201, resp.text
+    data = resp.json()["data"]
+    assert isinstance(data, dict)
+    return data
+
+
+async def test_create_response_secret_uid_matches_db_row(
+    admin_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    created = await _create_api_client_full(admin_client)
+    async with session_factory() as session:
+        secret = (await session.execute(select(ApiClientSecret))).scalar_one()
+    assert created["secret_uid"] == str(secret.uid)
+
+
+async def test_secret_list_returns_active_and_retired_minimal_fields(
+    admin_client: AsyncClient,
+) -> None:
+    created = await _create_api_client_full(admin_client)
+    client_obj = created["client"]
+    assert isinstance(client_obj, dict)
+    uid = client_obj["uid"]
+    initial_secret_uid = created["secret_uid"]
+    initial_plain_secret = created["client_secret"]
+
+    rotated = (await admin_client.post(f"{_CLIENTS_URL}/{uid}/rotate-secret")).json()[
+        "data"
+    ]
+    rotated_secret_uid = rotated["secret_uid"]
+
+    resp = await admin_client.get(f"{_CLIENTS_URL}/{uid}/secrets")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()["data"]
+    assert body["total"] == 2
+    # 依核發時間升冪:初始密鑰先、輪替密鑰後
+    assert [item["uid"] for item in body["items"]] == [
+        initial_secret_uid,
+        rotated_secret_uid,
+    ]
+    for item in body["items"]:
+        assert set(item.keys()) == {"uid", "status", "created_at"}
+        assert item["status"] == "active"
+        assert isinstance(item["created_at"], str)
+    assert "secret_hash" not in resp.text
+    assert "pid" not in resp.text
+    assert "client_secret" not in resp.text
+    assert initial_plain_secret not in resp.text
+    assert rotated["client_secret"] not in resp.text
+
+    # 汰換其中一把:該列仍在,狀態轉 retired
+    assert (
+        await admin_client.post(
+            f"{_CLIENTS_URL}/{uid}/secrets/{rotated_secret_uid}/retire"
+        )
+    ).status_code == 200
+    body = (await admin_client.get(f"{_CLIENTS_URL}/{uid}/secrets")).json()["data"]
+    assert body["total"] == 2
+    assert {item["uid"]: item["status"] for item in body["items"]} == {
+        initial_secret_uid: "active",
+        rotated_secret_uid: "retired",
+    }
+
+
+async def test_secret_list_scoped_to_one_client(admin_client: AsyncClient) -> None:
+    first = await _create_api_client_full(admin_client, name="甲系統")
+    second = await _create_api_client_full(admin_client, name="乙系統")
+    first_client = first["client"]
+    second_client = second["client"]
+    assert isinstance(first_client, dict)
+    assert isinstance(second_client, dict)
+
+    body = (
+        await admin_client.get(f"{_CLIENTS_URL}/{first_client['uid']}/secrets")
+    ).json()["data"]
+    assert [item["uid"] for item in body["items"]] == [first["secret_uid"]]
+    assert second["secret_uid"] not in [item["uid"] for item in body["items"]]
+
+
+async def test_secret_list_unknown_uid_404(admin_client: AsyncClient) -> None:
+    resp = await admin_client.get(f"{_CLIENTS_URL}/{_FAKE_UID}/secrets")
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["success"] is False
+    assert body["response_code"] == 404

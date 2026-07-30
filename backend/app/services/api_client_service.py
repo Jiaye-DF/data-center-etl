@@ -1,8 +1,9 @@
 """API Client 後台管理服務(建立 / 發證 / 輪替 / 汰換 / 啟停 / 限流參數)。
 
 - 明文 client_secret 只在核發當次回傳,入庫僅存 bcrypt 雜湊;稽核 detail 一律不含明文。
-- api_client_repo 無「依 uid 取件」與「active 密鑰計數」方法,且該檔不在本 task 檔案
-  白名單 → 兩處查詢暫落本 service(同 sso_service / data_query_service 前例)。
+- api_client_repo 無「依 uid 取件」、「active 密鑰計數」與「含 retired 的密鑰清單」方法,
+  且該檔不在本 task 檔案白名單 → 這些查詢暫落本 service
+  (同 sso_service / data_query_service 前例)。
 """
 
 import secrets
@@ -22,6 +23,8 @@ from app.schemas.api_client import (
     ApiClientListResponse,
     ApiClientResponse,
     ApiClientSecretIssuedResponse,
+    ApiClientSecretListResponse,
+    ApiClientSecretResponse,
     ApiClientUpdateRequest,
 )
 from app.services.audit_service import AuditService
@@ -75,6 +78,30 @@ class ApiClientService:
             page_size=page_size,
         )
 
+    async def list_secrets(self, uid: UUID) -> ApiClientSecretListResponse:
+        client = await self._get_or_404(uid)
+        rows = (
+            (
+                await self._db.execute(
+                    select(ApiClientSecret)
+                    .where(
+                        ApiClientSecret.api_client_user_pid == client.pid,
+                        ApiClientSecret.is_deleted.is_(False),
+                    )
+                    .order_by(ApiClientSecret.created_at, ApiClientSecret.pid)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        items = [
+            ApiClientSecretResponse(
+                uid=row.uid, status=row.status, created_at=row.created_at
+            )
+            for row in rows
+        ]
+        return ApiClientSecretListResponse(items=items, total=len(items))
+
     async def create_client(
         self, payload: ApiClientCreateRequest, *, actor_uid: UUID
     ) -> ApiClientCreatedResponse:
@@ -85,7 +112,7 @@ class ApiClientService:
             description=payload.description,
             actor_uid=actor_uid,
         )
-        await self._repo.add_secret(
+        secret = await self._repo.add_secret(
             client,
             secret_hash=await hash_password_async(plain_secret),
             actor_uid=actor_uid,
@@ -99,7 +126,9 @@ class ApiClientService:
             detail=f"建立 API Client {client.name}(client_id={client.client_id})",
         )
         return ApiClientCreatedResponse(
-            client=_to_response(client, 1), client_secret=plain_secret
+            client=_to_response(client, 1),
+            secret_uid=secret.uid,
+            client_secret=plain_secret,
         )
 
     async def update_client(

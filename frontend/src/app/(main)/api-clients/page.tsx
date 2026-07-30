@@ -3,11 +3,13 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   useCreateApiClientMutation,
+  useListApiClientSecretsQuery,
   useListApiClientsQuery,
   useRetireApiClientSecretMutation,
   useRotateApiClientSecretMutation,
   useUpdateApiClientMutation,
   type ApiClientListItem,
+  type ApiClientSecretItem,
   type ApiClientStatus,
   type CreateApiClientPayload,
   type UpdateApiClientPayload,
@@ -19,13 +21,6 @@ import { formatDateTime } from '@/utils/datetime'
 
 const PAGE_SIZE = 20
 const MAX_ACTIVE_SECRETS = 2
-
-/** 本次工作階段核發的密鑰(僅輪替會回傳 secret_uid,建立當下的初始密鑰無法個別定位)。 */
-interface KnownSecret {
-  secretUid: string
-  order: number
-  status: 'active' | 'retired'
-}
 
 /* ---------------------------------------------------------------------- */
 /* 小型顯示元件                                                             */
@@ -498,22 +493,22 @@ function EditClientDialog({
 }
 
 /* ---------------------------------------------------------------------- */
-/* 已知輪替密鑰單筆項目                                                      */
+/* 密鑰紀錄(伺服器資料)                                                     */
 /* ---------------------------------------------------------------------- */
 
-interface KnownSecretItemProps {
+interface SecretItemProps {
   client: ApiClientListItem
-  secret: KnownSecret
+  secret: ApiClientSecretItem
   retiring: boolean
-  onRequestRetire: (client: ApiClientListItem, secret: KnownSecret) => void
+  onRequestRetire: (client: ApiClientListItem, secret: ApiClientSecretItem) => void
 }
 
-const KnownSecretItem = memo(function KnownSecretItem({
+const SecretItem = memo(function SecretItem({
   client,
   secret,
   retiring,
   onRequestRetire,
-}: KnownSecretItemProps): React.ReactNode {
+}: SecretItemProps): React.ReactNode {
   const handleClick = useCallback(
     (): void => onRequestRetire(client, secret),
     [onRequestRetire, client, secret],
@@ -522,7 +517,7 @@ const KnownSecretItem = memo(function KnownSecretItem({
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-card px-3 py-2">
       <span className="text-sm text-foreground md:text-base">
-        第 {secret.order} 把輪替密鑰 ·{' '}
+        核發於 {formatDateTime(secret.created_at)} ·{' '}
         {secret.status === 'active' ? (
           <span className="text-success">有效</span>
         ) : (
@@ -541,6 +536,53 @@ const KnownSecretItem = memo(function KnownSecretItem({
   )
 })
 
+interface SecretHistoryPanelProps {
+  client: ApiClientListItem
+  retiringSecretUid: string | null
+  onRequestRetire: (client: ApiClientListItem, secret: ApiClientSecretItem) => void
+}
+
+function SecretHistoryPanel({
+  client,
+  retiringSecretUid,
+  onRequestRetire,
+}: SecretHistoryPanelProps): React.ReactNode {
+  const { data, isLoading, isError } = useListApiClientSecretsQuery(client.uid)
+
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground md:text-base">載入密鑰紀錄中…</p>
+  }
+  if (isError || data === undefined) {
+    return (
+      <p role="alert" className="text-sm text-danger md:text-base">
+        載入密鑰紀錄失敗,請稍後再試
+      </p>
+    )
+  }
+  if (data.items.length === 0) {
+    return <p className="text-sm text-muted-foreground md:text-base">尚無密鑰紀錄</p>
+  }
+
+  return (
+    <>
+      <p className="mb-2 text-sm text-muted-foreground md:text-base">
+        密鑰明文僅在核發當次顯示一次,此處只列出核發時間與狀態。
+      </p>
+      <ul className="flex flex-col gap-2">
+        {data.items.map((secret) => (
+          <SecretItem
+            key={secret.uid}
+            client={client}
+            secret={secret}
+            retiring={retiringSecretUid === secret.uid}
+            onRequestRetire={onRequestRetire}
+          />
+        ))}
+      </ul>
+    </>
+  )
+}
+
 /* ---------------------------------------------------------------------- */
 /* 清單列                                                                   */
 /* ---------------------------------------------------------------------- */
@@ -548,19 +590,17 @@ const KnownSecretItem = memo(function KnownSecretItem({
 interface ApiClientRowProps {
   client: ApiClientListItem
   expanded: boolean
-  knownSecrets: KnownSecret[]
   rotating: boolean
   retiringSecretUid: string | null
   onToggleExpand: (uid: string) => void
   onEdit: (client: ApiClientListItem) => void
   onRotate: (client: ApiClientListItem) => void
-  onRequestRetire: (client: ApiClientListItem, secret: KnownSecret) => void
+  onRequestRetire: (client: ApiClientListItem, secret: ApiClientSecretItem) => void
 }
 
 const ApiClientRow = memo(function ApiClientRow({
   client,
   expanded,
-  knownSecrets,
   rotating,
   retiringSecretUid,
   onToggleExpand,
@@ -629,26 +669,11 @@ const ApiClientRow = memo(function ApiClientRow({
       {expanded ? (
         <tr className="border-b border-border bg-muted/30 last:border-b-0">
           <td colSpan={8} className="px-3 py-3">
-            <p className="mb-2 text-sm text-muted-foreground md:text-base">
-              僅列出本次工作階段輪替所核發的密鑰(建立當下的初始密鑰無個別識別碼可查,如需汰換請先輪替再汰換)。
-            </p>
-            {knownSecrets.length === 0 ? (
-              <p className="text-sm text-muted-foreground md:text-base">
-                本次工作階段尚未輪替過密鑰。
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {knownSecrets.map((secret) => (
-                  <KnownSecretItem
-                    key={secret.secretUid}
-                    client={client}
-                    secret={secret}
-                    retiring={retiringSecretUid === secret.secretUid}
-                    onRequestRetire={onRequestRetire}
-                  />
-                ))}
-              </ul>
-            )}
+            <SecretHistoryPanel
+              client={client}
+              retiringSecretUid={retiringSecretUid}
+              onRequestRetire={onRequestRetire}
+            />
           </td>
         </tr>
       ) : null}
@@ -670,12 +695,9 @@ export default function ApiClientsPage(): React.ReactNode {
     null,
   )
   const [expandedUid, setExpandedUid] = useState<string | null>(null)
-  const [knownSecretsByClient, setKnownSecretsByClient] = useState<
-    Record<string, KnownSecret[]>
-  >({})
   const [retireTarget, setRetireTarget] = useState<{
     client: ApiClientListItem
-    secret: KnownSecret
+    secret: ApiClientSecretItem
   } | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -744,16 +766,6 @@ export default function ApiClientsPage(): React.ReactNode {
         setActionError(extractApiErrorDetail(result.error, '核發新密鑰失敗,請稍後再試'))
         return
       }
-      setKnownSecretsByClient((prev) => {
-        const existing = prev[client.uid] ?? []
-        return {
-          ...prev,
-          [client.uid]: [
-            ...existing,
-            { secretUid: result.data.secret_uid, order: existing.length + 1, status: 'active' },
-          ],
-        }
-      })
       setExpandedUid(client.uid)
       setRevealSecret({ clientId: client.client_id, secret: result.data.client_secret })
     },
@@ -761,7 +773,7 @@ export default function ApiClientsPage(): React.ReactNode {
   )
 
   const handleRequestRetire = useCallback(
-    (client: ApiClientListItem, secret: KnownSecret): void => {
+    (client: ApiClientListItem, secret: ApiClientSecretItem): void => {
       setActionError(null)
       setRetireTarget({ client, secret })
     },
@@ -773,21 +785,11 @@ export default function ApiClientsPage(): React.ReactNode {
     if (retireTarget === null) return
     setActionError(null)
     const { client, secret } = retireTarget
-    const result = await retireApiClientSecret({ uid: client.uid, secretUid: secret.secretUid })
+    const result = await retireApiClientSecret({ uid: client.uid, secretUid: secret.uid })
     setRetireTarget(null)
     if ('error' in result) {
       setActionError(extractApiErrorDetail(result.error, '汰換密鑰失敗,請稍後再試'))
-      return
     }
-    setKnownSecretsByClient((prev) => {
-      const existing = prev[client.uid] ?? []
-      return {
-        ...prev,
-        [client.uid]: existing.map((item) =>
-          item.secretUid === secret.secretUid ? { ...item, status: 'retired' } : item,
-        ),
-      }
-    })
   }, [retireTarget, retireApiClientSecret])
 
   const closeReveal = useCallback((): void => setRevealSecret(null), [])
@@ -853,9 +855,8 @@ export default function ApiClientsPage(): React.ReactNode {
                     key={client.uid}
                     client={client}
                     expanded={expandedUid === client.uid}
-                    knownSecrets={knownSecretsByClient[client.uid] ?? []}
                     rotating={isRotating}
-                    retiringSecretUid={isRetiring ? (retireTarget?.secret.secretUid ?? null) : null}
+                    retiringSecretUid={isRetiring ? (retireTarget?.secret.uid ?? null) : null}
                     onToggleExpand={handleToggleExpand}
                     onEdit={openEdit}
                     onRotate={handleRotate}
@@ -916,7 +917,8 @@ export default function ApiClientsPage(): React.ReactNode {
       >
         {retireTarget !== null ? (
           <p>
-            確定要汰換「{retireTarget.client.name}」的第 {retireTarget.secret.order} 把輪替密鑰?
+            確定要汰換「{retireTarget.client.name}」於{' '}
+            {formatDateTime(retireTarget.secret.created_at)} 核發的密鑰?
           </p>
         ) : null}
         <p>汰換後該密鑰立即失效,持有該密鑰的呼叫端須改用其他有效密鑰。</p>

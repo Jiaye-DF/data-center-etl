@@ -13,6 +13,7 @@ from app.schemas.api_client import (
     ApiClientListResponse,
     ApiClientResponse,
     ApiClientSecretIssuedResponse,
+    ApiClientSecretListResponse,
     ApiClientUpdateRequest,
 )
 from app.schemas.response import ApiResponse
@@ -63,6 +64,20 @@ async def update_api_client(
     user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[ApiClientResponse]:
     data = await ApiClientService(db).update_client(uid, payload, actor_uid=user.uid)
+    return success(data=data)
+
+
+@router.get(
+    "/{uid}/secrets",
+    response_model=ApiResponse[ApiClientSecretListResponse],
+    summary="密鑰清單(含 active / retired;排除軟刪,永不含明文與雜湊)",
+)
+async def list_api_client_secrets(
+    uid: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ApiClientSecretListResponse]:
+    data = await ApiClientService(db).list_secrets(uid)
     return success(data=data)
 
 
