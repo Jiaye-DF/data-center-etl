@@ -154,13 +154,16 @@ def _compose_column_comment(name: str, extra1: str | None, extra2: str | None) -
 
 
 async def fetch_column_comments(
-    conn: AsyncConnection, columns: Sequence[str]
+    conn: AsyncConnection, columns: Sequence[str], include_extras: bool = True
 ) -> dict[str, str]:
     """批量查該表各欄中文名(逐欄繁優先缺退簡);回傳 key 為小寫欄名。
 
     - GAQ 有對應:中文名(GAQ03)+ GAQ04/05 說明選項值(不等於中文名者附加,B3)。
     - GAQ 查不到者,退 GAE_FILE 畫面標籤補洞(B1);同一欄多畫面取第一筆非空標籤。
     - 兩字典表皆缺失、欄無對應者靜默略過(不 raise);key 以小寫欄名對映,供呼叫端比對。
+    - `include_extras=False`(AD-144,語意映射 autofill 用):只回純中文名
+      (GAQ03,缺退 GAE 畫面標籤),絕不附加 GAQ04/05 說明選項值;
+      預設 True 維持 COMMENT 路徑輸出零變動。
     """
     if not columns:
         return {}
@@ -179,6 +182,9 @@ async def fetch_column_comments(
                 value = r["v"]
                 if value is not None and str(value).strip():
                     name = str(value).strip()
+                    if not include_extras:
+                        result[str(r["k"])] = name
+                        continue
                     v4 = r["v4"]
                     v5 = r["v5"]
                     extra1 = str(v4).strip() if v4 is not None else None

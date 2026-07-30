@@ -273,12 +273,14 @@ async def write_mirror(
             .mappings()
             .all()
         }
+        # ADD COLUMN IF NOT EXISTS(AD-146):多 worker 併發同表 drift 時,慢者不因欄位
+        # 已由並行交易補上而撞 duplicate_column 中止整筆交易(同 AD-132 schema 搶建型)
         for c in columns:
             if c.name not in target_cols:
                 await conn.execute(
                     text(
                         f"ALTER TABLE {qualified}"
-                        f" ADD COLUMN {quote_ident(c.name)} {c.type_sql}"
+                        f" ADD COLUMN IF NOT EXISTS {quote_ident(c.name)} {c.type_sql}"
                     )
                 )
         await conn.execute(text(f"TRUNCATE TABLE {qualified}"))

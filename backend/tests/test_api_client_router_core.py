@@ -172,6 +172,25 @@ def test_settings_short_client_jwt_secret_fail_fast(monkeypatch: pytest.MonkeyPa
     assert "CLIENT_JWT_SECRET" in str(exc_info.value)
 
 
+def test_settings_invalid_fernet_encryption_key_fail_fast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AD-137:長度過驗但非合法 Fernet 金鑰(44 字元非法字串)須啟動即 fail-fast。"""
+    monkeypatch.delenv("CLIENT_SECRET_ENCRYPTION_KEY", raising=False)
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            CLIENT_SECRET_ENCRYPTION_KEY="x" * 44,
+            **_settings_kwargs(),
+        )
+    errors = exc_info.value.errors()
+    assert any(
+        "CLIENT_SECRET_ENCRYPTION_KEY 非合法 Fernet 金鑰" in error["msg"] for error in errors
+    )
+    # 我們 raise 的錯誤訊息禁含 key 內容(pydantic 另行回顯的 input_value 不在此列)
+    assert all("x" * 44 not in error["msg"] for error in errors)
+
+
 def test_settings_valid_client_jwt_secret_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CLIENT_JWT_SECRET", raising=False)
     settings = Settings(  # type: ignore[call-arg]

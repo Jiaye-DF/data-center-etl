@@ -78,6 +78,8 @@ JWT 解碼(HS256 payload):
 
 ### (6) secret 輪替:雙鑰並存 + 汰舊後 401
 
+> **注意(2026-07-30 補記)**:本節為 task-007 收口當時(雙鑰制)的驗證紀錄,如實保留;**task-010 已裁定改單一密鑰制**(active 恆 1,rotate 同交易撤舊發新,舊鑰立即 401),新語意驗證見第 7 節。
+
 **PASS**。Client A 執行 `POST /{uid}/rotate-secret` 取得第二把 active 密鑰:
 
 ```
@@ -136,10 +138,24 @@ JWT 解碼(HS256 payload):
 
 無「不過」項,故無需開 `fixed.md`。
 
+## 7. 收口後增量(task-008 ~ task-010)補記 — 2026-07-30
+
+本文件第 1–6 節為 task-007 收口時點(當時 8 個 task、415 passed、雙鑰制)之紀錄,如實保留;其後三個增量 task 之驗證證據原僅存於各 task 檔與 commit message,依 scan `AD-148` 於此回寫收斂:
+
+- **task-008(補洞 secret 清單端點)**:`GET /api-clients/{uid}/secrets`(admin-only,含 retired,`items/total` 殼,永不含 hash/pid);前端密鑰紀錄改吃伺服器資料。18 新測,全套 415 passed,真實 API 驗證過。
+- **task-009(secret 可逆加密 + 儀表板明文檢視)**:user 裁定推翻一次性顯示 — Fernet 加密存 `secret_encrypted`(migration v9 只加不刪),`CLIENT_SECRET_ENCRYPTION_KEY` 必填 fail-fast;reveal 端點 admin-only + audit(detail 禁明文),舊列 NULL 回 409;bcrypt 驗證路徑零變動。25 新測,全套 422 passed,真實 API reveal 明文取 token 200。
+- **task-010(單一密鑰制 + UI 終版)**:user 裁定推翻雙鑰並存 — `add_secret` 同交易撤舊發新、active 恆 1、舊鑰立即 401;rotate audit 註記自動撤銷;表格終版 6 欄。三測試檔改寫單鑰語意,全套 **423 passed**,真實 API 驗證舊鑰 401 / 新鑰 200;開發 DB 測試資料全軟刪清單歸零。
+- **UI 收尾(commit `5cccade`)**:五項 UI 調整 + 膠囊鈕縮小 + 「權限→憑證」用詞統一 5 處;tsc / eslint / build 三綠,user 人工複測完成。
+
+## 8. scan / reflect 收口(2026-07-30)
+
+- `/scan-project`:`Issue-Scan-Project-260730160810.md`(v1.5.2 + v1.6.0 新碼零 Critical;新增 🟠3 🟡16 🔵2 = AD-133~150,修正進度見該報告與後續 commit)。
+- `/reflect-rules`:`reflect-report-260730161943.md`(新候選 3;task-004/005/007 記錄之 4 項候選已逐項處置:1 併入歷史「拆解白名單」候選佐證、3 項不成案記錄原因)。
+
 ## 殘留事項
 
-1. **前端 UI 純視覺互動項待人工複測**(繼承 task-006 完成註記清單):sidebar「API Client 設定」獨立區塊可見性、建立/輪替一次性 secret 面板實際渲染與複製按鈕、編輯/停用 dialog 二次確認互動、輪替至 2 把 active 後按鈕禁用狀態呈現。背後業務邏輯已由 task-006 / task-008 / 本次 007 以真實 API 呼叫等效驗證。
-2. **部署前必辦**:`.env.staging` / `.env.production` 尚未有 `CLIENT_JWT_SECRET`,部署前須各自生成 32+ 字元強隨機值(`openssl rand -base64 32`),**禁沿用 `JWT_SECRET_KEY`**,否則測試站 / 正式站啟動會 fail-fast(worker-B task-002 完成註記記錄)。
+1. **前端 UI 人工複測 — 已完成(2026-07-30 補記)**:user 於 task-010 UI 終版 + 收尾調整(commit `5cccade`)過程中實際操作頁面完成人工複測(含膠囊按鈕、建立按鈕文案裁定);原清單中「輪替至 2 把 active 後按鈕禁用」項已隨 task-010 單一密鑰制裁定移除(單鑰制下輪替恆可用,無 2 把上限情境)。
+2. **部署前必辦(2026-07-30 補記修正)**:`.env.staging` / `.env.production` 尚未有 **兩把** v1.6.0 新必填金鑰 — `CLIENT_JWT_SECRET`(32+ 字元強隨機,`openssl rand -base64 32`,**禁沿用 `JWT_SECRET_KEY`**)與 **`CLIENT_SECRET_ENCRYPTION_KEY`**(task-009 追加,Fernet 44 字元,`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`,**禁跨層沿用**),缺任一把啟動即 fail-fast(原文僅記第一把,依 scan AD-148 補正)。
 3. **PATCH `description` 無法清空**:`api_client_repo.update` 沿用 `None = 不變更` 語意(task-001 定義、task-005/006 已知繼承),若日後需清空欄位需改 repo 語意,非本版缺陷。
 4. **既有 mypy 錯誤** `app/repositories/schedule_repo.py:528`(非本版新增,對齊 v1.5.x 既有記錄)。
 5. **Reflect 候選(跨 task 累積,待集中決議)**:
@@ -150,4 +166,4 @@ JWT 解碼(HS256 payload):
 
 ## 結論
 
-v1.6.0(DataHub API Gateway 模組① — API Client 連接層)8 個 task 全數完成並通過本次 e2e 收口驗證,propose 驗收標準逐條過關(1 項純 UI 呈現受環境限制待人工複測,不影響功能判定),Arch 文件兩處決策已同步回寫。可進入下一版本規劃。
+v1.6.0(DataHub API Gateway 模組① — API Client 連接層)**10 個 task 全數完成**(task-007 e2e 收口 + task-008~010 增量收口,見第 7 節),propose 驗收標準逐條過關,後端全套最終 **423 passed**,前端三檢綠 + UI 人工複測完成,Arch 文件兩處決策已同步回寫,scan / reflect 已跑(見第 8 節)。可進入下一版本規劃。

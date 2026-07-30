@@ -285,7 +285,9 @@ async def test_source_table_missing_is_graceful(
         # 模擬「讀取回 None」(涵蓋來源表不存在 / 環境未備妥兩種 graceful 情境)
         return None
 
-    async def _noop_autofill(target: object, source: object) -> AutofillResult:
+    async def _noop_autofill(
+        target: object, source: object, scope_tables: object = None
+    ) -> AutofillResult:
         # 本測試聚焦副本重灌 graceful,非 autofill;中和 task-003 autofill 免打真身表
         return AutofillResult()
 
@@ -365,7 +367,9 @@ async def test_mirror_sync_replaces_mapping_and_invalidates_cache(
     async def _fake_delete_pattern(pattern: str) -> None:
         invalidated.append(pattern)
 
-    async def _noop_autofill(target: object, source: object) -> AutofillResult:
+    async def _noop_autofill(
+        target: object, source: object, scope_tables: object = None
+    ) -> AutofillResult:
         # 本測試聚焦副本重灌 + 快取失效,非 autofill;中和 task-003 autofill 免打真身表
         return AutofillResult()
 
@@ -478,7 +482,9 @@ async def test_mirror_sync_autofill_runs_before_replace_all(
 
     order: list[str] = []
 
-    async def _spy_autofill(target: object, source: object) -> AutofillResult:
+    async def _spy_autofill(
+        target: object, source: object, scope_tables: object = None
+    ) -> AutofillResult:
         order.append("autofill")
         return AutofillResult(columns_added=1, tables_added=0, aliases_deduped=0)
 
@@ -504,7 +510,9 @@ async def test_mirror_sync_autofill_skipped_when_mapping_table_missing(
 
     called: list[bool] = []
 
-    async def _spy_autofill(target: object, source: object) -> AutofillResult:
+    async def _spy_autofill(
+        target: object, source: object, scope_tables: object = None
+    ) -> AutofillResult:
         called.append(True)
         return AutofillResult()
 
@@ -529,7 +537,9 @@ async def test_mirror_sync_autofill_exception_still_triggers_refresh(
 
     refresh_calls: list[bool] = []
 
-    async def _boom_autofill(target: object, source: object) -> AutofillResult:
+    async def _boom_autofill(
+        target: object, source: object, scope_tables: object = None
+    ) -> AutofillResult:
         raise RuntimeError("autofill boom")
 
     async def _spy_refresh(session: object) -> None:
@@ -546,13 +556,51 @@ async def test_mirror_sync_autofill_exception_still_triggers_refresh(
     assert any("語意映射自動補列失敗" in message for message in caplog.messages)
 
 
+# (c2) AD-147:autofill engine「建立階段」失敗(第二個 create_async_engine raise)
+#     → warning 後既有副本重灌照跑,且第一個已建 engine 不洩漏(finally 判非 None dispose)
+async def test_mirror_sync_autofill_engine_creation_failure_still_triggers_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+    target_engine: AsyncEngine,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async with target_engine.begin() as conn:
+        await ensure_semantic_schema(conn)
+
+    real_create = tasks.create_async_engine
+    create_calls: list[str] = []
+
+    def _flaky_create(url: object, **kwargs: object) -> AsyncEngine:
+        create_calls.append(str(url))
+        if len(create_calls) >= 2:
+            raise RuntimeError("engine create boom")
+        return real_create(url, **kwargs)  # type: ignore[arg-type]
+
+    refresh_calls: list[bool] = []
+
+    async def _spy_refresh(session: object) -> None:
+        refresh_calls.append(True)
+
+    monkeypatch.setattr(tasks, "create_async_engine", _flaky_create)
+    monkeypatch.setattr(tasks, "refresh_semantic_copy_and_views", _spy_refresh)
+
+    with caplog.at_level(logging.WARNING, logger="app.worker.tasks"):
+        ret = await _invoke(monkeypatch, schema="DS", table="AAA_FILE")
+
+    assert ret["status"] == "success"
+    assert len(create_calls) == 2  # target 建立成功、source 建立失敗
+    assert refresh_calls == [True]  # 副本重灌不因 engine 建立失敗被跳過
+    assert any("語意映射自動補列失敗" in message for message in caplog.messages)
+
+
 # (d) semantic_apply(手動套用變更)路徑不掛 autofill
 async def test_semantic_apply_does_not_call_autofill(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     called: list[bool] = []
 
-    async def _spy_autofill(target: object, source: object) -> AutofillResult:
+    async def _spy_autofill(
+        target: object, source: object, scope_tables: object = None
+    ) -> AutofillResult:
         called.append(True)
         return AutofillResult()
 

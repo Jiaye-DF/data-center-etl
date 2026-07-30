@@ -15,7 +15,7 @@ class ApiClientResponse(BaseModel):
     status: str = Field(description="狀態(enabled / disabled;disabled 即拒發 token)")
     rate_limit_per_minute: int = Field(description="每分鐘請求上限")
     rate_limit_per_10min: int = Field(description="每 10 分鐘請求上限")
-    active_secret_count: int = Field(description="有效(active)密鑰把數,上限 2")
+    active_secret_count: int = Field(description="有效(active)密鑰把數(單一密鑰制,恆為 0 或 1)")
     created_at: datetime = Field(description="建立時間(Asia/Taipei wall-clock)")
 
 

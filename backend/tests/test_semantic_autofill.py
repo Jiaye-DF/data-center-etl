@@ -355,3 +355,58 @@ async def test_autofill_zh_name_from_dictionary_else_empty(
             await conn.execute(
                 text('DELETE FROM "DS"."GAQ_FILE" WHERE "GAQ01" = :c'), {"c": "AFD01"}
             )
+
+
+async def test_autofill_zh_name_is_pure_name_without_gaq_extras(
+    target_engine: AsyncEngine, source_engine: AsyncEngine
+) -> None:
+    """AD-144:GAQ04/05 有值 → autofill 落庫 zh_name 仍為純中文名(GAQ03),不串「；」後綴。"""
+    async with source_engine.begin() as conn:
+        await conn.execute(text('CREATE SCHEMA IF NOT EXISTS "DS"'))
+        await conn.execute(
+            text(
+                'CREATE TABLE IF NOT EXISTS "DS"."GAQ_FILE"'
+                ' ("GAQ01" TEXT, "GAQ02" TEXT, "GAQ03" TEXT, "GAQ04" TEXT, "GAQ05" TEXT)'
+            )
+        )
+        await conn.execute(
+            text('DELETE FROM "DS"."GAQ_FILE" WHERE "GAQ01" = :c'), {"c": "AFE01"}
+        )
+        await conn.execute(
+            text(
+                'INSERT INTO "DS"."GAQ_FILE" ("GAQ01", "GAQ02", "GAQ03", "GAQ04", "GAQ05")'
+                " VALUES ('AFE01', '0', '單別', '單據類別說明', '(A:進貨 B:退貨)')"
+            )
+        )
+    await _ensure_account_table(target_engine, "AF_TEST", "AF_PURE", ["AFE01"])
+
+    try:
+        await autofill_semantic_mappings(target_engine, source_engine)
+        rows = await _fetch_rows(target_engine, "AF_PURE")
+        zh_name = rows["AFE01"][1]
+        assert zh_name == "單別"  # 純中文名,不含 GAQ04/05 說明選項值
+        assert zh_name is not None and "；" not in zh_name
+    finally:
+        async with source_engine.begin() as conn:
+            await conn.execute(
+                text('DELETE FROM "DS"."GAQ_FILE" WHERE "GAQ01" = :c'), {"c": "AFE01"}
+            )
+
+
+async def test_autofill_scope_tables_limits_backfill_to_current_round(
+    target_engine: AsyncEngine, source_engine: AsyncEngine
+) -> None:
+    """AD-145:目標庫存在 A、B 兩表,scope_tables 只含 A → 僅 A 補列,B 不被補。"""
+    await _ensure_account_table(target_engine, "AF_TEST", "AF_SCOPE_A", ["AFS01"])
+    await _ensure_account_table(target_engine, "AF_TEST", "AF_SCOPE_B", ["AFS01"])
+
+    await autofill_semantic_mappings(
+        target_engine, source_engine, scope_tables={"AF_SCOPE_A"}
+    )
+
+    rows_a = await _fetch_rows(target_engine, "AF_SCOPE_A")
+    rows_b = await _fetch_rows(target_engine, "AF_SCOPE_B")
+    # A 補齊表層級 + 欄層級;B 完全不被補列(掃描面圈定為本輪同步的表)
+    assert rows_a[""][0] == "af_scope_a"
+    assert rows_a["AFS01"][0] == "afs01"
+    assert rows_b == {}

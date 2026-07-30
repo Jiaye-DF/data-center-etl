@@ -25,7 +25,7 @@ schema 排除 / information_schema 內省慣例沿用 `view_generator.py`(排 DS
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -197,16 +197,25 @@ async def _fetch_existing_mappings(conn: AsyncConnection) -> list[tuple[str, str
 async def autofill_semantic_mappings(
     target_engine: AsyncEngine,
     source_engine: AsyncEngine,
+    scope_tables: Collection[str] | None = None,
 ) -> AutofillResult:
     """對外入口(task-003 掛接 mirror_sync 收尾用)。
 
     流程:目標 RDS 內省帳套實體欄位 + 一次全撈既有映射 → 算缺列 → 來源連線批量取 DS 字典
     中文名(僅缺列欄位,避免 N+1)→ 目標 RDS 以 `INSERT ... ON CONFLICT DO NOTHING` 補列。
     回傳補列統計。無缺列時不開寫入交易。
+
+    `scope_tables`(AD-145):本輪同步的表名集合(mirror 目標表名 = 來源表名,原樣比對);
+    給定時內省結果僅保留集合內的表,將補列面圈定為本輪處理範圍;None 維持現行全庫掃描
+    (向後相容,既有直呼測試不受影響)。
     """
     async with target_engine.connect() as conn:
         target_tables = await _introspect_target_tables(conn)
         existing = await _fetch_existing_mappings(conn)
+
+    if scope_tables is not None:
+        wanted = set(scope_tables)
+        target_tables = {t: cols for t, cols in target_tables.items() if t in wanted}
 
     existing_keys = {(t, c) for t, c, _ in existing}
     missing_columns = sorted(
@@ -218,10 +227,14 @@ async def autofill_semantic_mappings(
         }
     )
 
+    # AD-144:autofill 的 zh_name 只取純中文名(GAQ03 / GAE fallback),
+    # 絕不串接 GAQ04/05 說明選項值(COMMENT 路徑不受影響)
     zh_lookup: dict[str, str] = {}
     if missing_columns:
         async with source_engine.connect() as source_conn:
-            zh_lookup = await fetch_column_comments(source_conn, missing_columns)
+            zh_lookup = await fetch_column_comments(
+                source_conn, missing_columns, include_extras=False
+            )
 
     inserts, result = plan_autofill(target_tables, existing, zh_lookup)
     if inserts:
@@ -234,4 +247,8 @@ async def autofill_semantic_mappings(
         result.tables_added,
         result.aliases_deduped,
     )
+    # AD-145:本輪實際補列的表名清單 log info(供人審)
+    if inserts:
+        touched = sorted({str(p["t"]) for p in inserts})
+        logger.info("語意映射自動補列表清單(本輪實際補列):%s", ", ".join(touched))
     return result

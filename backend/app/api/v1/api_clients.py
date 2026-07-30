@@ -100,7 +100,7 @@ async def reveal_api_client_secret(
 @router.post(
     "/{uid}/rotate-secret",
     response_model=ApiResponse[ApiClientSecretIssuedResponse],
-    summary="輪替密鑰:核發新 active 密鑰(已有 2 把 active → 409)",
+    summary="輪替密鑰:核發新 active 並自動撤銷舊鑰(單一密鑰制)",
 )
 async def rotate_api_client_secret(
     uid: UUID,

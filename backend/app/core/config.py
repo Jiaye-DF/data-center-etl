@@ -3,7 +3,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, model_validator
+from cryptography.fernet import Fernet
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 JWT_SECRET_KEY_DEVELOPMENT_DEFAULT = "changeme-32-bytes-very-very-secret"
@@ -46,6 +47,17 @@ class Settings(BaseSettings):
     # Cookie Domain:跨子網域共用登入 cookie 用(例:.zerozero.tw 讓所有 *.zerozero.tw 都收得到)。
     # 留空 = host-only(本機開發預設,cookie 綁單一 host);部署跨二級子網域時必填。
     COOKIE_DOMAIN: str = ""
+
+    @field_validator("CLIENT_SECRET_ENCRYPTION_KEY")
+    @classmethod
+    def _validate_fernet_key(cls, value: str) -> str:
+        # 啟動即驗金鑰合法性(AD-137):長度對但非合法 Fernet key 會延遲到首次加密才爆
+        try:
+            Fernet(value.encode("ascii"))
+        except Exception as exc:
+            # 訊息禁含 key 內容(機密)
+            raise ValueError("CLIENT_SECRET_ENCRYPTION_KEY 非合法 Fernet 金鑰") from exc
+        return value
 
     @model_validator(mode="after")
     def _fail_fast_in_prod(self) -> Settings:

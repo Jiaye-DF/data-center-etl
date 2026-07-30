@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, String, Text
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel
@@ -9,7 +9,7 @@ SECRET_STATUS_CHECK_SQL = "status IN ('active', 'retired')"
 
 
 class ApiClientSecret(BaseModel):
-    """API Client 密鑰(雙鑰輪替:新鑰上線後舊鑰改 retired,不物理刪除)。"""
+    """API Client 密鑰(單一密鑰制:同 client 恆一把 active,輪替即撤舊為 retired,不物理刪除)。"""
 
     __tablename__ = "api_client_secrets"
 
@@ -49,4 +49,11 @@ class ApiClientSecret(BaseModel):
     __table_args__ = (
         CheckConstraint(SECRET_STATUS_CHECK_SQL, name="ck_api_client_secrets_status"),
         Index("idx_api_client_secrets_api_client_user_pid", "api_client_user_pid"),
+        # 單一密鑰制 DB 兜底(AD-135):同 client 未刪除範圍恆最多一把 active
+        Index(
+            "uq_api_client_secrets_single_active",
+            "api_client_user_pid",
+            unique=True,
+            postgresql_where=text("status = 'active' AND is_deleted = false"),
+        ),
     )

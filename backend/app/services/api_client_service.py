@@ -11,6 +11,7 @@ import secrets
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -189,8 +190,14 @@ class ApiClientService:
         self, uid: UUID, *, actor_uid: UUID
     ) -> ApiClientSecretIssuedResponse:
         client = await self._get_or_404(uid)
-        # 單一密鑰制:repo.add_secret 於同交易先撤銷全部 active 再核發
-        secret, plain_secret = await self._issue_secret(client, actor_uid=actor_uid)
+        # 單一密鑰制:repo.add_secret 於同交易先撤銷全部 active 再核發;
+        # 併發輪替繞過檢核時由 partial unique index 兜底(AD-135)→ 轉 409 請重試
+        try:
+            secret, plain_secret = await self._issue_secret(client, actor_uid=actor_uid)
+        except IntegrityError as exc:
+            raise AppError(
+                "密鑰輪替衝突,請重試", response_code=409, status_code=409
+            ) from exc
         active_count = len(await self._repo.list_active_secrets(client))
         await self._audit.log(
             action="api_client_secret_rotate",

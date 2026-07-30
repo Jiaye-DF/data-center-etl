@@ -292,8 +292,8 @@ async def test_write_mirror_adds_missing_source_column() -> None:
     )
     joined = "\n".join(conn.executed)
     assert written == 1
-    # 來源多的欄以重建型別 ADD COLUMN(識別字引號化),且不 DROP
-    assert 'ALTER TABLE "DS"."AAA_FILE" ADD COLUMN "AAA02" VARCHAR(20)' in joined
+    # 來源多的欄以重建型別 ADD COLUMN IF NOT EXISTS(AD-146 併發防護;識別字引號化),且不 DROP
+    assert 'ALTER TABLE "DS"."AAA_FILE" ADD COLUMN IF NOT EXISTS "AAA02" VARCHAR(20)' in joined
     assert "DROP" not in joined.upper()
     # ALTER 必在 TRUNCATE 之前(同交易,補欄後才清空重灌)
     assert joined.index("ADD COLUMN") < joined.index("TRUNCATE TABLE")

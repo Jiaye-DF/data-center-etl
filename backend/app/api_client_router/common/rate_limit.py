@@ -81,11 +81,16 @@ def _log_fail_open(client_id: str, action: str) -> None:
     )
 
 
+def _window_floor_ms(now_ms: int, window_seconds: int) -> int:
+    """窗口下界(含):窗口為 (now - window, now],等了 Retry-After 秒後邊界舊筆必離窗。"""
+    return now_ms - window_seconds * 1000 + 1
+
+
 async def _window_retry_after(key: str, now_ms: int, window_seconds: int) -> int:
     """估算窗口內最舊一筆離開窗口所需秒數(向上取整,至少 1 秒)。"""
     window_ms = window_seconds * 1000
     entries = await get_redis().zrangebyscore(
-        key, now_ms - window_ms, now_ms, start=0, num=1, withscores=True
+        key, _window_floor_ms(now_ms, window_seconds), now_ms, start=0, num=1, withscores=True
     )
     if not entries:
         return 1
@@ -96,33 +101,36 @@ async def _window_retry_after(key: str, now_ms: int, window_seconds: int) -> int
 async def check_rate_limit(
     client_id: str, limit_per_minute: int, limit_per_10min: int
 ) -> RateLimitResult:
-    """記一次請求並判定是否超過任一窗口上限;Redis 異常 → 放行 + fail-open log。"""
+    """判定是否超過任一窗口上限,放行才計數(AD-134:被拒請求不佔額度,
+    Retry-After = 等到窗口 count 降到 limit 以下的秒數);Redis 異常 → 放行 + fail-open log。"""
     key = rate_limit_key(client_id)
     now_ms = _now_ms()
     try:
         client = get_redis()
-        await client.zadd(key, {f"{now_ms}-{uuid4().hex}": now_ms})
-        await client.zremrangebyscore(key, "-inf", now_ms - TEN_MINUTE_WINDOW_SECONDS * 1000 - 1)
-        minute_count = int(await client.zcount(key, now_ms - MINUTE_WINDOW_SECONDS * 1000, now_ms))
-        ten_min_count = int(
-            await client.zcount(key, now_ms - TEN_MINUTE_WINDOW_SECONDS * 1000, now_ms)
+        await client.zremrangebyscore(key, "-inf", now_ms - TEN_MINUTE_WINDOW_SECONDS * 1000)
+        minute_count = int(
+            await client.zcount(key, _window_floor_ms(now_ms, MINUTE_WINDOW_SECONDS), now_ms)
         )
-        await client.expire(key, TEN_MINUTE_WINDOW_SECONDS)
+        ten_min_count = int(
+            await client.zcount(key, _window_floor_ms(now_ms, TEN_MINUTE_WINDOW_SECONDS), now_ms)
+        )
 
         exceeded: list[tuple[int, int]] = []
-        if minute_count > limit_per_minute:
+        if minute_count >= limit_per_minute:
             exceeded.append((MINUTE_WINDOW_SECONDS, limit_per_minute))
-        if ten_min_count > limit_per_10min:
+        if ten_min_count >= limit_per_10min:
             exceeded.append((TEN_MINUTE_WINDOW_SECONDS, limit_per_10min))
         if not exceeded:
+            await client.zadd(key, {f"{now_ms}-{uuid4().hex}": now_ms})
+            await client.expire(key, TEN_MINUTE_WINDOW_SECONDS)
             return _ALLOWED
 
-        # 多窗口同時超限取較近可用者估算
+        # 須全部窗口都低於上限才放行 → 多窗口同時超限取最久者(max)
         estimates = [
             (await _window_retry_after(key, now_ms, window), window, limit)
             for window, limit in exceeded
         ]
-        retry_after, window_seconds, limit = min(estimates)
+        retry_after, window_seconds, limit = max(estimates)
         return RateLimitResult(
             allowed=False,
             retry_after_seconds=retry_after,

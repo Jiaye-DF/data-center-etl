@@ -87,6 +87,31 @@ def _prepare_test_db() -> None:
         try:
             async with test_engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                # create_all 對既有表不補新索引 → 冪等補建單一 active 兜底索引
+                # (對齊 migration v10;先收斂殘留重複 active 以免建索引失敗)
+                await conn.execute(
+                    text(
+                        """
+                        UPDATE api_client_secrets AS s
+                        SET status = 'retired'
+                        WHERE s.status = 'active' AND s.is_deleted = false
+                          AND EXISTS (
+                            SELECT 1 FROM api_client_secrets AS newer
+                            WHERE newer.api_client_user_pid = s.api_client_user_pid
+                              AND newer.status = 'active' AND newer.is_deleted = false
+                              AND (newer.created_at > s.created_at
+                                   OR (newer.created_at = s.created_at AND newer.pid > s.pid))
+                          )
+                        """
+                    )
+                )
+                await conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_api_client_secrets_single_active "
+                        "ON api_client_secrets (api_client_user_pid) "
+                        "WHERE status = 'active' AND is_deleted = false"
+                    )
+                )
         finally:
             await test_engine.dispose()
 
@@ -213,6 +238,32 @@ async def test_retire_only_secret_leaves_none_active(
         assert secrets == []
         await repo.add_secret(client, secret_hash="$2b$newer", actor_uid=_ZERO_UID)
         assert len(await repo.list_active_secrets(client)) == 1
+
+
+async def test_second_active_secret_rejected_by_partial_unique_index(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """AD-135:繞過 repo 檢核直插第二把 active → partial unique index 兜底丟 IntegrityError。"""
+    async with session_factory() as session:
+        repo = ApiClientRepository(session)
+        client = await _create_client(session, "double-active")
+        await repo.add_secret(client, secret_hash="$2b$first", actor_uid=_ZERO_UID)
+        await session.commit()
+
+    async with session_factory() as session:
+        with pytest.raises(IntegrityError):
+            session.add(
+                ApiClientSecret(
+                    uid=UUID(int=2),
+                    api_client_user_pid=client.pid,
+                    secret_hash="$2b$second",
+                    status=SECRET_STATUS_ACTIVE,
+                    created_by=_ZERO_UID,
+                    updated_by=_ZERO_UID,
+                )
+            )
+            await session.commit()
+        await session.rollback()
 
 
 # ── 軟刪除 ───────────────────────────────────────────────────────────────

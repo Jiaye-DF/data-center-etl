@@ -214,6 +214,33 @@ async def test_window_slides_and_recovers(fake_redis: FakeRedis) -> None:
     assert recovered.window_seconds == 0
 
 
+async def test_retry_after_seconds_is_honored_exactly(fake_redis: FakeRedis) -> None:
+    """回歸 AD-134:打滿限額 → 429 附 Retry-After → 恰好等滿該秒數重試必放行。
+
+    放行才計數:被拒請求不 zadd,Retry-After 不會被重試本身不斷推遲。
+    """
+    for _ in range(DEFAULT_LIMIT_PER_MINUTE):
+        allowed = await check_rate_limit(
+            CLIENT_ID, DEFAULT_LIMIT_PER_MINUTE, DEFAULT_LIMIT_PER_10MIN
+        )
+        assert allowed.allowed is True
+
+    blocked = await check_rate_limit(CLIENT_ID, DEFAULT_LIMIT_PER_MINUTE, DEFAULT_LIMIT_PER_10MIN)
+    assert blocked.allowed is False
+    assert blocked.retry_after_seconds >= 1
+
+    # 被拒後再拒一次,Retry-After 不得因重試而延長(拒絕不計數)
+    blocked_again = await check_rate_limit(
+        CLIENT_ID, DEFAULT_LIMIT_PER_MINUTE, DEFAULT_LIMIT_PER_10MIN
+    )
+    assert blocked_again.allowed is False
+    assert blocked_again.retry_after_seconds <= blocked.retry_after_seconds
+
+    fake_redis.advance(blocked.retry_after_seconds)
+    retried = await check_rate_limit(CLIENT_ID, DEFAULT_LIMIT_PER_MINUTE, DEFAULT_LIMIT_PER_10MIN)
+    assert retried.allowed is True
+
+
 async def test_rate_limit_key_name_is_exactly_specified_format(fake_redis: FakeRedis) -> None:
     await check_rate_limit(CLIENT_ID, DEFAULT_LIMIT_PER_MINUTE, DEFAULT_LIMIT_PER_10MIN)
     assert fake_redis.keys() == {RATE_KEY}

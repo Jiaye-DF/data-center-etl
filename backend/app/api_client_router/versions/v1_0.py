@@ -83,11 +83,16 @@ def _rate_limited(retry_after_seconds: int) -> JSONResponse:
     )
 
 
-async def _throttle(client_id: str, client: ApiClientUser | None) -> JSONResponse | None:
-    """限流先行:鎖定中 / 超限回 429,否則回 None。未知 client 用預設上限(防列舉爆破)。"""
+async def _throttle_lock(client_id: str) -> JSONResponse | None:
+    """鎖定前置檢查(純 Redis,不碰 DB;AD-136):鎖定中回 429,否則回 None。"""
     lock = await check_auth_lock(client_id)
     if lock.locked:
         return _rate_limited(lock.retry_after_seconds)
+    return None
+
+
+async def _throttle_rate(client_id: str, client: ApiClientUser | None) -> JSONResponse | None:
+    """限流檢查:超限回 429,否則回 None。未知 client 用預設上限(防列舉爆破)。"""
     result = await check_rate_limit(
         client_id,
         client.rate_limit_per_minute if client else DEFAULT_LIMIT_PER_MINUTE,
@@ -138,8 +143,11 @@ async def _issue(client_id: str) -> JSONResponse:
 async def issue_token(
     payload: TokenRequest, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> JSONResponse:
+    locked = await _throttle_lock(payload.client_id)
+    if locked is not None:
+        return locked
     record = await ApiClientRepository(db).get_by_client_id(payload.client_id)
-    throttled = await _throttle(payload.client_id, record[0] if record else None)
+    throttled = await _throttle_rate(payload.client_id, record[0] if record else None)
     if throttled is not None:
         return throttled
     if not await _authenticated(record, payload.client_secret):
@@ -155,8 +163,11 @@ async def issue_token(
 async def refresh_token(
     payload: RefreshTokenRequest, db: Annotated[AsyncSession, Depends(get_db)]
 ) -> JSONResponse:
+    locked = await _throttle_lock(payload.client_id)
+    if locked is not None:
+        return locked
     record = await ApiClientRepository(db).get_by_client_id(payload.client_id)
-    throttled = await _throttle(payload.client_id, record[0] if record else None)
+    throttled = await _throttle_rate(payload.client_id, record[0] if record else None)
     if throttled is not None:
         return throttled
     if not is_refreshable_token(payload.access_token, payload.client_id):

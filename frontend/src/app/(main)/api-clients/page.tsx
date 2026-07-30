@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   useCreateApiClientMutation,
   useListApiClientSecretsQuery,
@@ -47,15 +47,41 @@ interface CopyButtonProps {
   value: string
 }
 
+type CopyResult = 'idle' | 'copied' | 'failed'
+
+const COPY_LABEL: Record<CopyResult, string> = {
+  idle: '複製',
+  copied: '已複製',
+  failed: '複製失敗',
+}
+
 const CopyButton = memo(function CopyButton({ value }: CopyButtonProps): React.ReactNode {
-  const [copied, setCopied] = useState(false)
+  const [copyResult, setCopyResult] = useState<CopyResult>('idle')
+  const resetTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current)
+    }
+  }, [])
+
+  const showResult = useCallback((result: CopyResult): void => {
+    setCopyResult(result)
+    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current)
+    resetTimerRef.current = window.setTimeout(() => setCopyResult('idle'), 1500)
+  }, [])
 
   const handleCopy = useCallback((): void => {
-    void navigator.clipboard.writeText(value).then(() => {
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    })
-  }, [value])
+    // 非 secure context(如 http 內網)沒有 clipboard API,直接顯示失敗
+    if (navigator.clipboard === undefined) {
+      showResult('failed')
+      return
+    }
+    navigator.clipboard
+      .writeText(value)
+      .then(() => showResult('copied'))
+      .catch(() => showResult('failed'))
+  }, [value, showResult])
 
   return (
     <button
@@ -63,7 +89,7 @@ const CopyButton = memo(function CopyButton({ value }: CopyButtonProps): React.R
       onClick={handleCopy}
       className="df-btn-outline min-h-0 shrink-0 px-2 py-1 text-sm"
     >
-      {copied ? '已複製' : '複製'}
+      {COPY_LABEL[copyResult]}
     </button>
   )
 })
@@ -179,7 +205,8 @@ const LatestSecretCell = memo(function LatestSecretCell({
   if (latestActive === null) {
     return <span className="text-sm text-muted-foreground md:text-base">無有效密鑰</span>
   }
-  return <SecretRevealControl clientUid={client.uid} secret={latestActive} />
+  // key 綁密鑰 uid:輪替換代時重掛元件,回到遮罩態並清掉殘留的舊密鑰明文 state
+  return <SecretRevealControl key={latestActive.uid} clientUid={client.uid} secret={latestActive} />
 })
 
 /* ---------------------------------------------------------------------- */
@@ -393,6 +420,13 @@ function CreateClientDialog({
 /* 編輯 Client 對話框(含停用二次確認)                                       */
 /* ---------------------------------------------------------------------- */
 
+/** 解析流量上限輸入:僅接受正整數,其餘(空值 / 非數字 / 0)回 null。 */
+function parseRateLimit(raw: string): number | null {
+  if (!/^\d+$/.test(raw)) return null
+  const value = Number(raw)
+  return value >= 1 ? value : null
+}
+
 interface EditClientDialogProps {
   client: ApiClientListItem | null
   submitting: boolean
@@ -410,23 +444,26 @@ function EditClientDialog({
 }: EditClientDialogProps): React.ReactNode {
   const [name, setName] = useState(client?.name ?? '')
   const [description, setDescription] = useState(client?.description ?? '')
+  // 以字串保存輸入,避免打字途中被強制轉成 1(空值 / 非法值於提交時驗證)
   const [rateLimitPerMinute, setRateLimitPerMinute] = useState(
-    client?.rate_limit_per_minute ?? 1,
+    String(client?.rate_limit_per_minute ?? 1),
   )
   const [rateLimitPer10Min, setRateLimitPer10Min] = useState(
-    client?.rate_limit_per_10min ?? 1,
+    String(client?.rate_limit_per_10min ?? 1),
   )
+  const [rateLimitError, setRateLimitError] = useState<string | null>(null)
   const [enabled, setEnabled] = useState(client?.status === 'enabled')
   const [confirmingDisable, setConfirmingDisable] = useState(false)
 
   useEffect(() => {
     if (client === null) return
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onCancel()
+      // 停用二次確認開啟時,Esc 只該關閉 ConfirmDialog,不連鎖關閉編輯對話框
+      if (event.key === 'Escape' && !confirmingDisable) onCancel()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [client, onCancel])
+  }, [client, onCancel, confirmingDisable])
 
   const handleNameChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>): void => setName(event.target.value),
@@ -439,15 +476,15 @@ function EditClientDialog({
   )
   const handleRateMinuteChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>): void => {
-      const value = Number(event.target.value)
-      setRateLimitPerMinute(Number.isNaN(value) || value < 1 ? 1 : value)
+      setRateLimitPerMinute(event.target.value.replace(/\D/g, ''))
+      setRateLimitError(null)
     },
     [],
   )
   const handleRate10MinChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>): void => {
-      const value = Number(event.target.value)
-      setRateLimitPer10Min(Number.isNaN(value) || value < 1 ? 1 : value)
+      setRateLimitPer10Min(event.target.value.replace(/\D/g, ''))
+      setRateLimitError(null)
     },
     [],
   )
@@ -457,15 +494,18 @@ function EditClientDialog({
   )
 
   const buildPayload = useCallback(
-    (statusOverride?: ApiClientStatus): UpdateApiClientPayload => {
+    (statusOverride?: ApiClientStatus): UpdateApiClientPayload | null => {
       if (client === null) throw new Error('client is null')
+      const perMinute = parseRateLimit(rateLimitPerMinute)
+      const per10Min = parseRateLimit(rateLimitPer10Min)
+      if (perMinute === null || per10Min === null) return null
       return {
         uid: client.uid,
         name: name.trim(),
         description: description.trim() === '' ? null : description.trim(),
         status: statusOverride ?? (enabled ? 'enabled' : 'disabled'),
-        rate_limit_per_minute: rateLimitPerMinute,
-        rate_limit_per_10min: rateLimitPer10Min,
+        rate_limit_per_minute: perMinute,
+        rate_limit_per_10min: per10Min,
       }
     },
     [client, name, description, enabled, rateLimitPerMinute, rateLimitPer10Min],
@@ -475,19 +515,30 @@ function EditClientDialog({
     (event: React.FormEvent<HTMLFormElement>): void => {
       event.preventDefault()
       if (client === null || name.trim() === '') return
+      const payload = buildPayload()
+      if (payload === null) {
+        setRateLimitError('流量上限須為正整數,不可空白')
+        return
+      }
+      setRateLimitError(null)
       const turningOff = client.status === 'enabled' && !enabled
       if (turningOff) {
         setConfirmingDisable(true)
         return
       }
-      onSubmit(buildPayload())
+      onSubmit(payload)
     },
     [client, name, enabled, buildPayload, onSubmit],
   )
 
   const handleConfirmDisable = useCallback((): void => {
     setConfirmingDisable(false)
-    onSubmit(buildPayload('disabled'))
+    const payload = buildPayload('disabled')
+    if (payload === null) {
+      setRateLimitError('流量上限須為正整數,不可空白')
+      return
+    }
+    onSubmit(payload)
   }, [buildPayload, onSubmit])
 
   const handleCancelDisable = useCallback((): void => {
@@ -568,6 +619,11 @@ function EditClientDialog({
               />
             </label>
           </div>
+          {rateLimitError !== null ? (
+            <span role="alert" className="text-sm text-danger">
+              {rateLimitError}
+            </span>
+          ) : null}
           <label className="flex items-center gap-2 text-sm font-medium text-foreground md:text-base">
             <input
               type="checkbox"
@@ -707,9 +763,11 @@ export default function ApiClientsPage(): React.ReactNode {
     page,
     pageSize: PAGE_SIZE,
   })
-  const [createApiClient, { isLoading: isCreating }] = useCreateApiClientMutation()
+  const [createApiClient, { isLoading: isCreating, reset: resetCreate }] =
+    useCreateApiClientMutation()
   const [updateApiClient, { isLoading: isUpdating }] = useUpdateApiClientMutation()
-  const [rotateApiClientSecret, { isLoading: isRotating }] = useRotateApiClientSecretMutation()
+  const [rotateApiClientSecret, { isLoading: isRotating, reset: resetRotate }] =
+    useRotateApiClientSecretMutation()
 
   const handlePageChange = useCallback((next: number): void => setPage(next), [])
 
@@ -723,6 +781,8 @@ export default function ApiClientsPage(): React.ReactNode {
     async (payload: CreateApiClientPayload): Promise<void> => {
       setCreateError(null)
       const result = await createApiClient(payload)
+      // 明文只交給元件 state:讀完立刻清掉 mutation 結果,避免長駐 redux store
+      resetCreate()
       if ('error' in result) {
         setCreateError(
           extractApiErrorDetail(result.error, '建立使用者 API 憑證失敗,請稍後再試'),
@@ -735,7 +795,7 @@ export default function ApiClientsPage(): React.ReactNode {
         secret: result.data.client_secret,
       })
     },
-    [createApiClient],
+    [createApiClient, resetCreate],
   )
 
   const openEdit = useCallback((client: ApiClientListItem): void => {
@@ -770,13 +830,15 @@ export default function ApiClientsPage(): React.ReactNode {
     setActionError(null)
     const target = rotateTarget
     const result = await rotateApiClientSecret(target.uid)
+    // 明文只交給元件 state:讀完立刻清掉 mutation 結果,避免長駐 redux store
+    resetRotate()
     setRotateTarget(null)
     if ('error' in result) {
       setActionError(extractApiErrorDetail(result.error, '輪替密鑰失敗,請稍後再試'))
       return
     }
     setIssuedSecret({ clientId: target.client_id, secret: result.data.client_secret })
-  }, [rotateTarget, rotateApiClientSecret])
+  }, [rotateTarget, rotateApiClientSecret, resetRotate])
 
   const closeIssued = useCallback((): void => setIssuedSecret(null), [])
 

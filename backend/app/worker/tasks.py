@@ -18,7 +18,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import text, update
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from app.core import redis as cache
 from app.core.config import get_settings
@@ -573,13 +573,17 @@ async def mirror_sync(
                         # 延遲匯入:autofill 僅同步收尾路徑用到,不落頂層以免污染 semantic_apply。
                         from app.etl.semantic_autofill import autofill_semantic_mappings
 
-                        autofill_target = create_async_engine(
-                            rds_database_url(RDS_TARGET_DB_ENV)
-                        )
-                        autofill_source = create_async_engine(
-                            rds_database_url(RDS_SOURCE_DB_ENV)
-                        )
+                        # AD-147:engine 建立移入 try 內 —— 建立階段失敗(缺 env / DNS 解析等)
+                        # 同樣不得擋後續副本重灌;finally 判非 None 才 dispose,避免半建立洩漏
+                        autofill_target: AsyncEngine | None = None
+                        autofill_source: AsyncEngine | None = None
                         try:
+                            autofill_target = create_async_engine(
+                                rds_database_url(RDS_TARGET_DB_ENV)
+                            )
+                            autofill_source = create_async_engine(
+                                rds_database_url(RDS_SOURCE_DB_ENV)
+                            )
                             async with autofill_target.connect() as autofill_conn:
                                 mapping_exists = (
                                     await autofill_conn.execute(
@@ -597,8 +601,14 @@ async def mirror_sync(
                                     "略過語意映射自動補列"
                                 )
                             else:
+                                # AD-145:補列面圈定為本輪實際同步的表(skip 表無 drift 可能);
+                                # mirror 目標表名 = 來源表名,直接以 source_table 原樣比對
                                 autofill_result = await autofill_semantic_mappings(
-                                    autofill_target, autofill_source
+                                    autofill_target,
+                                    autofill_source,
+                                    scope_tables={
+                                        cfg.source_table for cfg in to_sync
+                                    },
                                 )
                                 logger.info(
                                     "語意映射自動補列(同步收尾):"
@@ -614,8 +624,10 @@ async def mirror_sync(
                                 exc_info=True,
                             )
                         finally:
-                            await autofill_source.dispose()
-                            await autofill_target.dispose()
+                            if autofill_source is not None:
+                                await autofill_source.dispose()
+                            if autofill_target is not None:
+                                await autofill_target.dispose()
 
                         outcome = await refresh_semantic_copy_and_views(session)
                         if outcome is None:

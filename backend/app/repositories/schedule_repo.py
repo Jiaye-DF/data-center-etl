@@ -525,4 +525,6 @@ class ScheduleRepository:
             .values(is_enabled=enabled, updated_by=actor_uid, updated_at=_db_now())
         )
         await self._db.flush()
-        return int(result.rowcount)
+        # UPDATE 經 session.execute 實際回 CursorResult(必有 rowcount);
+        # 型別標註為 Result 缺該屬性,以 getattr 滿足 mypy,行為不變
+        return int(getattr(result, "rowcount", 0))
