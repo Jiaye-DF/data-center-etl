@@ -1,6 +1,6 @@
 # Tasks v1.6.0
 
-> 狀態:進行中(已完成 7/8;007=worker-H 收口執行中)
+> 狀態:全數完成(8/8,2026-07-30)
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
@@ -10,7 +10,7 @@
 | 004 | POST /api/client/v1.0/token + /refresh_token 端點業務流 | done(worker-E) | ✗ | 001, 002, 003 | `backend/app/api_client_router/versions/v1_0.py` / `common/auth.py` / `common/schemas.py` / `tests/test_api_client_token_api.py` |
 | 005 | 後台管理 API /api/v1/api-clients(建立/發證/輪替/啟停/限流參數) | done(worker-D) | ✓ | 001 | `backend/app/api/v1/api_clients.py` / `api/v1/__init__.py` / `services/api_client_service.py` / `schemas/api_client.py` / `tests/test_api_clients_api.py` |
 | 006 | 前端「API Client 設定」sidebar 區塊 + 管理頁 | done(worker-F,UI 視覺項待人工複測) | ✓ | 005 | `frontend/src/components/layout/Sidebar.tsx` / `app/(main)/api-clients/page.tsx` / `lib/api/apiClientApi.ts` |
-| 007 | e2e 驗證 + Arch 文件回寫 + 收口文件 | pending | ✗ | 001–006, 008 | `docs/Tasks/v1.6.0/verification-v1.6.0.md` / `docs/Arch/datahub-api-gateway-arch.html` |
+| 007 | e2e 驗證 + Arch 文件回寫 + 收口文件 | done(worker-H) | ✗ | 001–006, 008 | `docs/Tasks/v1.6.0/verification-v1.6.0.md` / `docs/Arch/datahub-api-gateway-arch.html` |
 | 008 | 補洞:secret 清單端點 + 前端密鑰紀錄改吃伺服器資料 | done(worker-G) | ✗ | 005, 006 | `backend/app/api/v1/api_clients.py` / `services/api_client_service.py` / `schemas/api_client.py` / `tests/test_api_clients_api.py` / `frontend/.../api-clients/page.tsx` / `lib/api/apiClientApi.ts` |
 
 ## 拆解摘要

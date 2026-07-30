@@ -384,7 +384,7 @@ flowchart TB
 
   subgraph ADM["模組② DataHub 後台 · 組織權限管理（管理員經 DF-SSO 登入）"]
     CONSOLE["系統別 · 作業 · 設定檔 · Role<br/>特例權限 · API Client 管理"]
-    PDB[("權限資料表<br/>api_clients · roles · profiles · exceptions")]
+    PDB[("權限資料表<br/>api_client_users · roles · profiles · exceptions")]
   end
 
   HUB[("RDS ETL-Hub<br/>語意 View")]
@@ -546,7 +546,7 @@ flowchart LR
               <tbody>
                 <tr><td>JWT 本地驗簽</td><td>資料請求的驗證<span class="mark">零外部回源、零 DB 查詢</span></td><td>高頻請求打爆驗證依賴（測試站曾因每請求回源 SSO 驗證 429 → 502）</td></tr>
                 <tr><td><code>/token</code> · <code>/refresh_token</code> 嚴格限流</td><td>token 取得天生低頻（約 15 分鐘一次），設低額度 + 連續失敗鎖定（失敗計數與鎖定旗標同樣放 Redis，帶 TTL 自動解鎖）</td><td>secret 爆破、token 請求風暴</td></tr>
-                <tr><td>per-Client Rate Limit</td><td>各系統獨立額度 + 全域總上限；<span class="mark">計數器放 Redis</span>（<code>INCR</code> + TTL，跨 worker / 實例共用，沿用既有 ETL Redis 加 <code>rl:</code> 前綴隔離）</td><td>單一串接方失控（迴圈狂打）拖垮全體；in-process 計數在多 worker 下額度會 × worker 數失效</td></tr>
+                <tr><td>per-Client Rate Limit</td><td>各系統獨立額度 + 全域總上限；<span class="mark">計數器放 Redis</span>（<code>INCR</code> + TTL，跨 worker / 實例共用，key 格式 <code>rate_limit:client:&lt;client_id&gt;</code>）；參數存 DB（預設 30/分、200/10 分），後台可逐 Client 調整</td><td>單一串接方失控（迴圈狂打）拖垮全體；in-process 計數在多 worker 下額度會 × worker 數失效</td></tr>
                 <tr><td>Redis 故障策略</td><td>限流 / 鎖定 <span class="mark">fail-open</span>（Redis 不通 → 放行 + 大聲告警）</td><td>避免 Redis 變成資料供應的單點故障；內網場景限流是防失控、不是防攻擊</td></tr>
                 <tr><td>分頁強制上限</td><td><code>limit</code> 封頂（如 ≤ 1000）+ 查詢逾時</td><td>一條大查詢拖垮 ETL-Hub</td></tr>
                 <tr><td>網路層</td><td>SG 只放內網 / VPN CIDR，不開公網</td><td>直接砍掉外部攻擊面</td></tr>
@@ -667,7 +667,7 @@ flowchart LR
             <div class="diagram">
               <div class="mermaid">
 erDiagram
-  api_clients ||--o| client_roles : "只綁 0..1 Role"
+  api_client_users ||--o| client_roles : "只綁 0..1 Role"
   roles ||--o{ client_roles : ""
   roles }o--|| permission_profiles : "綁定 1 個設定檔（必綁）"
   permission_profiles ||--o{ profile_operations : "綁哪些作業"
@@ -676,18 +676,18 @@ erDiagram
   operations ||--o{ profile_items : ""
   services ||--o{ operations : "系統別下含 N 個作業"
   operations ||--o{ operation_items : "定義表 × 欄位範圍"
-  api_clients ||--o{ client_exception_sets : "直綁 0..N 特例（可設效期）"
+  api_client_users ||--o{ client_exception_sets : "直綁 0..N 特例（可設效期）"
   exception_sets ||--o{ client_exception_sets : ""
   exception_sets ||--o{ exception_operations : "臨時分派作業"
   operations ||--o{ exception_operations : ""
   exception_sets ||--o{ exception_items : "臨時表 × 欄位授權"
 
-  api_clients {
+  api_client_users {
     bigint pid PK "內部主鍵（僅 DB 關聯）"
     uuid api_client_uid UK "對外識別碼"
     string client_id "取得 token 用識別"
     string name "應用系統名"
-    string secret_hash "secret 只存雜湊"
+    string secret_hash "已拆至 api_client_secrets 子表（雙鑰輪替），本表不再直存"
     string status "enabled / disabled"
   }
   roles {
