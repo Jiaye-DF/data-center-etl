@@ -39,3 +39,12 @@ def verify_client_jwt(token: str, *, verify_exp: bool = True) -> dict[str, objec
         options={"verify_exp": verify_exp, "require": ["sub", "iat", "exp", "iss"]},
     )
     return payload
+
+
+def is_refreshable_token(token: str, client_id: str) -> bool:
+    """`/refresh_token` 前置:舊 token 簽章有效(忽略 exp)且 `sub` 與請求 client_id 相符。"""
+    try:
+        payload = verify_client_jwt(token, verify_exp=False)
+    except jwt.PyJWTError:
+        return False
+    return payload.get("sub") == client_id
