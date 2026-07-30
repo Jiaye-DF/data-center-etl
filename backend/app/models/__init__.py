@@ -1,3 +1,5 @@
+from app.models.api_client_secret import ApiClientSecret
+from app.models.api_client_user import ApiClientUser
 from app.models.audit_log import AuditLog
 from app.models.base import BaseModel
 from app.models.etl_mapping import EtlMapping
@@ -10,6 +12,8 @@ from app.models.semantic_mapping import SemanticMapping
 from app.models.user import User
 
 __all__ = [
+    "ApiClientSecret",
+    "ApiClientUser",
     "AuditLog",
     "BaseModel",
     "Dataset",
