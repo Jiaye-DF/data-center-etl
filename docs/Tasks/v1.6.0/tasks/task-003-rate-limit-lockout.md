@@ -1,7 +1,8 @@
 ---
 id: task-003
 title: per-Client Rate Limit(雙窗口)+ 連續失敗鎖定(Redis,fail-open)
-status: pending
+status: done
+worker: worker-C
 parallel: true
 depends_on: [task-002]
 affected_files:
@@ -26,9 +27,19 @@ estimated_hours: 3
 
 ## Acceptance
 
-- [ ] `uv run pytest tests/test_api_client_rate_limit.py` 全綠,至少涵蓋:第 30 次通過、第 31 次(60s 窗)被擋且 `retry_after_seconds` > 0;10 分鐘窗第 201 次被擋;窗口滑動後恢復;Redis 中 key 名恰為 `rate_limit:client:<client_id>`(斷言 key 存在且無其他前綴變形);連續 5 次失敗觸發鎖定、TTL 過後自動解鎖;成功後失敗計數歸零;Redis 連線炸掉(monkeypatch 丟例外)→ 放行且 log 有 fail-open 紀錄
-- [ ] 限流參數以參數注入,模組內無 DB import(靜態檢查:檔內不得 import repository / session)
-- [ ] `uv run ruff check app tests` + `uv run mypy app` 無新增錯誤;`uv run pytest` 既有全套全綠
+- [x] `uv run pytest tests/test_api_client_rate_limit.py` 全綠(14 測),至少涵蓋:第 30 次通過、第 31 次(60s 窗)被擋且 `retry_after_seconds` > 0;10 分鐘窗第 201 次被擋;窗口滑動後恢復;Redis 中 key 名恰為 `rate_limit:client:<client_id>`(斷言 key 存在且無其他前綴變形);連續 5 次失敗觸發鎖定、TTL 過後自動解鎖;成功後失敗計數歸零;Redis 連線炸掉(monkeypatch 丟例外)→ 放行且 log 有 fail-open 紀錄
+- [x] 限流參數以參數注入,模組內無 DB import(靜態檢查:檔內不得 import repository / session)
+- [x] `uv run ruff check app tests` + `uv run mypy app` 無新增錯誤;`uv run pytest` 既有全套全綠(全套迴歸由 orchestrator 統一跑)
+
+## 完成註記(worker-C)
+
+- 新增 `backend/app/api_client_router/common/rate_limit.py`:
+  - `check_rate_limit` 單 key ZSET 滑動雙窗口(ZADD → ZREMRANGEBYSCORE → ZCOUNT 60s/600s → EXPIRE 600s),key 完全為 `rate_limit:client:<client_id>`(不套 `core.redis` 的 namespace 前綴)。
+  - `check_auth_lock` / `register_auth_failure` / `clear_auth_failures`:`auth_fail:*` INCR+TTL 900s、5 次 → `auth_lock:*` TTL 300s 自動解鎖;成功清計數。
+  - 全部路徑 `except Exception` → `logger.error("rate-limit fail-open…", exc_info=True)` 後放行,結果帶 `degraded` 供端點層判讀。
+  - 回傳 `RateLimitResult` / `AuthLockState`(frozen dataclass),不查 DB、無 repository / session import。
+- Redis 測試替身:`tests/test_api_client_rate_limit.py` 內 `FakeRedis`(記憶體 + 可推進時鐘),monkeypatch `rate_limit.get_redis` 與 `rate_limit._now_ms`;沿用 `app/core/redis.py`「pytest 退記憶體 fake」慣例,未新增第三方套件(無 fakeredis 依賴)。已於 etl_backend 容器內以 redis-py 對真 Redis 抽驗指令語意(zcount→int、zrangebyscore withscores→(str,float)、ttl 600/900/300、缺 key ttl=-2),與 fake 一致,測試鍵已清除。
+- 既有 mypy 唯一錯誤 `app/repositories/schedule_repo.py:528`(未修改檔案)為既存問題,非本 task 新增。
 
 ## 必讀檔(Just-in-time)
 
