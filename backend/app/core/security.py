@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
+from cryptography.fernet import Fernet, InvalidToken
 
 JWT_ALGORITHM = "HS256"
 
@@ -33,6 +34,23 @@ async def hash_password_async(plain: str) -> str:
 
 async def verify_password_async(plain: str, hashed: str) -> bool:
     return await asyncio.to_thread(verify_password, plain, hashed)
+
+
+def encrypt_secret(plain: str, *, encryption_key: str) -> str:
+    """可逆加密(Fernet);供 admin 後台檢視 client_secret 明文用,禁用於密碼欄位。"""
+    return Fernet(encryption_key.encode("ascii")).encrypt(plain.encode("utf-8")).decode("ascii")
+
+
+def decrypt_secret(encrypted: str, *, encryption_key: str) -> str | None:
+    """解密;金鑰不符 / 內容毀損回 None(由呼叫端轉 409,禁把細節外拋)。"""
+    try:
+        return (
+            Fernet(encryption_key.encode("ascii"))
+            .decrypt(encrypted.encode("ascii"))
+            .decode("utf-8")
+        )
+    except (InvalidToken, ValueError):
+        return None
 
 
 def create_access_token(

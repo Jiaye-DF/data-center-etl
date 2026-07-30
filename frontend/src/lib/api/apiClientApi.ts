@@ -46,6 +46,8 @@ export interface ApiClientSecretItem {
   uid: string
   status: ApiClientSecretStatus
   created_at: string
+  /** false = task-009 前核發的舊密鑰,無可檢視明文(須輪替後才可檢視) */
+  revealable: boolean
 }
 
 export interface ApiClientSecretListData {
@@ -71,6 +73,16 @@ export interface RotateApiClientSecretResult {
 export interface RetireApiClientSecretPayload {
   uid: string
   secretUid: string
+}
+
+export interface RevealApiClientSecretPayload {
+  uid: string
+  secretUid: string
+}
+
+export interface RevealApiClientSecretResult {
+  secret_uid: string
+  client_secret: string
 }
 
 export const apiClientApi = baseApi
@@ -124,6 +136,19 @@ export const apiClientApi = baseApi
           response: ApiEnvelope<RotateApiClientSecretResult>,
         ): RotateApiClientSecretResult => unwrap(response),
       }),
+      // 後端為 GET,此處刻意用 mutation:明文只回呼叫端元件 state,不進 RTK 查詢快取
+      revealApiClientSecret: build.mutation<
+        RevealApiClientSecretResult,
+        RevealApiClientSecretPayload
+      >({
+        query: ({ uid, secretUid }) => ({
+          url: `/api-clients/${uid}/secrets/${secretUid}/reveal`,
+          method: 'GET',
+        }),
+        transformResponse: (
+          response: ApiEnvelope<RevealApiClientSecretResult>,
+        ): RevealApiClientSecretResult => unwrap(response),
+      }),
       retireApiClientSecret: build.mutation<
         ApiClientListItem,
         RetireApiClientSecretPayload
@@ -150,4 +175,5 @@ export const {
   useUpdateApiClientMutation,
   useRotateApiClientSecretMutation,
   useRetireApiClientSecretMutation,
+  useRevealApiClientSecretMutation,
 } = apiClientApi

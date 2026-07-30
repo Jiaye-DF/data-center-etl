@@ -616,7 +616,7 @@ flowchart LR
           <span class="chip"><span class="dot"></span><b>系統別</b>&nbsp;erp · crm · hrm · bpm · zpos…</span>
           <span class="chip"><span class="dot"></span><b>作業</b>&nbsp;授權入口 · 表 × 欄位範圍</span>
           <span class="chip"><span class="dot"></span><b>粒度</b>&nbsp;資料表 × 欄位（跟表走）</span>
-          <span class="chip"><span class="dot"></span><b>secret</b>&nbsp;只存雜湊 · 雙鑰輪替</span>
+          <span class="chip"><span class="dot"></span><b>secret</b>&nbsp;可逆加密儲存 · 雙鑰輪替</span>
           <span class="chip"><span class="dot"></span><b>對照</b>&nbsp;Salesforce Profile / Permission Set</span>
         </div>
         <details class="detail">
@@ -759,7 +759,7 @@ erDiagram
                 <tr><td>欄位可見度</td><td><span class="mark">最終權限 = 設定檔在該作業下勾的欄位與動作（∩ 作業範圍）</span></td><td>授權巢狀在作業下 — <span class="mark">同一張表在不同作業可設不同欄位與動作</span>；沒給 → 不回傳任何欄位（default-closed）</td></tr>
                 <tr><td>Client 綁定</td><td><span class="mark">只綁 1 個 Role（0..1）＋ 特例 0..N</span></td><td>常規權限一律進 Role 設定檔；不開多 Role、不直綁作業，權限來源單純好稽核</td></tr>
                 <tr><td>Role 內容</td><td><span class="mark">必綁 1 個設定檔（1:1）</span></td><td>禁空角色 — DB 層 <code>permission_profile_pid NOT NULL</code> 即可保證；Role = 名字與指派的載體，設定檔 = 授權內容</td></tr>
-                <tr><td>client secret</td><td><span class="mark">只存雜湊 · 明文僅發放時顯示一次</span></td><td>支援雙 secret 並存輪替（新舊過渡不斷線）；停用 Client 即拒發下一輪 token</td></tr>
+                <tr><td>client secret</td><td><span class="mark">可逆加密儲存 · 僅 admin 後台可檢視明文</span></td><td>驗證仍走 bcrypt 雜湊，明文另存 Fernet 加密欄供 admin 隨時檢視（每次檢視寫稽核）；支援雙 secret 並存輪替（新舊過渡不斷線）；停用 Client 即拒發下一輪 token</td></tr>
                 <tr><td>授權方向</td><td>只加不減（additive）</td><td>無 deny 規則；收權 = 修改設定檔 / 解除綁定 / 特例到期失效</td></tr>
                 <tr><td>欄位粒度</td><td><code>column_name</code> 逐欄；<code>*</code> = 全欄位</td><td>表級授權必須存在（至少一筆該表 item）才進欄位判斷</td></tr>
                 <tr><td>action</td><td><span class="mark"><code>read</code> / <code>edit</code></span></td><td>edit = 新增 / 更新 / 刪除；<span class="mark">刪除一律軟刪除（<code>is_deleted</code>，禁物理刪除）</span>；寫入落地 ETL-Hub，是否寫回 ERP 另案（erp-writeback 評估）</td></tr>
@@ -785,7 +785,7 @@ flowchart LR
   end
   subgraph S3["③ 接入應用系統"]
     direction TB
-    AU["建立 API Client<br/>發放 secret（顯示一次）"] --> RO["指派 Role（0..1）"] --> EX["（臨時需求）綁特例權限<br/>可設效期"] --> PV["預覽最終可見欄位"]
+    AU["建立 API Client<br/>發放 secret（admin 可隨時檢視）"] --> RO["指派 Role（0..1）"] --> EX["（臨時需求）綁特例權限<br/>可設效期"] --> PV["預覽最終可見欄位"]
   end
   FX["權限快取失效"] --> EFFT["下一次 API 請求即生效"]
   S0 --> S1 --> S2 --> S3 --> FX
@@ -1060,7 +1060,7 @@ sequenceDiagram
         <div class="tblwrap"><table>
           <thead><tr><th>名詞</th><th>全稱 / 類型</th><th>說明</th></tr></thead>
           <tbody>
-            <tr><td><b>API Client</b></td><td>機器主體</td><td>一個外部應用系統一個 Client；只綁 1 個 Role + 特例權限 0..N，client secret 只存雜湊、支援雙鑰輪替。</td></tr>
+            <tr><td><b>API Client</b></td><td>機器主體</td><td>一個外部應用系統一個 Client；只綁 1 個 Role + 特例權限 0..N，client secret 以可逆加密儲存（僅 admin 後台可檢視明文，驗證走 bcrypt 雜湊）、支援雙鑰輪替。</td></tr>
             <tr><td><b>Client Credentials</b></td><td>OAuth2 M2M 流程</td><td>client_id + secret 打 <code>/token</code> 換短效 JWT；不發 refresh token — secret 本身就是長效憑證，過期直接重換。</td></tr>
             <tr><td><b>/refresh_token</b></td><td>語意刷新端點</td><td>帶過期 access token + client_id + secret 換新 token；安全上與 <code>/token</code> 等價（同樣驗 secret），另驗舊 token 簽章與 <code>sub</code> 一致，仍不發 refresh token。</td></tr>
             <tr><td><b>短效 JWT</b></td><td>Access Token（15 分鐘）</td><td>自帶簽章與過期時間，Gateway 本地驗簽零外部依賴；外洩傷害壓縮到分鐘級。</td></tr>

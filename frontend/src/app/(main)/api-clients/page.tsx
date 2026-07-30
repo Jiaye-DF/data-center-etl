@@ -6,6 +6,7 @@ import {
   useListApiClientSecretsQuery,
   useListApiClientsQuery,
   useRetireApiClientSecretMutation,
+  useRevealApiClientSecretMutation,
   useRotateApiClientSecretMutation,
   useUpdateApiClientMutation,
   type ApiClientListItem,
@@ -21,6 +22,7 @@ import { formatDateTime } from '@/utils/datetime'
 
 const PAGE_SIZE = 20
 const MAX_ACTIVE_SECRETS = 2
+const SECRET_MASK = '••••••••'
 
 /* ---------------------------------------------------------------------- */
 /* 小型顯示元件                                                             */
@@ -69,20 +71,134 @@ const CopyButton = memo(function CopyButton({ value }: CopyButtonProps): React.R
 })
 
 /* ---------------------------------------------------------------------- */
-/* 一次性密鑰面板(建立 / 輪替共用)                                          */
+/* 密鑰明文檢視(遮罩 → reveal → 可再遮回;明文只留元件 state)                */
 /* ---------------------------------------------------------------------- */
 
-interface SecretRevealPanelProps {
+interface SecretRevealControlProps {
+  clientUid: string
+  secret: ApiClientSecretItem
+}
+
+const SecretRevealControl = memo(function SecretRevealControl({
+  clientUid,
+  secret,
+}: SecretRevealControlProps): React.ReactNode {
+  const [plainSecret, setPlainSecret] = useState<string | null>(null)
+  const [revealError, setRevealError] = useState<string | null>(null)
+  const [revealApiClientSecret, { isLoading, reset }] = useRevealApiClientSecretMutation()
+
+  const handleReveal = useCallback(async (): Promise<void> => {
+    setRevealError(null)
+    const result = await revealApiClientSecret({ uid: clientUid, secretUid: secret.uid })
+    // 明文只留在本元件 state:讀完立刻清掉 mutation 結果,避免長駐 redux store
+    reset()
+    if ('error' in result) {
+      setRevealError(extractApiErrorDetail(result.error, '檢視密鑰明文失敗,請稍後再試'))
+      return
+    }
+    setPlainSecret(result.data.client_secret)
+  }, [revealApiClientSecret, reset, clientUid, secret.uid])
+
+  const handleRevealClick = useCallback((): void => {
+    void handleReveal()
+  }, [handleReveal])
+
+  const handleMask = useCallback((): void => {
+    setPlainSecret(null)
+    setRevealError(null)
+  }, [])
+
+  if (!secret.revealable) {
+    return (
+      <span className="text-sm text-muted-foreground md:text-base">
+        舊密鑰,輪替後可檢視
+      </span>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <code className="font-mono text-sm text-foreground md:text-base">
+          {plainSecret ?? SECRET_MASK}
+        </code>
+        {plainSecret === null ? (
+          <button
+            type="button"
+            onClick={handleRevealClick}
+            disabled={isLoading}
+            className="df-btn-outline min-h-0 shrink-0 px-2 py-1 text-sm"
+          >
+            {isLoading ? '讀取中…' : '顯示'}
+          </button>
+        ) : (
+          <>
+            <CopyButton value={plainSecret} />
+            <button
+              type="button"
+              onClick={handleMask}
+              className="df-btn-outline min-h-0 shrink-0 px-2 py-1 text-sm"
+            >
+              遮蔽
+            </button>
+          </>
+        )}
+      </div>
+      {revealError !== null ? (
+        <span role="alert" className="text-sm text-danger">
+          {revealError}
+        </span>
+      ) : null}
+    </div>
+  )
+})
+
+interface LatestSecretCellProps {
+  client: ApiClientListItem
+}
+
+/** 表格 Secret 欄:取該使用者最新一把 active 密鑰(清單依核發時間升冪)。 */
+const LatestSecretCell = memo(function LatestSecretCell({
+  client,
+}: LatestSecretCellProps): React.ReactNode {
+  const { data, isLoading, isError } = useListApiClientSecretsQuery(client.uid)
+
+  const latestActive = useMemo((): ApiClientSecretItem | null => {
+    const actives = (data?.items ?? []).filter((item) => item.status === 'active')
+    return actives.length === 0 ? null : (actives[actives.length - 1] ?? null)
+  }, [data])
+
+  if (isLoading) {
+    return <span className="text-sm text-muted-foreground md:text-base">載入中…</span>
+  }
+  if (isError) {
+    return (
+      <span role="alert" className="text-sm text-danger md:text-base">
+        載入失敗
+      </span>
+    )
+  }
+  if (latestActive === null) {
+    return <span className="text-sm text-muted-foreground md:text-base">無有效密鑰</span>
+  }
+  return <SecretRevealControl clientUid={client.uid} secret={latestActive} />
+})
+
+/* ---------------------------------------------------------------------- */
+/* 核發完成面板(建立 / 輪替共用;明文即時顯示,關閉後仍可於表格檢視)          */
+/* ---------------------------------------------------------------------- */
+
+interface IssuedSecretPanelProps {
   clientId: string
   clientSecret: string
   onRequestClose: () => void
 }
 
-function SecretRevealPanel({
+function IssuedSecretPanel({
   clientId,
   clientSecret,
   onRequestClose,
-}: SecretRevealPanelProps): React.ReactNode {
+}: IssuedSecretPanelProps): React.ReactNode {
   const [confirmingClose, setConfirmingClose] = useState(false)
 
   useEffect(() => {
@@ -106,14 +222,14 @@ function SecretRevealPanel({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="secret-reveal-title"
+        aria-labelledby="issued-secret-title"
         className="df-card relative z-10 flex w-full max-w-xl flex-col gap-4 p-6 md:p-8"
       >
-        <h2 id="secret-reveal-title" className="text-lg font-bold text-foreground md:text-xl">
+        <h2 id="issued-secret-title" className="text-lg font-bold text-foreground md:text-xl">
           密鑰核發成功
         </h2>
         <p className="rounded-lg bg-warning/15 px-3 py-2 text-sm text-warning md:text-base">
-          關閉後將不再顯示此密鑰明文,請立即複製並妥善保存。
+          請立即複製並交付該使用者;關閉後仍可在清單「Secret」欄重新檢視明文。
         </p>
         <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-foreground md:text-base">Client ID</span>
@@ -145,14 +261,14 @@ function SecretRevealPanel({
         onConfirm={handleConfirmClose}
         onCancel={handleCancelClose}
       >
-        <p>關閉後將不再顯示此密鑰明文,請確認已複製保存。</p>
+        <p>請確認已複製此密鑰明文;關閉後可在清單「Secret」欄重新檢視。</p>
       </ConfirmDialog>
     </div>
   )
 }
 
 /* ---------------------------------------------------------------------- */
-/* 建立 Client 對話框                                                       */
+/* 建立使用者對話框                                                          */
 /* ---------------------------------------------------------------------- */
 
 interface CreateClientDialogProps {
@@ -226,7 +342,7 @@ function CreateClientDialog({
           id="create-client-dialog-title"
           className="text-lg font-bold text-foreground md:text-xl"
         >
-          建立 API Client
+          建立使用者 API 權限
         </h2>
         {submitError !== null ? (
           <p
@@ -237,7 +353,7 @@ function CreateClientDialog({
           </p>
         ) : null}
         <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-          應用系統名稱
+          使用者名稱
           <input
             type="text"
             value={name}
@@ -400,7 +516,7 @@ function EditClientDialog({
             id="edit-client-dialog-title"
             className="text-lg font-bold text-foreground md:text-xl"
           >
-            編輯 API Client:{client.name}
+            編輯使用者 API 權限:{client.name}
           </h2>
           {submitError !== null ? (
             <p
@@ -411,7 +527,7 @@ function EditClientDialog({
             </p>
           ) : null}
           <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-            應用系統名稱
+            使用者名稱
             <input
               type="text"
               value={name}
@@ -458,7 +574,7 @@ function EditClientDialog({
               onChange={handleEnabledChange}
               className="h-5 w-5 accent-[rgb(var(--primary))]"
             />
-            啟用此 API Client(停用將立即無法取得 token)
+            啟用此使用者(停用將立即無法取得 token)
           </label>
           <div className="mt-1 flex gap-2">
             <button
@@ -476,7 +592,7 @@ function EditClientDialog({
       </div>
       <ConfirmDialog
         open={confirmingDisable}
-        title="停用 API Client"
+        title="停用使用者"
         confirmLabel="確認停用"
         tone="danger"
         confirmDisabled={submitting}
@@ -484,9 +600,9 @@ function EditClientDialog({
         onCancel={handleCancelDisable}
       >
         <p>
-          停用「{client.name}」後,該系統將<strong>立即無法取得 token</strong>。
+          停用「{client.name}」後,該使用者將<strong>立即無法取得 token</strong>。
         </p>
-        <p>請確認已通知相關系統負責人再停用。</p>
+        <p>請確認已通知該使用者再停用。</p>
       </ConfirmDialog>
     </>
   )
@@ -524,6 +640,7 @@ const SecretItem = memo(function SecretItem({
           <span className="text-muted-foreground">已汰換</span>
         )}
       </span>
+      <SecretRevealControl clientUid={client.uid} secret={secret} />
       <button
         type="button"
         disabled={secret.status === 'retired' || retiring}
@@ -566,7 +683,7 @@ function SecretHistoryPanel({
   return (
     <>
       <p className="mb-2 text-sm text-muted-foreground md:text-base">
-        密鑰明文僅在核發當次顯示一次,此處只列出核發時間與狀態。
+        密鑰明文以可逆加密保存,admin 可隨時按「顯示」檢視;每次檢視皆寫入稽核紀錄。
       </p>
       <ul className="flex flex-col gap-2">
         {data.items.map((secret) => (
@@ -631,6 +748,9 @@ const ApiClientRow = memo(function ApiClientRow({
             <CopyButton value={client.client_id} />
           </div>
         </td>
+        <td className="px-3 py-3">
+          <LatestSecretCell client={client} />
+        </td>
         <td className="df-td">
           <ApiClientStatusBadge status={client.status} />
         </td>
@@ -668,7 +788,7 @@ const ApiClientRow = memo(function ApiClientRow({
       </tr>
       {expanded ? (
         <tr className="border-b border-border bg-muted/30 last:border-b-0">
-          <td colSpan={8} className="px-3 py-3">
+          <td colSpan={9} className="px-3 py-3">
             <SecretHistoryPanel
               client={client}
               retiringSecretUid={retiringSecretUid}
@@ -691,9 +811,10 @@ export default function ApiClientsPage(): React.ReactNode {
   const [createError, setCreateError] = useState<string | null>(null)
   const [editingClient, setEditingClient] = useState<ApiClientListItem | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
-  const [revealSecret, setRevealSecret] = useState<{ clientId: string; secret: string } | null>(
-    null,
-  )
+  const [issuedSecret, setIssuedSecret] = useState<{
+    clientId: string
+    secret: string
+  } | null>(null)
   const [expandedUid, setExpandedUid] = useState<string | null>(null)
   const [retireTarget, setRetireTarget] = useState<{
     client: ApiClientListItem
@@ -723,11 +844,13 @@ export default function ApiClientsPage(): React.ReactNode {
       setCreateError(null)
       const result = await createApiClient(payload)
       if ('error' in result) {
-        setCreateError(extractApiErrorDetail(result.error, '建立 API Client 失敗,請稍後再試'))
+        setCreateError(
+          extractApiErrorDetail(result.error, '建立使用者 API 權限失敗,請稍後再試'),
+        )
         return
       }
       setCreateOpen(false)
-      setRevealSecret({
+      setIssuedSecret({
         clientId: result.data.client.client_id,
         secret: result.data.client_secret,
       })
@@ -746,7 +869,9 @@ export default function ApiClientsPage(): React.ReactNode {
       setEditError(null)
       const result = await updateApiClient(payload)
       if ('error' in result) {
-        setEditError(extractApiErrorDetail(result.error, '更新 API Client 失敗,請稍後再試'))
+        setEditError(
+          extractApiErrorDetail(result.error, '更新使用者 API 權限失敗,請稍後再試'),
+        )
         return
       }
       setEditingClient(null)
@@ -767,7 +892,7 @@ export default function ApiClientsPage(): React.ReactNode {
         return
       }
       setExpandedUid(client.uid)
-      setRevealSecret({ clientId: client.client_id, secret: result.data.client_secret })
+      setIssuedSecret({ clientId: client.client_id, secret: result.data.client_secret })
     },
     [rotateApiClientSecret],
   )
@@ -792,7 +917,7 @@ export default function ApiClientsPage(): React.ReactNode {
     }
   }, [retireTarget, retireApiClientSecret])
 
-  const closeReveal = useCallback((): void => setRevealSecret(null), [])
+  const closeIssued = useCallback((): void => setIssuedSecret(null), [])
 
   const items = useMemo((): ApiClientListItem[] => data?.items ?? [], [data])
 
@@ -802,11 +927,11 @@ export default function ApiClientsPage(): React.ReactNode {
         <div>
           <h1 className="text-xl font-bold text-foreground md:text-2xl">API Client 設定</h1>
           <p className="mt-1 text-sm text-muted-foreground md:text-base">
-            管理可呼叫資料供應 API 的應用系統(admin 專用)
+            管理使用者的 API 存取憑證(admin 專用)
           </p>
         </div>
         <button type="button" onClick={openCreate} className="df-btn-primary">
-          建立 API Client
+          建立使用者 API 權限
         </button>
       </div>
 
@@ -827,7 +952,7 @@ export default function ApiClientsPage(): React.ReactNode {
           role="alert"
           className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger md:text-base"
         >
-          載入 API Client 清單失敗,請稍後再試
+          載入使用者清單失敗,請稍後再試
         </p>
       ) : null}
 
@@ -836,11 +961,12 @@ export default function ApiClientsPage(): React.ReactNode {
           <div
             className={`df-card overflow-x-auto transition-opacity ${isFetching ? 'opacity-60' : ''}`}
           >
-            <table className="df-table min-w-[960px]">
+            <table className="df-table min-w-[1120px]">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="df-th">名稱</th>
+                  <th className="df-th">使用者</th>
                   <th className="df-th">Client ID</th>
+                  <th className="df-th">Secret</th>
                   <th className="df-th">狀態</th>
                   <th className="df-th">每分鐘上限</th>
                   <th className="df-th">每 10 分鐘上限</th>
@@ -867,7 +993,7 @@ export default function ApiClientsPage(): React.ReactNode {
             </table>
             {items.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-muted-foreground md:text-base">
-                尚無 API Client
+                尚無使用者
               </p>
             ) : null}
           </div>
@@ -898,11 +1024,11 @@ export default function ApiClientsPage(): React.ReactNode {
         onCancel={closeEdit}
       />
 
-      {revealSecret !== null ? (
-        <SecretRevealPanel
-          clientId={revealSecret.clientId}
-          clientSecret={revealSecret.secret}
-          onRequestClose={closeReveal}
+      {issuedSecret !== null ? (
+        <IssuedSecretPanel
+          clientId={issuedSecret.clientId}
+          clientSecret={issuedSecret.secret}
+          onRequestClose={closeIssued}
         />
       ) : null}
 

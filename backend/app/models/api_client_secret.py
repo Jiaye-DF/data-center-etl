@@ -22,11 +22,21 @@ class ApiClientSecret(BaseModel):
             "/ Parent API client (api_client_users.pid)"
         ),
     )
-    # 只存不可逆雜湊(bcrypt),禁明文(比照 users.password_hash)
+    # 驗證路徑用不可逆雜湊(bcrypt);明文檢視另走 secret_encrypted
     secret_hash: Mapped[str] = mapped_column(
         Text,
         nullable=False,
         comment="密鑰雜湊(bcrypt,禁明文)/ Secret hash (bcrypt only)",
+    )
+    # user 裁定(2026-07-30):admin 需隨時檢視明文 → 額外存 Fernet 可逆加密值;
+    # token 驗證仍只走 secret_hash。NULL = task-009 前核發的舊列,無明文可檢視。
+    secret_encrypted: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=(
+            "密鑰明文可逆加密(Fernet;NULL = 舊列無明文)"
+            "/ Reversibly encrypted secret (Fernet; NULL = legacy row)"
+        ),
     )
     status: Mapped[str] = mapped_column(
         String(20),

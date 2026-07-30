@@ -1,6 +1,6 @@
 # Tasks v1.6.0
 
-> 狀態:全數完成(8/8,2026-07-30)
+> 狀態:追加中(9/10;010=worker-J 執行中)
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
@@ -12,6 +12,8 @@
 | 006 | 前端「API Client 設定」sidebar 區塊 + 管理頁 | done(worker-F,UI 視覺項待人工複測) | ✓ | 005 | `frontend/src/components/layout/Sidebar.tsx` / `app/(main)/api-clients/page.tsx` / `lib/api/apiClientApi.ts` |
 | 007 | e2e 驗證 + Arch 文件回寫 + 收口文件 | done(worker-H) | ✗ | 001–006, 008 | `docs/Tasks/v1.6.0/verification-v1.6.0.md` / `docs/Arch/datahub-api-gateway-arch.html` |
 | 008 | 補洞:secret 清單端點 + 前端密鑰紀錄改吃伺服器資料 | done(worker-G) | ✗ | 005, 006 | `backend/app/api/v1/api_clients.py` / `services/api_client_service.py` / `schemas/api_client.py` / `tests/test_api_clients_api.py` / `frontend/.../api-clients/page.tsx` / `lib/api/apiClientApi.ts` |
+| 009 | 追加:secret 可逆加密+儀表板明文檢視+文案使用者化(user 裁定) | done(worker-I) | ✗ | 007, 008 | 見 task 檔(後端 config/security/migration v9/service/api/schema + 前端 page/api + Arch/propose 變更紀錄) |
+| 010 | 追加:單一密鑰制(發新即撤舊)+限流欄位合併+清測試資料(user 裁定) | in_progress(worker-J) | ✗ | 009 | 見 task 檔(repo/service/api/schema/三測試檔 + 前端 page/api + Arch/propose) |
 
 ## 拆解摘要
 

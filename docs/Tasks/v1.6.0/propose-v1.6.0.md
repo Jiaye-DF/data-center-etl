@@ -67,3 +67,8 @@ DataHub API Gateway 的第一層——API Client 連接層(JWT 驗證)首發:外
 - 2026-07-30:**API Client 與後台系統既有使用者 / 角色完全分離**為 user 裁定——機器身分獨立成表與管理流,不共用後台 users / roles。
 - 2026-07-30:表設計經 user 確認——主表名 **`api_client_users`** 為 user 裁定(取代 Arch ERD 的 `api_clients`,**Arch 文件待同步更新**);secret 拆 `api_client_secrets` 子表(雙鑰輪替)、限流參數放主表欄位(`rate_limit_per_minute` 預設 30 / `rate_limit_per_10min` 預設 200)。
 - 程序註記:本 propose 由 AI 依 2026-07-30 對話整理(比照 v1.3.1 / v1.5.1 / v1.5.2 慣例),user 複核後生效。
+
+## 變更紀錄
+
+- 2026-07-30(收口後追加,由 task-009 落地):**client_secret 改可逆加密儲存 + 儀表板明文檢視**為 user 明示裁定——推翻本 propose 對外承諾的「明文僅發放時顯示一次」與 `docs/Design-Base/04-databases/03-passwords-and-pii.md`「不可逆雜湊」原則之適用範圍(理由:僅 admin 可及)。實作為雙軌:token 驗證路徑仍只走 bcrypt 雜湊(零變動),另加 `api_client_secrets.secret_encrypted`(Fernet 可逆加密)供 admin 專用 reveal 端點解密,每次檢視寫稽核(`api_client_secret_reveal`,detail 不含明文);task-009 前既有列為 NULL,不可檢視,須輪替後才有明文。新增必填 env `CLIENT_SECRET_ENCRYPTION_KEY`(缺值 fail-fast)。
+- 2026-07-30(收口後追加,由 task-009 落地):**每一個 API Client = 一個使用者**為 user 裁定——「API Client 設定」頁全頁文案改以「使用者」為主體(副標、表頭、建立 / 編輯對話框、錯誤與空狀態文案),不再以「應用系統」稱之。

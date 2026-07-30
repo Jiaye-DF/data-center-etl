@@ -6,6 +6,9 @@ PATCH 限流參數與 status 生效;rotate 第 3 把 active → 409;retire 後 a
 
 task-008 追加:密鑰清單端點(含 retired、欄位僅 uid/status/created_at、不存在 uid → 404)
 與建立 / rotate 回應的 secret_uid 對得上清單列。
+
+task-009 追加:secret 可逆加密入庫 + reveal 端點(明文與建立回應一致 / 舊列 NULL → 409 /
+非 admin → 403 / audit 有 reveal 事件且 detail 無明文 / 清單含 revealable)。
 """
 
 import os
@@ -23,6 +26,9 @@ TEST_DATABASE_URL = f"{_BASE_URL}/{TEST_DB_NAME}"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("INIT_ADMIN_USERNAME", "init-admin")
 os.environ.setdefault("INIT_ADMIN_PASSWORD", "init-admin-password-for-test")
+# 本檔自帶 Fernet 測試金鑰,不依賴 backend/.env(reveal 的加解密須同一把)
+CLIENT_SECRET_ENCRYPTION_KEY = "gV9B0ldDujaVk-KpKzDOSm6TSAFPgGIfNxu1NxLr8oY="
+os.environ["CLIENT_SECRET_ENCRYPTION_KEY"] = CLIENT_SECRET_ENCRYPTION_KEY
 
 from collections.abc import AsyncIterator  # noqa: E402
 
@@ -173,6 +179,9 @@ async def test_member_forbidden_on_all_endpoints(
         await client.post(f"{_CLIENTS_URL}/{_FAKE_UID}/secrets/{_FAKE_UID}/retire")
     ).status_code == 403
     assert (await client.get(f"{_CLIENTS_URL}/{_FAKE_UID}/secrets")).status_code == 403
+    assert (
+        await client.get(f"{_CLIENTS_URL}/{_FAKE_UID}/secrets/{_FAKE_UID}/reveal")
+    ).status_code == 403
 
 
 # ── 建立 ─────────────────────────────────────────────────────────────────
@@ -471,9 +480,10 @@ async def test_secret_list_returns_active_and_retired_minimal_fields(
         rotated_secret_uid,
     ]
     for item in body["items"]:
-        assert set(item.keys()) == {"uid", "status", "created_at"}
+        assert set(item.keys()) == {"uid", "status", "created_at", "revealable"}
         assert item["status"] == "active"
         assert isinstance(item["created_at"], str)
+        assert item["revealable"] is True
     assert "secret_hash" not in resp.text
     assert "pid" not in resp.text
     assert "client_secret" not in resp.text
@@ -515,3 +525,161 @@ async def test_secret_list_unknown_uid_404(admin_client: AsyncClient) -> None:
     body = resp.json()
     assert body["success"] is False
     assert body["response_code"] == 404
+
+
+# ── 明文檢視 reveal(task-009)──────────────────────────────────────────────
+def _reveal_url(client_uid: object, secret_uid: object) -> str:
+    return f"{_CLIENTS_URL}/{client_uid}/secrets/{secret_uid}/reveal"
+
+
+async def _clear_encrypted_secret(
+    session_factory: async_sessionmaker[AsyncSession], secret_uid: object
+) -> None:
+    """模擬 task-009 前核發的舊列(僅有 bcrypt 雜湊,無可逆加密明文)。"""
+    async with session_factory() as session:
+        await session.execute(
+            text(
+                "UPDATE api_client_secrets SET secret_encrypted = NULL "
+                "WHERE uid = CAST(:uid AS uuid)"
+            ),
+            {"uid": str(secret_uid)},
+        )
+        await session.commit()
+
+
+async def test_reveal_returns_same_plaintext_as_create(
+    admin_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    created = await _create_api_client_full(admin_client)
+    client_obj = created["client"]
+    assert isinstance(client_obj, dict)
+    plain_secret = created["client_secret"]
+
+    resp = await admin_client.get(_reveal_url(client_obj["uid"], created["secret_uid"]))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["response_code"] == 200
+    assert body["data"]["secret_uid"] == created["secret_uid"]
+    assert body["data"]["client_secret"] == plain_secret
+
+    # 入庫是加密值(非明文),且 bcrypt 雜湊仍可驗證回同一把明文
+    async with session_factory() as session:
+        secret = (await session.execute(select(ApiClientSecret))).scalar_one()
+        assert secret.secret_encrypted is not None
+        assert secret.secret_encrypted != plain_secret
+        assert isinstance(plain_secret, str)
+        assert await verify_password_async(plain_secret, secret.secret_hash)
+
+
+async def test_reveal_after_rotate_returns_each_secret(admin_client: AsyncClient) -> None:
+    created = await _create_api_client_full(admin_client)
+    client_obj = created["client"]
+    assert isinstance(client_obj, dict)
+    uid = client_obj["uid"]
+    rotated = (await admin_client.post(f"{_CLIENTS_URL}/{uid}/rotate-secret")).json()[
+        "data"
+    ]
+
+    first = (await admin_client.get(_reveal_url(uid, created["secret_uid"]))).json()["data"]
+    second = (await admin_client.get(_reveal_url(uid, rotated["secret_uid"]))).json()["data"]
+    assert first["client_secret"] == created["client_secret"]
+    assert second["client_secret"] == rotated["client_secret"]
+    assert first["client_secret"] != second["client_secret"]
+
+
+async def test_reveal_legacy_row_without_encrypted_conflicts(
+    admin_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    created = await _create_api_client_full(admin_client)
+    client_obj = created["client"]
+    assert isinstance(client_obj, dict)
+    await _clear_encrypted_secret(session_factory, created["secret_uid"])
+
+    resp = await admin_client.get(_reveal_url(client_obj["uid"], created["secret_uid"]))
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["success"] is False
+    assert body["response_code"] == 409
+    assert body["detail"] is not None
+
+
+async def test_secret_list_marks_legacy_row_not_revealable(
+    admin_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    created = await _create_api_client_full(admin_client)
+    client_obj = created["client"]
+    assert isinstance(client_obj, dict)
+    uid = client_obj["uid"]
+    rotated = (await admin_client.post(f"{_CLIENTS_URL}/{uid}/rotate-secret")).json()[
+        "data"
+    ]
+    await _clear_encrypted_secret(session_factory, created["secret_uid"])
+
+    body = (await admin_client.get(f"{_CLIENTS_URL}/{uid}/secrets")).json()["data"]
+    assert {item["uid"]: item["revealable"] for item in body["items"]} == {
+        created["secret_uid"]: False,
+        rotated["secret_uid"]: True,
+    }
+
+
+async def test_reveal_writes_audit_without_plaintext(
+    admin_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    created = await _create_api_client_full(admin_client)
+    client_obj = created["client"]
+    assert isinstance(client_obj, dict)
+    plain_secret = created["client_secret"]
+    assert isinstance(plain_secret, str)
+
+    assert (
+        await admin_client.get(_reveal_url(client_obj["uid"], created["secret_uid"]))
+    ).status_code == 200
+
+    async with session_factory() as session:
+        log = (
+            await session.execute(
+                select(AuditLog).where(AuditLog.action == "api_client_secret_reveal")
+            )
+        ).scalar_one()
+        assert log.target_type == "api_client"
+        assert log.actor_username == "adam"
+        assert log.detail is not None
+        assert plain_secret not in log.detail
+        assert str(created["secret_uid"]) in log.detail
+
+
+async def test_reveal_unknown_and_cross_client_404(admin_client: AsyncClient) -> None:
+    first = await _create_api_client_full(admin_client, name="甲系統")
+    second = await _create_api_client_full(admin_client, name="乙系統")
+    first_client = first["client"]
+    assert isinstance(first_client, dict)
+
+    # client 不存在
+    assert (
+        await admin_client.get(_reveal_url(_FAKE_UID, first["secret_uid"]))
+    ).status_code == 404
+    # secret 不存在
+    assert (
+        await admin_client.get(_reveal_url(first_client["uid"], _FAKE_UID))
+    ).status_code == 404
+    # 別的 client 的 secret
+    assert (
+        await admin_client.get(_reveal_url(first_client["uid"], second["secret_uid"]))
+    ).status_code == 404
+
+
+async def test_reveal_of_retired_secret_still_allowed(admin_client: AsyncClient) -> None:
+    """已汰換密鑰仍可檢視明文(供比對確認哪把已失效);狀態不影響解密。"""
+    created = await _create_api_client_full(admin_client)
+    client_obj = created["client"]
+    assert isinstance(client_obj, dict)
+    uid = client_obj["uid"]
+    assert (
+        await admin_client.post(
+            f"{_CLIENTS_URL}/{uid}/secrets/{created['secret_uid']}/retire"
+        )
+    ).status_code == 200
+
+    resp = await admin_client.get(_reveal_url(uid, created["secret_uid"]))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["client_secret"] == created["client_secret"]

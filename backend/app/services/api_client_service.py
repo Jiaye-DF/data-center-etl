@@ -1,6 +1,7 @@
-"""API Client 後台管理服務(建立 / 發證 / 輪替 / 汰換 / 啟停 / 限流參數)。
+"""API Client 後台管理服務(建立 / 發證 / 輪替 / 汰換 / 啟停 / 限流參數 / 明文檢視)。
 
-- 明文 client_secret 只在核發當次回傳,入庫僅存 bcrypt 雜湊;稽核 detail 一律不含明文。
+- 密鑰入庫雙軌:bcrypt 雜湊(token 驗證唯一依據)+ Fernet 可逆加密明文(僅 admin 檢視);
+  user 裁定 2026-07-30,見 task-009。稽核 detail 一律不含明文。
 - api_client_repo 無「依 uid 取件」、「active 密鑰計數」與「含 retired 的密鑰清單」方法,
   且該檔不在本 task 檔案白名單 → 這些查詢暫落本 service
   (同 sso_service / data_query_service 前例)。
@@ -12,8 +13,9 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.exceptions import AppError
-from app.core.security import hash_password_async
+from app.core.security import decrypt_secret, encrypt_secret, hash_password_async
 from app.models.api_client_secret import SECRET_STATUS_ACTIVE, ApiClientSecret
 from app.models.api_client_user import ApiClientUser
 from app.repositories.api_client_repo import ApiClientRepository
@@ -25,6 +27,7 @@ from app.schemas.api_client import (
     ApiClientSecretIssuedResponse,
     ApiClientSecretListResponse,
     ApiClientSecretResponse,
+    ApiClientSecretRevealResponse,
     ApiClientUpdateRequest,
 )
 from app.services.audit_service import AuditService
@@ -36,6 +39,7 @@ _SECRET_TOKEN_BYTES = 32
 _TARGET_TYPE = "api_client"
 _CLIENT_NOT_FOUND_DETAIL = "API Client 不存在"
 _SECRET_NOT_FOUND_DETAIL = "密鑰不存在"
+_SECRET_NOT_REVEALABLE_DETAIL = "此密鑰核發時未保存可檢視明文,請輪替核發新密鑰後再檢視"
 
 
 def generate_client_id() -> str:
@@ -96,27 +100,54 @@ class ApiClientService:
         )
         items = [
             ApiClientSecretResponse(
-                uid=row.uid, status=row.status, created_at=row.created_at
+                uid=row.uid,
+                status=row.status,
+                created_at=row.created_at,
+                revealable=row.secret_encrypted is not None,
             )
             for row in rows
         ]
         return ApiClientSecretListResponse(items=items, total=len(items))
 
+    async def reveal_secret(
+        self, uid: UUID, secret_uid: UUID, *, actor_uid: UUID
+    ) -> ApiClientSecretRevealResponse:
+        client = await self._get_or_404(uid)
+        secret = await self._get_secret_or_404(client, secret_uid)
+        if secret.secret_encrypted is None:
+            raise AppError(
+                _SECRET_NOT_REVEALABLE_DETAIL, response_code=409, status_code=409
+            )
+        plain_secret = decrypt_secret(
+            secret.secret_encrypted,
+            encryption_key=get_settings().CLIENT_SECRET_ENCRYPTION_KEY,
+        )
+        if plain_secret is None:
+            # 加密金鑰已更換或內容毀損:等同無明文可檢視,引導輪替(不外拋密碼學細節)
+            raise AppError(
+                _SECRET_NOT_REVEALABLE_DETAIL, response_code=409, status_code=409
+            )
+        await self._audit.log(
+            action="api_client_secret_reveal",
+            actor_uid=actor_uid,
+            target_type=_TARGET_TYPE,
+            target_uid=client.uid,
+            detail=f"檢視密鑰明文(client_id={client.client_id};secret_uid={secret.uid})",
+        )
+        return ApiClientSecretRevealResponse(
+            secret_uid=secret.uid, client_secret=plain_secret
+        )
+
     async def create_client(
         self, payload: ApiClientCreateRequest, *, actor_uid: UUID
     ) -> ApiClientCreatedResponse:
-        plain_secret = generate_client_secret()
         client = await self._repo.create(
             client_id=generate_client_id(),
             name=payload.name,
             description=payload.description,
             actor_uid=actor_uid,
         )
-        secret = await self._repo.add_secret(
-            client,
-            secret_hash=await hash_password_async(plain_secret),
-            actor_uid=actor_uid,
-        )
+        secret, plain_secret = await self._issue_secret(client, actor_uid=actor_uid)
         await self._db.refresh(client)
         await self._audit.log(
             action="api_client_create",
@@ -158,13 +189,8 @@ class ApiClientService:
         self, uid: UUID, *, actor_uid: UUID
     ) -> ApiClientSecretIssuedResponse:
         client = await self._get_or_404(uid)
-        plain_secret = generate_client_secret()
         # active ≥ 2 由 repo 檢核擋下(AppError 409:先汰舊才能再發)
-        secret = await self._repo.add_secret(
-            client,
-            secret_hash=await hash_password_async(plain_secret),
-            actor_uid=actor_uid,
-        )
+        secret, plain_secret = await self._issue_secret(client, actor_uid=actor_uid)
         active_count = len(await self._repo.list_active_secrets(client))
         await self._audit.log(
             action="api_client_secret_rotate",
@@ -196,6 +222,26 @@ class ApiClientService:
             detail=f"汰換密鑰(client_id={client.client_id};secret_uid={secret.uid})",
         )
         return await self._with_active_count(client)
+
+    async def _issue_secret(
+        self, client: ApiClientUser, *, actor_uid: UUID
+    ) -> tuple[ApiClientSecret, str]:
+        """核發一把密鑰:bcrypt 雜湊供驗證、Fernet 加密明文供 admin 檢視。
+
+        `secret_encrypted` 於 repo 回傳後直接指派,因 api_client_repo 不在 task-009
+        白名單、無法擴 add_secret 參數(同本檔頭查詢下沉的前例)。
+        """
+        plain_secret = generate_client_secret()
+        secret = await self._repo.add_secret(
+            client,
+            secret_hash=await hash_password_async(plain_secret),
+            actor_uid=actor_uid,
+        )
+        secret.secret_encrypted = encrypt_secret(
+            plain_secret, encryption_key=get_settings().CLIENT_SECRET_ENCRYPTION_KEY
+        )
+        await self._db.flush()
+        return secret, plain_secret
 
     async def _with_active_count(self, client: ApiClientUser) -> ApiClientResponse:
         return _to_response(client, len(await self._repo.list_active_secrets(client)))

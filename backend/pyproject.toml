@@ -11,6 +11,9 @@ dependencies = [
     # passlib 已移除(與 bcrypt 5 不相容,security.py 為 bcrypt 直呼;fixed.md §3)
     "bcrypt==5.0.0",
     "pyjwt[crypto]==2.10.1",
+    # v1.6.0 task-009:client_secret 可逆加密(Fernet)。原為 pyjwt[crypto] 轉依賴,
+    # 直接 import 故顯式鎖版(版本與既有 lock 一致,不升降)
+    "cryptography==49.0.0",
     "python-multipart==0.0.20",
     "sqlalchemy[asyncio]==2.0.49",
     "asyncpg==0.31.0",

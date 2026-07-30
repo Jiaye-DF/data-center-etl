@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # 對外 API Client 短效 JWT 的簽章密鑰(/api/client):必填、無預設值、至少 32 字元
     # (缺值或過短即 Settings 驗證失敗 fail-fast;禁寫死預設值進版控)
     CLIENT_JWT_SECRET: str = Field(min_length=32)
+    # client_secret 可逆加密金鑰(Fernet key,44 字元 urlsafe base64):必填、無預設值
+    # 產生:python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # 換金鑰會使既有加密明文無法解密(僅影響儀表板檢視,token 驗證走 bcrypt 不受影響)
+    CLIENT_SECRET_ENCRYPTION_KEY: str = Field(min_length=44)
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
     # 初始管理員帳密:必填、無預設值(缺 env 即 Settings 驗證失敗 fail-fast,禁預設帳密)
     INIT_ADMIN_USERNAME: str

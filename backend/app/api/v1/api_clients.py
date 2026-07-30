@@ -14,6 +14,7 @@ from app.schemas.api_client import (
     ApiClientResponse,
     ApiClientSecretIssuedResponse,
     ApiClientSecretListResponse,
+    ApiClientSecretRevealResponse,
     ApiClientUpdateRequest,
 )
 from app.schemas.response import ApiResponse
@@ -78,6 +79,21 @@ async def list_api_client_secrets(
     _user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[ApiClientSecretListResponse]:
     data = await ApiClientService(db).list_secrets(uid)
+    return success(data=data)
+
+
+@router.get(
+    "/{uid}/secrets/{secret_uid}/reveal",
+    response_model=ApiResponse[ApiClientSecretRevealResponse],
+    summary="檢視密鑰明文(admin 專用;舊密鑰無加密明文 → 409)",
+)
+async def reveal_api_client_secret(
+    uid: UUID,
+    secret_uid: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ApiClientSecretRevealResponse]:
+    data = await ApiClientService(db).reveal_secret(uid, secret_uid, actor_uid=user.uid)
     return success(data=data)
 
 
