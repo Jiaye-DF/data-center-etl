@@ -116,7 +116,7 @@ const SecretRevealControl = memo(function SecretRevealControl({
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-nowrap items-center gap-2">
         <code className="font-mono text-sm text-foreground md:text-base">
           {plainSecret ?? SECRET_MASK}
         </code>
@@ -227,7 +227,9 @@ function IssuedSecretPanel({
           密鑰核發成功
         </h2>
         <p className="rounded-lg bg-warning/15 px-3 py-2 text-sm text-warning md:text-base">
-          請立即複製並交付該使用者;關閉後仍可在清單「ClientID-Secret」欄重新檢視明文。
+          請立即複製並交付該使用者
+          <br />
+          關閉後仍可在清單「ClientID-Secret」欄重新檢視明文
         </p>
         <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-foreground md:text-base">Client ID</span>
@@ -259,7 +261,8 @@ function IssuedSecretPanel({
         onConfirm={handleConfirmClose}
         onCancel={handleCancelClose}
       >
-        <p>請確認已複製此密鑰明文;關閉後可在清單「ClientID-Secret」欄重新檢視。</p>
+        <p>請確認已複製此密鑰明文</p>
+        <p>關閉後可在清單「ClientID-Secret」欄重新檢視</p>
       </ConfirmDialog>
     </div>
   )
@@ -340,7 +343,7 @@ function CreateClientDialog({
           id="create-client-dialog-title"
           className="text-lg font-bold text-foreground md:text-xl"
         >
-          建立使用者 API 權限
+          建立使用者 API 憑證
         </h2>
         {submitError !== null ? (
           <p
@@ -514,7 +517,7 @@ function EditClientDialog({
             id="edit-client-dialog-title"
             className="text-lg font-bold text-foreground md:text-xl"
           >
-            編輯使用者 API 權限:{client.name}
+            編輯使用者 API 憑證:{client.name}
           </h2>
           {submitError !== null ? (
             <p
@@ -629,39 +632,54 @@ const ApiClientRow = memo(function ApiClientRow({
   return (
     <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/50">
       <td className="px-3 py-3">
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={handleEdit} className="df-btn-outline px-3 py-1.5 text-sm">
+        <div className="flex flex-nowrap gap-2">
+          <button
+            type="button"
+            onClick={handleEdit}
+            className="df-btn-outline min-h-0 shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
+          >
             編輯
           </button>
           <button
             type="button"
             onClick={handleRotate}
             disabled={rotating}
-            className="df-btn-outline px-3 py-1.5 text-sm"
+            className="df-btn-outline min-h-0 shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
           >
             輪替密鑰
           </button>
         </div>
       </td>
-      <td className="px-3 py-3 text-sm font-medium text-foreground md:text-base">
+      <td className="whitespace-nowrap px-3 py-3 text-sm font-medium text-foreground md:text-base">
         {client.name}
       </td>
-      <td className="px-3 py-3">
+      <td className="whitespace-nowrap px-3 py-3">
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-nowrap items-center gap-2">
+            <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">
+              Client ID
+            </span>
             <code className="text-sm font-mono text-muted-foreground md:text-base">
               {client.client_id}
             </code>
             <CopyButton value={client.client_id} />
           </div>
-          <LatestSecretCell client={client} />
+          <div className="flex flex-nowrap items-center gap-2">
+            <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">
+              Secret
+            </span>
+            <LatestSecretCell client={client} />
+          </div>
         </div>
       </td>
       <td className="df-td">
         <ApiClientStatusBadge status={client.status} />
       </td>
       <td className="df-td whitespace-nowrap">
-        {client.rate_limit_per_minute} / 分 · {client.rate_limit_per_10min} / 10 分
+        <div className="flex flex-col gap-0.5">
+          <span>{client.rate_limit_per_minute} 次 / 分</span>
+          <span>{client.rate_limit_per_10min} 次 / 10 分</span>
+        </div>
       </td>
       <td className="df-td text-muted-foreground">{formatDateTime(client.created_at)}</td>
     </tr>
@@ -707,7 +725,7 @@ export default function ApiClientsPage(): React.ReactNode {
       const result = await createApiClient(payload)
       if ('error' in result) {
         setCreateError(
-          extractApiErrorDetail(result.error, '建立使用者 API 權限失敗,請稍後再試'),
+          extractApiErrorDetail(result.error, '建立使用者 API 憑證失敗,請稍後再試'),
         )
         return
       }
@@ -732,7 +750,7 @@ export default function ApiClientsPage(): React.ReactNode {
       const result = await updateApiClient(payload)
       if ('error' in result) {
         setEditError(
-          extractApiErrorDetail(result.error, '更新使用者 API 權限失敗,請稍後再試'),
+          extractApiErrorDetail(result.error, '更新使用者 API 憑證失敗,請稍後再試'),
         )
         return
       }
@@ -774,7 +792,7 @@ export default function ApiClientsPage(): React.ReactNode {
           </p>
         </div>
         <button type="button" onClick={openCreate} className="df-btn-primary">
-          建立使用者 API 權限
+          建立使用者 API 憑證
         </button>
       </div>
 
@@ -804,7 +822,7 @@ export default function ApiClientsPage(): React.ReactNode {
           <div
             className={`df-card overflow-x-auto transition-opacity ${isFetching ? 'opacity-60' : ''}`}
           >
-            <table className="df-table min-w-[920px]">
+            <table className="df-table min-w-[1080px]">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
                   <th className="df-th">操作</th>
