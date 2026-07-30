@@ -1,6 +1,6 @@
 # Tasks v1.6.0
 
-> 狀態:進行中(已完成 3/7;005=worker-D 執行中)
+> 狀態:進行中(已完成 4/7;第 3 波 004=worker-E、006=worker-F 執行中)
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
@@ -8,7 +8,7 @@
 | 002 | api_client_router 骨架 + 統一封套 + JWT 簽發/驗簽 + /api/client 掛載 | done(worker-B) | ✓ | — | `backend/app/api_client_router/*`(骨架全新檔)/ `core/config.py` / `main.py` / `tests/test_api_client_router_core.py` |
 | 003 | per-Client Rate Limit(雙窗口)+ 連續失敗鎖定(Redis,fail-open) | done(worker-C) | ✓ | 002 | `backend/app/api_client_router/common/rate_limit.py` / `tests/test_api_client_rate_limit.py` |
 | 004 | POST /api/client/v1.0/token + /refresh_token 端點業務流 | pending | ✗ | 001, 002, 003 | `backend/app/api_client_router/versions/v1_0.py` / `common/auth.py` / `common/schemas.py` / `tests/test_api_client_token_api.py` |
-| 005 | 後台管理 API /api/v1/api-clients(建立/發證/輪替/啟停/限流參數) | in_progress(worker-D) | ✓ | 001 | `backend/app/api/v1/api_clients.py` / `api/v1/__init__.py` / `services/api_client_service.py` / `schemas/api_client.py` / `tests/test_api_clients_api.py` |
+| 005 | 後台管理 API /api/v1/api-clients(建立/發證/輪替/啟停/限流參數) | done(worker-D) | ✓ | 001 | `backend/app/api/v1/api_clients.py` / `api/v1/__init__.py` / `services/api_client_service.py` / `schemas/api_client.py` / `tests/test_api_clients_api.py` |
 | 006 | 前端「API Client 設定」sidebar 區塊 + 管理頁 | pending | ✓ | 005 | `frontend/src/components/layout/Sidebar.tsx` / `app/(main)/api-clients/page.tsx` / `lib/api/apiClientApi.ts` |
 | 007 | e2e 驗證 + Arch 文件回寫 + 收口文件 | pending | ✗ | 001–006 | `docs/Tasks/v1.6.0/verification-v1.6.0.md` / `docs/Arch/datahub-api-gateway-arch.html` |
 

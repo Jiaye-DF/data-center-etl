@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from . import (
+    api_clients,
     audit_logs,
     auth,
     dashboard,
@@ -32,3 +33,4 @@ router.include_router(
 )
 router.include_router(roles.router, prefix="/roles", tags=["roles"])
 router.include_router(users.router, prefix="/users", tags=["users"])
+router.include_router(api_clients.router, prefix="/api-clients", tags=["api-clients"])
