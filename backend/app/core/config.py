@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     SYNC_CONCURRENCY: int = 2
     JWT_SECRET_KEY: str = Field(default=JWT_SECRET_KEY_DEVELOPMENT_DEFAULT)
     JWT_EXPIRE_MINUTES: int = 480
+    # 對外 API Client 短效 JWT 的簽章密鑰(/api/client):必填、無預設值、至少 32 字元
+    # (缺值或過短即 Settings 驗證失敗 fail-fast;禁寫死預設值進版控)
+    CLIENT_JWT_SECRET: str = Field(min_length=32)
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
     # 初始管理員帳密:必填、無預設值(缺 env 即 Settings 驗證失敗 fail-fast,禁預設帳密)
     INIT_ADMIN_USERNAME: str

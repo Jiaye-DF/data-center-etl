@@ -292,6 +292,8 @@ def test_settings_with_init_admin_env_ok(monkeypatch: pytest.MonkeyPatch) -> Non
         DATABASE_URL=TEST_DATABASE_URL,
         INIT_ADMIN_USERNAME="ok-admin",
         INIT_ADMIN_PASSWORD="ok-password-123",
+        # v1.6.0 task-002 起為必填欄(至少 32 字元),隔離 .env 時須顯式帶入
+        CLIENT_JWT_SECRET="c" * 32,
     )
     assert settings.INIT_ADMIN_USERNAME == "ok-admin"
 

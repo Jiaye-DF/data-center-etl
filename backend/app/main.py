@@ -8,6 +8,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import router as api_router
+from app.api_client_router.versions import build_client_router
+from app.api_client_router.versions.registry import CLIENT_ROUTE_PREFIX
 from app.core.config import get_settings
 from app.core.db import AsyncSessionLocal, engine
 from app.core.exceptions import register_exception_handlers
@@ -67,6 +69,8 @@ def create_app() -> FastAPI:
     )
     register_exception_handlers(app)
     app.include_router(api_router, prefix="/api/v1")
+    # 對外 API Client 命名空間:與後台 /api/v1 分離,錯誤走統一封套(不掛後台稽核)
+    app.include_router(build_client_router(), prefix=CLIENT_ROUTE_PREFIX)
     return app
 
 
