@@ -1,0 +1,122 @@
+import { baseApi } from '@/lib/api/baseApi'
+import { unwrap, type ApiEnvelope } from '@/types/api'
+
+/** API Client 狀態(enabled 可正常取 token;disabled 立即拒發) */
+export type ApiClientStatus = 'enabled' | 'disabled'
+
+export interface ApiClientListItem {
+  uid: string
+  client_id: string
+  name: string
+  description: string | null
+  status: ApiClientStatus
+  rate_limit_per_minute: number
+  rate_limit_per_10min: number
+  active_secret_count: number
+  created_at: string
+}
+
+export interface ApiClientListData {
+  items: ApiClientListItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ApiClientListParams {
+  page: number
+  pageSize: number
+}
+
+export interface CreateApiClientPayload {
+  name: string
+  description: string | null
+}
+
+export interface CreateApiClientResult {
+  client: ApiClientListItem
+  client_secret: string
+}
+
+export interface UpdateApiClientPayload {
+  uid: string
+  name?: string
+  description?: string | null
+  status?: ApiClientStatus
+  rate_limit_per_minute?: number
+  rate_limit_per_10min?: number
+}
+
+export interface RotateApiClientSecretResult {
+  secret_uid: string
+  client_secret: string
+  active_secret_count: number
+}
+
+export interface RetireApiClientSecretPayload {
+  uid: string
+  secretUid: string
+}
+
+export const apiClientApi = baseApi
+  .enhanceEndpoints({ addTagTypes: ['ApiClient'] })
+  .injectEndpoints({
+    endpoints: (build) => ({
+      listApiClients: build.query<ApiClientListData, ApiClientListParams>({
+        query: ({ page, pageSize }) => ({
+          url: '/api-clients',
+          params: { page, page_size: pageSize },
+        }),
+        providesTags: [{ type: 'ApiClient', id: 'LIST' }],
+        transformResponse: (
+          response: ApiEnvelope<ApiClientListData>,
+        ): ApiClientListData => unwrap(response),
+      }),
+      createApiClient: build.mutation<CreateApiClientResult, CreateApiClientPayload>({
+        query: (body) => ({ url: '/api-clients', method: 'POST', body }),
+        invalidatesTags: [{ type: 'ApiClient', id: 'LIST' }],
+        transformResponse: (
+          response: ApiEnvelope<CreateApiClientResult>,
+        ): CreateApiClientResult => unwrap(response),
+      }),
+      updateApiClient: build.mutation<ApiClientListItem, UpdateApiClientPayload>({
+        query: ({ uid, ...body }) => ({
+          url: `/api-clients/${uid}`,
+          method: 'PATCH',
+          body,
+        }),
+        invalidatesTags: [{ type: 'ApiClient', id: 'LIST' }],
+        transformResponse: (
+          response: ApiEnvelope<ApiClientListItem>,
+        ): ApiClientListItem => unwrap(response),
+      }),
+      rotateApiClientSecret: build.mutation<RotateApiClientSecretResult, string>({
+        query: (uid) => ({ url: `/api-clients/${uid}/rotate-secret`, method: 'POST' }),
+        invalidatesTags: [{ type: 'ApiClient', id: 'LIST' }],
+        transformResponse: (
+          response: ApiEnvelope<RotateApiClientSecretResult>,
+        ): RotateApiClientSecretResult => unwrap(response),
+      }),
+      retireApiClientSecret: build.mutation<
+        ApiClientListItem,
+        RetireApiClientSecretPayload
+      >({
+        query: ({ uid, secretUid }) => ({
+          url: `/api-clients/${uid}/secrets/${secretUid}/retire`,
+          method: 'POST',
+        }),
+        invalidatesTags: [{ type: 'ApiClient', id: 'LIST' }],
+        transformResponse: (
+          response: ApiEnvelope<ApiClientListItem>,
+        ): ApiClientListItem => unwrap(response),
+      }),
+    }),
+  })
+
+export const {
+  useListApiClientsQuery,
+  useCreateApiClientMutation,
+  useUpdateApiClientMutation,
+  useRotateApiClientSecretMutation,
+  useRetireApiClientSecretMutation,
+} = apiClientApi

@@ -42,6 +42,10 @@ const NAV_GROUPS: NavGroup[] = [
     title: '系統管理',
     items: [{ href: '/users', label: '使用者與角色', icon: <UsersIcon /> }],
   },
+  {
+    title: 'API Client 設定',
+    items: [{ href: '/api-clients', label: 'API Client 設定', icon: <ApiClientIcon /> }],
+  },
 ]
 
 function isActivePath(pathname: string, href: string): boolean {
@@ -213,6 +217,17 @@ function TagIcon(): React.ReactNode {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" />
       <circle cx="7.5" cy="7.5" r="1" />
+    </svg>
+  )
+}
+
+function ApiClientIcon(): React.ReactNode {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M8 9h8" />
+      <path d="M8 13h5" />
+      <circle cx="17.5" cy="16.5" r="1.5" />
     </svg>
   )
 }
