@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DataHub API Tree</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --ink: #1f2937; --sub: #6b7280; --line: #e5e7eb;
+    --brand: #EC7211;
+    --get: #0a8ca8;    --get-bg: #e3f4f9;
+    --post: #1f9d55;   --post-bg: #e7f6ed;
+    --put: #7c3aed;    --put-bg: #ede9fe;
+    --patch: #b45309;  --patch-bg: #fef3c7;
+    --del: #dc2626;    --del-bg: #fee2e2;
+    --plan: #5b4a8a;   --plan-bg: #f0ecf8;
+    --client: #EC7211; --client-bg: #fde8d8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+    font-size: 15px; line-height: 1.7; color: var(--ink); background: var(--bg);
+  }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 23px; margin-bottom: 4px; }
+  .meta { color: var(--sub); font-size: 14px; margin-bottom: 18px; }
+  h2 { font-size: 18px; margin: 30px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--line); }
+  h2 .n { font-size: 13px; color: var(--sub); font-weight: 400; margin-left: 8px; }
+  .note { border-left: 4px solid var(--plan); background: var(--plan-bg); border-radius: 8px;
+          padding: 8px 14px; font-size: 14px; margin: 10px 0 18px; }
+
+  .tree { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; margin-bottom: 14px; }
+  .tree.spec { border-style: dashed; border-color: var(--plan); }
+  .grp { font-weight: 700; padding: 6px 4px 2px; }
+  .grp code { color: var(--plan); background: var(--plan-bg); padding: 0 6px; border-radius: 6px; font-size: 14px; }
+  .tree.live .grp code { color: #7a3b10; background: var(--client-bg); }
+  .grp .d { font-weight: 400; font-size: 13px; color: var(--sub); margin-left: 6px; }
+  .leaves { margin: 0 0 8px 12px; border-left: 2px solid var(--line); padding-left: 14px; }
+  .ep { display: flex; align-items: baseline; gap: 8px; padding: 3px 4px; border-radius: 6px; flex-wrap: wrap; }
+  .ep:hover { background: var(--bg); }
+  .ep code { font-size: 14px; font-family: Consolas, "Courier New", monospace; }
+  .ep .s { color: var(--sub); font-size: 13.5px; }
+  .m { display: inline-block; min-width: 52px; text-align: center; font-size: 12px; font-weight: 700;
+       border-radius: 6px; padding: 0 6px; font-family: Consolas, monospace; }
+  .m.get { color: var(--get); background: var(--get-bg); }
+  .m.post { color: var(--post); background: var(--post-bg); }
+  .m.put { color: var(--put); background: var(--put-bg); }
+  .m.patch { color: var(--patch); background: var(--patch-bg); }
+  .m.delete { color: var(--del); background: var(--del-bg); }
+  .tag { display: inline-block; font-size: 12px; border-radius: 999px; padding: 0 10px; font-weight: 700; vertical-align: 2px; }
+  .tag.plan { color: var(--plan); background: var(--plan-bg); border: 1px dashed var(--plan); }
+  .tag.live { color: var(--post); background: var(--post-bg); }
+
+  pre.ns {
+    background: #1e2733; color: #e2e8f0; border-radius: 12px; padding: 14px 18px;
+    font-size: 13.5px; line-height: 1.65; overflow-x: auto; font-family: Consolas, "Courier New", monospace;
+  }
+  pre.ns .c1 { color: #7dd3fc; } pre.ns .c2 { color: #86efac; }
+  pre.ns .c3 { color: #fdba74; } pre.ns .c4 { color: #c4b5fd; } pre.ns .cm { color: #94a3b8; }
+</style>
+</head>
+<body>
+<main>
+  <h1>DataHub API Tree</h1>
+  <p class="meta">2026-07-31 · 規劃 = 依 <code>datahub-api-gateway-arch.html</code> 推測,<b>最終實作必有出入</b>,以各版本 propose / tasks 為準</p>
+
+  <h2>全景</h2>
+  <pre class="ns">
+<span class="c1">/api</span>
+├── <span class="c1">/api/v1</span>                                      <span class="cm"># 後台管理面(人;DF-SSO / 本地登入)</span>
+│   ├── health · auth · sso                          <span class="cm"># 現行:健康檢查 / 登入登出 / SSO 整合</span>
+│   ├── dashboard · progress · runs                  <span class="cm"># 現行:儀表板 / 進度 / 執行紀錄</span>
+│   ├── datasets · sync · schedules                  <span class="cm"># 現行:資料瀏覽 / 同步觸發 / 排程</span>
+│   ├── semantic-mappings                            <span class="cm"># 現行:語意層維護</span>
+│   ├── users · roles · audit-logs                   <span class="cm"># 現行:後台使用者 / 稽核</span>
+│   ├── api-clients                                  <span class="cm"># 現行:API Client 發證 / 輪替 / 註銷</span>
+│   ├── <span class="c4">services · operations</span>                    <span class="cm"># 規劃②:系統別 / 作業</span>
+│   ├── <span class="c4">permission-profiles · client-roles</span>       <span class="cm"># 規劃②:設定檔 / Role</span>
+│   ├── <span class="c4">exception-sets</span>                           <span class="cm"># 規劃②:特例權限</span>
+│   ├── <span class="c4">authz</span>                                    <span class="cm"># 規劃③:權限引擎管理面</span>
+│   └── <span class="c4">client-request-logs</span>                      <span class="cm"># 規劃⑤:對外請求稽核</span>
+│
+└── <span class="c2">/api/client/v1.0</span>                             <span class="cm"># 對外供應面(機器;短效 JWT 15 分鐘)</span>
+    ├── token · refresh_token                        <span class="cm"># 現行①:取證 / 語意刷新</span>
+    ├── <span class="c3">services</span>                                 <span class="cm"># 規劃④:我可用的系統別</span>
+    └── <span class="c3">{service}/operations/{operation}</span>         <span class="cm"># 規劃④:作業中繼 / 查詢 / 寫入</span>
+  </pre>
+
+  <h2>現行 API <span class="tag live">現行</span><span class="n">細節以 /api/docs 為準</span></h2>
+  <div class="tree live">
+    <div class="grp"><code>/api/v1</code><span class="d">14 組 46 端點(全統一封套;絕大多數 admin 專用)</span></div>
+    <div class="leaves">
+      <div class="ep"><code>health(1) · auth(3) · sso(4)</code><span class="s">— 健康檢查、本地登入、DF-SSO callback / me / logout / 廣播登出</span></div>
+      <div class="ep"><code>datasets(6) · sync(3) · schedules(6)</code><span class="s">— 快照瀏覽、同步 enqueue、一表一排程</span></div>
+      <div class="ep"><code>runs(4) · progress(1) · dashboard(1)</code><span class="s">— 執行紀錄與逐表 log、全局進度、總覽</span></div>
+      <div class="ep"><code>semantic-mappings(5)</code><span class="s">— 語意映射維護與套用(真身在 RDS)</span></div>
+      <div class="ep"><code>users(2) · roles(1) · audit-logs(1)</code><span class="s">— 後台人身分與稽核</span></div>
+      <div class="ep"><code>api-clients(8)</code><span class="s">— 建立 / 更新 / 註銷 / 密鑰清單 / 明文檢視 / 輪替 / 汰換(單一密鑰制)</span></div>
+    </div>
+    <div class="grp"><code>/api/client/v1.0</code><span class="d">模組① 2 端點</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m post">POST</span><code>/token</code><span class="s">— client_id + secret → 15 分鐘 JWT;錯誤一律 401 invalid_client;限流 429</span></div>
+      <div class="ep"><span class="m post">POST</span><code>/refresh_token</code><span class="s">— 過期 token + 憑證語意刷新(無 refresh token 設計)</span></div>
+    </div>
+  </div>
+
+  <h2>模組② 組織權限管理 <span class="tag plan">規劃 · v1.6.1</span><span class="n">/api/v1 · 全 admin</span></h2>
+  <div class="note">階層:系統別 → 作業 → 設定檔 → Role → API Client;特例權限直綁可設效期;加法模型無 deny;表 / 欄位一律語意層英文名(僅 confirmed 可選)。</div>
+  <div class="tree spec">
+    <div class="grp"><code>/services</code><span class="d">系統別(erp / crm / hrm / bpm / zpos…)</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m get">GET</span><code>/services</code><span class="s">— 分頁清單</span></div>
+      <div class="ep"><span class="m post">POST</span><code>/services</code><span class="s">— 建立(code 唯一)</span></div>
+      <div class="ep"><span class="m patch">PATCH</span><code>/services/{uid}</code><span class="s">— 更新(code 禁改)</span></div>
+      <div class="ep"><span class="m delete">DELETE</span><code>/services/{uid}</code><span class="s">— 軟刪(仍有作業 → 409)</span></div>
+    </div>
+    <div class="grp"><code>/operations</code><span class="d">作業:歸屬系統別,定義表 × 欄位「範圍」(上限,不決定最終回傳)</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m get">GET</span><code>/operations?service_uid=</code><span class="s">— 分頁清單</span></div>
+      <div class="ep"><span class="m post">POST</span><code>/operations</code><span class="s">— 建立(name 系統別內唯一)</span></div>
+      <div class="ep"><span class="m patch">PATCH</span><code>/operations/{uid}</code><span class="s">— 更新(禁改歸屬)</span></div>
+      <div class="ep"><span class="m delete">DELETE</span><code>/operations/{uid}</code><span class="s">— 軟刪(被設定檔引用 → 409)</span></div>
+      <div class="ep"><span class="m get">GET</span><code>/operations/{uid}/items</code><span class="s">— 表 × 欄位範圍(* = 全欄位)</span></div>
+      <div class="ep"><span class="m put">PUT</span><code>/operations/{uid}/items</code><span class="s">— 整批置換範圍(非 confirmed 欄位 → 422)</span></div>
+    </div>
+    <div class="grp"><code>/permission-profiles</code><span class="d">角色權限設定檔:Profile → Operation → Table → Column → Read/Edit</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m get">GET</span><code>/permission-profiles</code><span class="s">— 分頁清單</span></div>
+      <div class="ep"><span class="m post">POST</span><code>/permission-profiles</code><span class="s">— 建立(name 唯一)</span></div>
+      <div class="ep"><span class="m patch">PATCH</span><code>/permission-profiles/{uid}</code><span class="s">— 更新</span></div>
+      <div class="ep"><span class="m delete">DELETE</span><code>/permission-profiles/{uid}</code><span class="s">— 軟刪(被 Role 綁 → 409)</span></div>
+      <div class="ep"><span class="m put">PUT</span><code>/permission-profiles/{uid}/operations</code><span class="s">— 整批置換勾選作業</span></div>
+      <div class="ep"><span class="m put">PUT</span><code>/permission-profiles/{uid}/operations/{op_uid}/items</code><span class="s">— 該作業下授權矩陣整批置換(超出範圍 → 422)</span></div>
+    </div>
+    <div class="grp"><code>/client-roles</code><span class="d">Role:必綁 1 個設定檔(禁空);命名避開既有 /roles</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m get">GET</span><code>/client-roles</code><span class="s">— 分頁清單</span></div>
+      <div class="ep"><span class="m post">POST</span><code>/client-roles</code><span class="s">— 建立(未帶設定檔 → 422)</span></div>
+      <div class="ep"><span class="m patch">PATCH</span><code>/client-roles/{uid}</code><span class="s">— 更新 / 改綁設定檔</span></div>
+      <div class="ep"><span class="m delete">DELETE</span><code>/client-roles/{uid}</code><span class="s">— 軟刪(被 Client 綁 → 409)</span></div>
+    </div>
+    <div class="grp"><code>/exception-sets</code><span class="d">特例權限組:結構同設定檔,直綁 Client 可設效期</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m get">GET</span><code>/exception-sets</code><span class="s">— 分頁清單</span></div>
+      <div class="ep"><span class="m post">POST</span><code>/exception-sets</code><span class="s">— 建立</span></div>
+      <div class="ep"><span class="m patch">PATCH</span><code>/exception-sets/{uid}</code><span class="s">— 更新</span></div>
+      <div class="ep"><span class="m delete">DELETE</span><code>/exception-sets/{uid}</code><span class="s">— 軟刪(仍被綁定未過期 → 409)</span></div>
+      <div class="ep"><span class="m put">PUT</span><code>/exception-sets/{uid}/operations</code><span class="s">— 整批置換臨時作業</span></div>
+      <div class="ep"><span class="m put">PUT</span><code>/exception-sets/{uid}/operations/{op_uid}/items</code><span class="s">— 臨時授權矩陣整批置換</span></div>
+    </div>
+    <div class="grp"><code>/api-clients/{uid}/…</code><span class="d">Client 指派與預覽(擴充既有資源;只綁 0..1 Role + 特例 0..N)</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m put">PUT</span><code>/api-clients/{uid}/role</code><span class="s">— 指派 / 改指派 Role(冪等置換)</span></div>
+      <div class="ep"><span class="m delete">DELETE</span><code>/api-clients/{uid}/role</code><span class="s">— 解除 Role</span></div>
+      <div class="ep"><span class="m get">GET</span><code>/api-clients/{uid}/exception-sets</code><span class="s">— 特例綁定清單(含效期 / 是否過期)</span></div>
+      <div class="ep"><span class="m post">POST</span><code>/api-clients/{uid}/exception-sets</code><span class="s">— 綁定特例 {exception_set_uid, expires_at?}</span></div>
+      <div class="ep"><span class="m delete">DELETE</span><code>/api-clients/{uid}/exception-sets/{binding_uid}</code><span class="s">— 解除單筆綁定</span></div>
+      <div class="ep"><span class="m get">GET</span><code>/api-clients/{uid}/effective-permissions</code><span class="s">— 預覽最終可見欄位:Role ∪ 特例(濾過期)∩ 作業範圍;default-closed</span></div>
+    </div>
+  </div>
+
+  <h2>模組③ 權限引擎 <span class="tag plan">規劃</span><span class="n">判斷面多為內部依賴,僅少量管理端點</span></h2>
+  <div class="note">每筆資料請求三段式判斷:作業級(未授權 403)→ 展開範圍 → 逐表交集(授權 ∩ 範圍,空 = 200 空 data);展開結果 Redis TTL 快取,模組② 異動即失效;JWT 不塞權限,停權即時生效。</div>
+  <div class="tree spec">
+    <div class="grp"><code>/authz</code><span class="d">引擎管理面(admin)</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m get">GET</span><code>/authz/clients/{uid}/effective</code><span class="s">— 引擎視角展開結果(與模組② 預覽共用實作;附快取狀態,除錯用)</span></div>
+      <div class="ep"><span class="m post">POST</span><code>/authz/cache/invalidate</code><span class="s">— 手動失效權限快取 {client_uid?}(不帶 = 全體;保險絲)</span></div>
+    </div>
+  </div>
+
+  <h2>模組④ 資料供應 API <span class="tag plan">規劃</span><span class="n">/api/client/v1.0 · Bearer JWT · 統一封套 · data 依表分組</span></h2>
+  <div class="note">SQL 層欄位投影(只 SELECT 可見欄位)查 ETL-Hub 語意 View;限流沿用 <code>rate_limit:client:&lt;client_id&gt;</code>。</div>
+  <div class="tree spec">
+    <div class="grp"><code>探索</code><span class="d">串接方自查可用範圍</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m get">GET</span><code>/services</code><span class="s">— 我有權限的系統別清單</span></div>
+      <div class="ep"><span class="m get">GET</span><code>/{service}/operations</code><span class="s">— 該系統別下我可用的作業</span></div>
+      <div class="ep"><span class="m get">GET</span><code>/{service}/operations/{operation}</code><span class="s">— 作業中繼:各表可見欄位與動作</span></div>
+    </div>
+    <div class="grp"><code>查詢(read)</code></div>
+    <div class="leaves">
+      <div class="ep"><span class="m get">GET</span><code>/{service}/operations/{operation}/data</code><span class="s">— 主查詢;參數:fields(未帶 = 授權全集)/ table / page / page_size / sort / filter[field] / updated_since;未授權欄位直接忽略</span></div>
+    </div>
+    <div class="grp"><code>寫入(edit = 新增 / 更新 / 刪除)</code><span class="d">需 edit 授權;落地 ETL-Hub,寫回 ERP 另案</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m post">POST</span><code>/{service}/operations/{operation}/tables/{table}/rows</code><span class="s">— 新增一列(含未授權欄位 → 403,寫入不忽略)</span></div>
+      <div class="ep"><span class="m patch">PATCH</span><code>/{service}/operations/{operation}/tables/{table}/rows/{row_uid}</code><span class="s">— 部分更新(僅 edit 授權欄位)</span></div>
+      <div class="ep"><span class="m delete">DELETE</span><code>/{service}/operations/{operation}/tables/{table}/rows/{row_uid}</code><span class="s">— 一律軟刪除,禁物理刪除</span></div>
+    </div>
+  </div>
+
+  <h2>模組⑤ 稽核 <span class="tag plan">規劃</span><span class="n">對外請求留痕,與後台 audit_logs 分表</span></h2>
+  <div class="tree spec">
+    <div class="grp"><code>/client-request-logs</code><span class="d">admin 查詢面;寫入由模組④ middleware 非同步落 api_client_request_logs</span></div>
+    <div class="leaves">
+      <div class="ep"><span class="m get">GET</span><code>/client-request-logs</code><span class="s">— 分頁;過濾 client / service / operation / 狀態碼 / 起訖時間</span></div>
+      <div class="ep"><span class="m get">GET</span><code>/client-request-logs/summary</code><span class="s">— 聚合概覽(請求數 / 錯誤率 / 429 / Top Client)</span></div>
+      <div class="ep"><span class="m get">GET</span><code>/api-clients/{uid}/request-logs</code><span class="s">— 單一 Client 視角(設定頁內嵌)</span></div>
+    </div>
+  </div>
+
+  <p class="meta" style="margin-top:24px">來源:docs/Arch/datahub-api-gateway-arch.html · propose-v1.6.1.md(草稿);規劃端點皆為推測,實作落差回寫本檔。</p>
+</main>
+</body>
+</html>
