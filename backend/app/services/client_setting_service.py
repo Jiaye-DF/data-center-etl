@@ -1,4 +1,4 @@
-"""權限階層管理服務(v1.6.1 task-004 系統別 / 作業 / 作業範圍;task-005 設定檔 / Role)。
+"""權限階層管理服務(task-004 系統別 / 作業 / 範圍;005 設定檔 / Role;006 特例 / 指派)。
 
 權限設定的唯一真身在目標 RDS `client_setting` schema(propose v1.6.1),本層負責維護面:
 
@@ -10,36 +10,48 @@
 - **快取**:清單讀取一律走 `permission_cache` 的 cache-aside;失效扇出分兩種:
   - `_invalidate_wide()` — 系統別 / 作業 / 作業範圍異動牽動面廣(任一 Client 的最終權限
     都可能變),直接清空全部 effective,不逐一反查。
-  - `_invalidate_narrow(client_uids)` — 設定檔 / Role 異動只影響「綁該設定檔的 Role →
-    其 Client」,故於**寫入交易內**先反查受影響 Client uid,commit 後再逐一失效。
-    受影響集合須在交易內取:commit 後改綁 / 解除指派會讓反查漏掉本次真正受影響的 Client。
+  - `_invalidate_narrow(client_uids)` — 設定檔 / Role / 特例組異動只影響有限的 Client
+    (設定檔 → 綁它的 Role → 其 Client;特例組 → 綁它的 Client),故於**寫入交易內**先反查
+    受影響 Client uid,commit 後再逐一失效。受影響集合須在交易內取:commit 後改綁 /
+    解除指派會讓反查漏掉本次真正受影響的 Client。Client 指派 / 綁定端點的受影響集合
+    就是該 Client 本身,直接傳入即可。
 - **semantic 驗證**:範圍項的表 / 欄位須存在於 RDS `erp_metadata.semantic_mappings`
   的 confirmed 映射(propose 對外承諾:無 confirmed 映射的表 / 欄位不可被授權)。
   該查詢為跨 schema 唯讀單表撈取,且本 task 檔案白名單無對應 repo,故比照
   `semantic_admin_service.py` / `api_client_service.py` 前例落在本層(識別字為白名單
   常值、值走 bind params,`04-databases/04-sql-safety.md`)。
 
-task-006 於本檔續加特例權限組 / Client 指派的服務方法,共用下列 helper:
-`_rds_read()` / `_rds_write()` / `_invalidate_wide()` / `_invalidate_narrow()` /
-`_get_*_or_404()` / `_load_confirmed_semantic()` / `_validate_permission_items()`。
+- **特例權限**:結構與設定檔完全對稱(勾作業 + 授權矩陣),差別只在「可重用 + 綁定帶效期」;
+  驗證關卡(confirmed 語意映射、∩ 作業範圍上限)與設定檔共用同一組函式 —— 特例是加法模型
+  的另一個授權來源,不是繞過作業範圍的後門。`expires_at` 為 naive UTC+8,到期由讀取端
+  自動過濾(加法模型的收權手段之一,無需人工解除)。
+- **API Client 指派**:Client 本體在自有 DB,RDS 端冷關聯無 FK → 指派 / 綁定前一律先
+  `_ensure_client_exists()` 驗存在且未軟刪(防呆只能落在這層)。
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError
 from app.etl.comments import quote_ident
 from app.etl.semantic_schema import SEMANTIC_SCHEMA, SEMANTIC_TABLE
+from app.models.api_client_user import ApiClientUser
 from app.models.client_setting import (
     ALL_COLUMNS,
+    ClientExceptionSet,
+    ClientRole,
+    ExceptionItem,
+    ExceptionOperation,
+    ExceptionSet,
     Operation,
     OperationItem,
     PermissionProfile,
@@ -55,6 +67,21 @@ from app.repositories.client_setting_repo import (
     client_setting_session,
 )
 from app.schemas.client_setting import (
+    ClientExceptionSetBindRequest,
+    ClientExceptionSetListResponse,
+    ClientExceptionSetResponse,
+    ClientRoleAssignRequest,
+    ClientRoleResponse,
+    ExceptionItemListResponse,
+    ExceptionItemResponse,
+    ExceptionItemsReplaceRequest,
+    ExceptionOperationListResponse,
+    ExceptionOperationResponse,
+    ExceptionOperationsReplaceRequest,
+    ExceptionSetCreateRequest,
+    ExceptionSetListResponse,
+    ExceptionSetResponse,
+    ExceptionSetUpdateRequest,
     OperationCreateRequest,
     OperationItemListResponse,
     OperationItemResponse,
@@ -92,26 +119,39 @@ from app.services.permission_cache import (
     invalidate_lists,
     list_key,
 )
+from app.utils.datetime import db_now, to_tw
 
 # 稽核 action / target_type(audit_logs 兩欄皆 String(50))
 TARGET_TYPE_SERVICE = "client_setting_service"
 TARGET_TYPE_OPERATION = "client_setting_operation"
 TARGET_TYPE_PROFILE = "client_setting_profile"
 TARGET_TYPE_ROLE = "client_setting_role"
+TARGET_TYPE_EXCEPTION_SET = "client_setting_exception_set"
+# 指派 / 綁定的稽核對象是 API Client 本身,沿用 `api_client_service` 的 target_type,
+# 讓「某 Client 的全部異動」在稽核查詢裡是同一條 target 線
+TARGET_TYPE_API_CLIENT = "api_client"
 
 _SERVICE_NOT_FOUND = "系統別不存在"
 _OPERATION_NOT_FOUND = "作業不存在"
 _PROFILE_NOT_FOUND = "權限設定檔不存在"
 _ROLE_NOT_FOUND = "角色不存在"
+_EXCEPTION_SET_NOT_FOUND = "特例權限組不存在"
+_CLIENT_NOT_FOUND = "API Client 不存在"
+_CLIENT_ROLE_NOT_FOUND = "此 API Client 尚未指派角色"
+_CLIENT_EXCEPTION_NOT_FOUND = "特例權限綁定不存在"
 _SERVICE_CODE_CONFLICT = "系統別代碼已存在"
 _OPERATION_NAME_CONFLICT = "同一系統別下已有同名作業"
 _PROFILE_NAME_CONFLICT = "權限設定檔名稱已存在"
 _ROLE_NAME_CONFLICT = "角色名稱已存在"
+_EXCEPTION_SET_NAME_CONFLICT = "特例權限組名稱已存在"
+_CLIENT_EXCEPTION_CONFLICT = "此 API Client 已綁定該特例權限組,請先解除綁定再重新綁定"
 _SERVICE_HAS_OPERATIONS = "系統別底下仍有作業,請先刪除作業"
 _OPERATION_REFERENCED = "作業仍被權限設定檔或特例權限組引用,請先解除引用"
 _PROFILE_HAS_ROLES = "權限設定檔仍被角色綁定,請先改綁或刪除角色"
 _ROLE_HAS_CLIENTS = "角色仍被 API Client 指派,請先解除指派"
+_EXCEPTION_SET_HAS_BINDINGS = "特例權限組仍被未過期的綁定引用,請先解除綁定"
 _OPERATION_NOT_GRANTED = "該作業尚未在此設定檔勾選,請先勾選作業再設定授權"
+_EXCEPTION_OPERATION_NOT_GRANTED = "該作業尚未在此特例權限組勾選,請先勾選作業再設定授權"
 _SCOPE_ITEM_CONFLICT = "作業範圍項重複"
 _PROFILE_OPERATION_CONFLICT = "勾選作業重複"
 _PROFILE_ITEM_CONFLICT = "授權項重複"
@@ -179,6 +219,16 @@ async def _clients_of_profile(repo: ClientSettingRepository, profile_pid: int) -
     return await _clients_of_roles(repo, [role.pid for role in roles])
 
 
+async def _clients_of_exception_sets(
+    repo: ClientSettingRepository, exception_set_pids: Sequence[int]
+) -> list[UUID]:
+    """特例組 → 綁它的 Client(單段反查;含已過期綁定,寧可多失效一次)。"""
+    return [
+        row.api_client_uid
+        for row in await repo.list_client_exception_sets_by_set_pids(exception_set_pids)
+    ]
+
+
 # ── 取件 / 轉換(task-005 / 006 共用)────────────────────────────────────
 async def _get_service_or_404(repo: ClientSettingRepository, uid: UUID) -> Service:
     service = await repo.get_service_by_uid(uid)
@@ -210,6 +260,15 @@ async def _get_role_or_404(repo: ClientSettingRepository, uid: UUID) -> Role:
     return role
 
 
+async def _get_exception_set_or_404(
+    repo: ClientSettingRepository, uid: UUID
+) -> ExceptionSet:
+    exception_set = await repo.get_exception_set_by_uid(uid)
+    if exception_set is None:
+        raise AppError(_EXCEPTION_SET_NOT_FOUND, response_code=404, status_code=404)
+    return exception_set
+
+
 async def _service_uid_by_pid(repo: ClientSettingRepository) -> dict[int, UUID]:
     """系統別 pid → uid 對照(作業回應需以 uid 表達歸屬;系統別為小表,一次全撈)。"""
     return {service.pid: service.uid for service in await repo.list_services()}
@@ -223,6 +282,13 @@ async def _profile_uid_by_pid(repo: ClientSettingRepository) -> dict[int, UUID]:
 async def _operation_uid_by_pid(repo: ClientSettingRepository) -> dict[int, UUID]:
     """作業 pid → uid 對照(勾選列回應需以 uid 表達;作業為小表,一次全撈免 N+1)。"""
     return {operation.pid: operation.uid for operation in await repo.list_operations()}
+
+
+async def _exception_set_by_pid(
+    repo: ClientSettingRepository,
+) -> dict[int, ExceptionSet]:
+    """特例組 pid → 實體對照(綁定回應需 uid 與名稱;特例組為小表,一次全撈免 N+1)。"""
+    return {row.pid: row for row in await repo.list_exception_sets()}
 
 
 def _to_service(service: Service) -> ServiceResponse:
@@ -306,6 +372,82 @@ def _to_profile_item_list(rows: Sequence[ProfileItem]) -> ProfileItemListRespons
         ],
         total=len(rows),
     )
+
+
+def _to_exception_set(exception_set: ExceptionSet) -> ExceptionSetResponse:
+    return ExceptionSetResponse(
+        uid=exception_set.uid,
+        name=exception_set.name,
+        description=exception_set.description,
+        created_at=exception_set.created_at,
+        updated_at=exception_set.updated_at,
+    )
+
+
+def _to_exception_operation_list(
+    rows: Sequence[ExceptionOperation], uid_by_pid: Mapping[int, UUID]
+) -> ExceptionOperationListResponse:
+    return ExceptionOperationListResponse(
+        items=[
+            ExceptionOperationResponse(
+                uid=row.uid, operation_uid=uid_by_pid[row.operation_pid]
+            )
+            for row in rows
+        ],
+        total=len(rows),
+    )
+
+
+def _to_exception_item_list(
+    rows: Sequence[ExceptionItem],
+) -> ExceptionItemListResponse:
+    return ExceptionItemListResponse(
+        items=[
+            ExceptionItemResponse(
+                uid=row.uid,
+                table_name=row.table_name,
+                column_name=row.column_name,
+                # DB 端 CHECK 已限定 read / edit,取回時直接窄化為對外 Literal
+                action=cast(PermissionAction, row.action),
+            )
+            for row in rows
+        ],
+        total=len(rows),
+    )
+
+
+def _to_client_role(assignment: ClientRole, role_uid: UUID) -> ClientRoleResponse:
+    return ClientRoleResponse(
+        uid=assignment.uid,
+        api_client_uid=assignment.api_client_uid,
+        role_uid=role_uid,
+        created_at=assignment.created_at,
+        updated_at=assignment.updated_at,
+    )
+
+
+def _to_client_exception_set(
+    binding: ClientExceptionSet, exception_set: ExceptionSet, now: datetime
+) -> ClientExceptionSetResponse:
+    return ClientExceptionSetResponse(
+        uid=binding.uid,
+        api_client_uid=binding.api_client_uid,
+        exception_set_uid=exception_set.uid,
+        exception_set_name=exception_set.name,
+        expires_at=binding.expires_at,
+        is_expired=binding.expires_at is not None and binding.expires_at <= now,
+    )
+
+
+def _normalize_expires_at(value: datetime | None) -> datetime | None:
+    """效期輸入統一為 naive UTC+8(`04-databases/06-timezone.md`)。
+
+    帶時區的輸入換算成台北時間後去 tzinfo;naive 輸入視為已是 UTC+8 wall-clock
+    (`to_tw` 對 naive 只補 tzinfo,不做偏移 → 不會雙偏移)。
+    """
+    if value is None:
+        return None
+    return to_tw(value).replace(tzinfo=None)
 
 
 # ── semantic 映射驗證 ───────────────────────────────────────────────────
@@ -482,7 +624,26 @@ class ClientSettingService:
     """權限階層維護服務;`db` 為**自有 DB** session,只用於寫稽核(權限資料一律走 RDS)。"""
 
     def __init__(self, db: AsyncSession) -> None:
+        # 自有 DB session:寫稽核 + API Client 存在性檢查(權限資料一律走 RDS)
+        self._db = db
         self._audit = AuditService(db)
+
+    async def _ensure_client_exists(self, client_uid: UUID) -> None:
+        """指派 / 綁定前驗 API Client 存在且未軟刪(冷關聯無 FK,防呆只能落在這層)。
+
+        `api_client_repo` 無「依 uid 取件」,沿用 `api_client_service` /
+        `effective_permission_service` 同款查詢下沉的前例。
+        """
+        found = (
+            await self._db.execute(
+                select(ApiClientUser.pid).where(
+                    ApiClientUser.uid == client_uid,
+                    ApiClientUser.is_deleted.is_(False),
+                )
+            )
+        ).scalar_one_or_none()
+        if found is None:
+            raise AppError(_CLIENT_NOT_FOUND, response_code=404, status_code=404)
 
     # ── 系統別 ─────────────────────────────────────────────────────────
     async def list_services(self) -> ServiceListResponse:
@@ -962,4 +1123,347 @@ class ClientSettingService:
         )
         # 無 Client 指派才刪得掉(上方 409)→ 無 Client 受影響
         await _invalidate_narrow([])
+        return data
+
+    # ── 特例權限組 ─────────────────────────────────────────────────────
+    async def list_exception_sets(self) -> ExceptionSetListResponse:
+        async def loader() -> ExceptionSetListResponse:
+            async with _rds_read() as session:
+                rows = await ClientSettingRepository(session).list_exception_sets()
+            return ExceptionSetListResponse(
+                items=[_to_exception_set(row) for row in rows], total=len(rows)
+            )
+
+        return await get_or_load_model(
+            list_key("exception-sets"), ExceptionSetListResponse, loader
+        )
+
+    async def create_exception_set(
+        self, payload: ExceptionSetCreateRequest, *, actor_uid: UUID
+    ) -> ExceptionSetResponse:
+        async with _rds_write(_EXCEPTION_SET_NAME_CONFLICT) as session:
+            exception_set = await ClientSettingRepository(session).create_exception_set(
+                name=payload.name, description=payload.description, actor_uid=actor_uid
+            )
+            data = _to_exception_set(exception_set)
+        await self._audit.log(
+            action="client_setting.exception_set_create",
+            actor_uid=actor_uid,
+            target_type=TARGET_TYPE_EXCEPTION_SET,
+            target_uid=data.uid,
+            detail=f"建立特例權限組 {data.name}",
+        )
+        # 新建特例組尚無 Client 綁定 → 無 Client 受影響,只需清清單
+        await _invalidate_narrow([])
+        return data
+
+    async def update_exception_set(
+        self, uid: UUID, payload: ExceptionSetUpdateRequest, *, actor_uid: UUID
+    ) -> ExceptionSetResponse:
+        async with _rds_write(_EXCEPTION_SET_NAME_CONFLICT) as session:
+            repo = ClientSettingRepository(session)
+            exception_set = await _get_exception_set_or_404(repo, uid)
+            await repo.update_exception_set(
+                exception_set,
+                name=payload.name,
+                description=payload.description,
+                actor_uid=actor_uid,
+            )
+            data = _to_exception_set(exception_set)
+            # 特例組名進得了 effective 快取內容(task-007 預覽),改名同樣要失效
+            affected = await _clients_of_exception_sets(repo, [exception_set.pid])
+        changed = ", ".join(sorted(payload.model_fields_set)) or "無"
+        await self._audit.log(
+            action="client_setting.exception_set_update",
+            actor_uid=actor_uid,
+            target_type=TARGET_TYPE_EXCEPTION_SET,
+            target_uid=data.uid,
+            detail=f"更新特例權限組 {data.name}(欄位:{changed})",
+        )
+        await _invalidate_narrow(affected)
+        return data
+
+    async def delete_exception_set(
+        self, uid: UUID, *, actor_uid: UUID
+    ) -> ExceptionSetResponse:
+        """軟刪特例組(勾選作業與授權項連動);仍被**未過期**綁定引用一律擋下。
+
+        已過期的綁定不擋:該綁定本就不生效,留著也只是歷史紀錄。
+        """
+        async with _rds_write(_WRITE_CONFLICT) as session:
+            repo = ClientSettingRepository(session)
+            exception_set = await _get_exception_set_or_404(repo, uid)
+            if await repo.count_active_bindings_by_exception_set(exception_set.pid) > 0:
+                raise AppError(
+                    _EXCEPTION_SET_HAS_BINDINGS, response_code=409, status_code=409
+                )
+            affected = await _clients_of_exception_sets(repo, [exception_set.pid])
+            await repo.soft_delete_exception_set(exception_set, actor_uid=actor_uid)
+            data = _to_exception_set(exception_set)
+        await self._audit.log(
+            action="client_setting.exception_set_delete",
+            actor_uid=actor_uid,
+            target_type=TARGET_TYPE_EXCEPTION_SET,
+            target_uid=data.uid,
+            detail=f"刪除特例權限組 {data.name}(勾選作業與授權項一併清除)",
+        )
+        await _invalidate_narrow(affected)
+        return data
+
+    # ── 特例組勾選作業 ─────────────────────────────────────────────────
+    async def list_exception_operations(
+        self, uid: UUID
+    ) -> ExceptionOperationListResponse:
+        async def loader() -> ExceptionOperationListResponse:
+            async with _rds_read() as session:
+                repo = ClientSettingRepository(session)
+                exception_set = await _get_exception_set_or_404(repo, uid)
+                rows = await repo.list_exception_operations(exception_set.pid)
+                uid_by_pid = await _operation_uid_by_pid(repo)
+            return _to_exception_operation_list(rows, uid_by_pid)
+
+        return await get_or_load_model(
+            list_key("exception-operations", uid), ExceptionOperationListResponse, loader
+        )
+
+    async def replace_exception_operations(
+        self, uid: UUID, payload: ExceptionOperationsReplaceRequest, *, actor_uid: UUID
+    ) -> ExceptionOperationListResponse:
+        """整批置換勾選作業;被移除的作業其授權項同交易一併清除(repo 層負責)。"""
+        async with _rds_write(_PROFILE_OPERATION_CONFLICT) as session:
+            repo = ClientSettingRepository(session)
+            exception_set = await _get_exception_set_or_404(repo, uid)
+            operation_pids = await _resolve_operation_pids(repo, payload.operation_uids)
+            rows = await repo.replace_exception_operations(
+                exception_set.pid, operation_pids, actor_uid=actor_uid
+            )
+            uid_by_pid = await _operation_uid_by_pid(repo)
+            data = _to_exception_operation_list(rows, uid_by_pid)
+            set_name = exception_set.name
+            affected = await _clients_of_exception_sets(repo, [exception_set.pid])
+        await self._audit.log(
+            action="client_setting.exception_operations_replace",
+            actor_uid=actor_uid,
+            target_type=TARGET_TYPE_EXCEPTION_SET,
+            target_uid=uid,
+            detail=f"置換特例權限組 {set_name} 勾選作業(共 {data.total} 項)",
+        )
+        await _invalidate_narrow(affected)
+        return data
+
+    # ── 特例組授權矩陣 ─────────────────────────────────────────────────
+    async def list_exception_items(
+        self, uid: UUID, operation_uid: UUID
+    ) -> ExceptionItemListResponse:
+        async def loader() -> ExceptionItemListResponse:
+            async with _rds_read() as session:
+                repo = ClientSettingRepository(session)
+                exception_set = await _get_exception_set_or_404(repo, uid)
+                operation = await _get_operation_or_404(repo, operation_uid)
+                rows = await repo.list_exception_items(
+                    exception_set.pid, operation_pid=operation.pid
+                )
+            return _to_exception_item_list(rows)
+
+        return await get_or_load_model(
+            list_key("exception-items", uid, operation_uid),
+            ExceptionItemListResponse,
+            loader,
+        )
+
+    async def replace_exception_items(
+        self,
+        uid: UUID,
+        operation_uid: UUID,
+        payload: ExceptionItemsReplaceRequest,
+        *,
+        actor_uid: UUID,
+    ) -> ExceptionItemListResponse:
+        """整批置換「特例組 × 單一作業」授權矩陣;語意與設定檔矩陣完全相同。
+
+        特例是加法模型的另一個授權來源,不是繞過作業範圍的後門 → 同樣受
+        confirmed 語意映射與「∩ 作業範圍上限」兩關把守。
+        """
+        async with _rds_write(_PROFILE_ITEM_CONFLICT) as session:
+            repo = ClientSettingRepository(session)
+            exception_set = await _get_exception_set_or_404(repo, uid)
+            operation = await _get_operation_or_404(repo, operation_uid)
+            granted_pids = {
+                row.operation_pid
+                for row in await repo.list_exception_operations(exception_set.pid)
+            }
+            if operation.pid not in granted_pids:
+                raise AppError(
+                    _EXCEPTION_OPERATION_NOT_GRANTED, response_code=409, status_code=409
+                )
+            items = _validate_permission_items(
+                payload.items,
+                await _load_confirmed_semantic(session),
+                await repo.list_operation_items(operation.pid),
+            )
+            rows = await repo.replace_exception_items(
+                exception_set.pid, operation.pid, items, actor_uid=actor_uid
+            )
+            data = _to_exception_item_list(rows)
+            set_name, operation_name = exception_set.name, operation.name
+            affected = await _clients_of_exception_sets(repo, [exception_set.pid])
+        await self._audit.log(
+            action="client_setting.exception_items_replace",
+            actor_uid=actor_uid,
+            target_type=TARGET_TYPE_EXCEPTION_SET,
+            target_uid=uid,
+            detail=(
+                f"置換特例權限組 {set_name} / 作業 {operation_name} 授權"
+                f"(共 {data.total} 項)"
+            ),
+        )
+        await _invalidate_narrow(affected)
+        return data
+
+    # ── API Client 的 Role 指派(0..1)──────────────────────────────────
+    async def assign_client_role(
+        self, client_uid: UUID, payload: ClientRoleAssignRequest, *, actor_uid: UUID
+    ) -> ClientRoleResponse:
+        """指派 / 改指派 Role(冪等置換:重下同一請求結果相同,恆維持至多 1 筆有效)。"""
+        await self._ensure_client_exists(client_uid)
+        async with _rds_write(_WRITE_CONFLICT) as session:
+            repo = ClientSettingRepository(session)
+            role = await _get_role_or_404(repo, payload.role_uid)
+            assignment = await repo.assign_client_role(
+                client_uid, role.pid, actor_uid=actor_uid
+            )
+            data = _to_client_role(assignment, role.uid)
+            role_name = role.name
+        await self._audit.log(
+            action="client_setting.client_role_assign",
+            actor_uid=actor_uid,
+            target_type=TARGET_TYPE_API_CLIENT,
+            target_uid=client_uid,
+            detail=f"指派角色 {role_name} 給 API Client {client_uid}",
+        )
+        await _invalidate_narrow([client_uid])
+        return data
+
+    async def remove_client_role(
+        self, client_uid: UUID, *, actor_uid: UUID
+    ) -> ClientRoleResponse:
+        """解除指派;本來就沒指派 → 404(避免前端誤以為解除了某個實際存在的指派)。"""
+        await self._ensure_client_exists(client_uid)
+        async with _rds_write(_WRITE_CONFLICT) as session:
+            repo = ClientSettingRepository(session)
+            assignment = await repo.get_client_role(client_uid)
+            if assignment is None:
+                raise AppError(_CLIENT_ROLE_NOT_FOUND, response_code=404, status_code=404)
+            # Role 被指派時不得刪(delete_role 擋 409)→ 此處恆取得到;取不到視為資料不一致
+            role = await repo.get_role_by_pid(assignment.role_pid)
+            if role is None:
+                raise AppError(_ROLE_NOT_FOUND, response_code=404, status_code=404)
+            await repo.remove_client_role(client_uid, actor_uid=actor_uid)
+            data = _to_client_role(assignment, role.uid)
+            role_name = role.name
+        await self._audit.log(
+            action="client_setting.client_role_remove",
+            actor_uid=actor_uid,
+            target_type=TARGET_TYPE_API_CLIENT,
+            target_uid=client_uid,
+            detail=f"解除 API Client {client_uid} 的角色指派({role_name})",
+        )
+        await _invalidate_narrow([client_uid])
+        return data
+
+    # ── API Client 的特例組綁定(0..N,各自效期)────────────────────────
+    async def list_client_exception_sets(
+        self, client_uid: UUID
+    ) -> ClientExceptionSetListResponse:
+        """綁定清單(含已過期,以 `is_expired` 標示)。
+
+        `is_expired` 於回源當下計算並隨清單一起進快取,故「快取後才到期」的綁定最遲於
+        TTL 到期才翻面(與 task-007 預覽同一取捨);權限判斷面一律以 RDS 當下時間為準。
+        """
+        await self._ensure_client_exists(client_uid)
+
+        async def loader() -> ClientExceptionSetListResponse:
+            async with _rds_read() as session:
+                repo = ClientSettingRepository(session)
+                rows = await repo.list_client_exception_sets(client_uid)
+                set_by_pid = await _exception_set_by_pid(repo)
+            now = db_now()
+            items = [
+                _to_client_exception_set(row, set_by_pid[row.exception_set_pid], now)
+                # 特例組已軟刪 → 綁定本就不生效(預覽同樣看不到),清單一併略過
+                for row in rows
+                if row.exception_set_pid in set_by_pid
+            ]
+            return ClientExceptionSetListResponse(items=items, total=len(items))
+
+        return await get_or_load_model(
+            list_key("client-exception-sets", client_uid),
+            ClientExceptionSetListResponse,
+            loader,
+        )
+
+    async def bind_client_exception_set(
+        self, client_uid: UUID, payload: ClientExceptionSetBindRequest, *, actor_uid: UUID
+    ) -> ClientExceptionSetResponse:
+        """綁定特例組;`expires_at` 省略 = 不設限,到期後由讀取端自動過濾(無需人工解除)。
+
+        過去時間亦允許(綁完即失效),語意單純且便於「先建後調」;重複綁同一組 409。
+        """
+        await self._ensure_client_exists(client_uid)
+        expires_at = _normalize_expires_at(payload.expires_at)
+        async with _rds_write(_CLIENT_EXCEPTION_CONFLICT) as session:
+            repo = ClientSettingRepository(session)
+            exception_set = await _get_exception_set_or_404(
+                repo, payload.exception_set_uid
+            )
+            binding = await repo.bind_client_exception_set(
+                client_uid,
+                exception_set.pid,
+                expires_at=expires_at,
+                actor_uid=actor_uid,
+            )
+            data = _to_client_exception_set(binding, exception_set, db_now())
+            set_name = exception_set.name
+        await self._audit.log(
+            action="client_setting.client_exception_bind",
+            actor_uid=actor_uid,
+            target_type=TARGET_TYPE_API_CLIENT,
+            target_uid=client_uid,
+            detail=(
+                f"綁定特例權限組 {set_name} 給 API Client {client_uid}"
+                f"(效期:{expires_at if expires_at is not None else '不設限'})"
+            ),
+        )
+        await _invalidate_narrow([client_uid])
+        return data
+
+    async def unbind_client_exception_set(
+        self, client_uid: UUID, binding_uid: UUID, *, actor_uid: UUID
+    ) -> ClientExceptionSetResponse:
+        """解除單筆綁定(以綁定列 uid 定位);綁定不屬於該 Client 一律 404。"""
+        await self._ensure_client_exists(client_uid)
+        async with _rds_write(_WRITE_CONFLICT) as session:
+            repo = ClientSettingRepository(session)
+            binding = await repo.get_client_exception_set_by_uid(binding_uid)
+            if binding is None or binding.api_client_uid != client_uid:
+                raise AppError(
+                    _CLIENT_EXCEPTION_NOT_FOUND, response_code=404, status_code=404
+                )
+            set_by_pid = await _exception_set_by_pid(repo)
+            exception_set = set_by_pid.get(binding.exception_set_pid)
+            if exception_set is None:
+                raise AppError(
+                    _EXCEPTION_SET_NOT_FOUND, response_code=404, status_code=404
+                )
+            await repo.unbind_client_exception_set(binding, actor_uid=actor_uid)
+            data = _to_client_exception_set(binding, exception_set, db_now())
+            set_name = exception_set.name
+        await self._audit.log(
+            action="client_setting.client_exception_unbind",
+            actor_uid=actor_uid,
+            target_type=TARGET_TYPE_API_CLIENT,
+            target_uid=client_uid,
+            detail=f"解除 API Client {client_uid} 的特例權限組綁定({set_name})",
+        )
+        await _invalidate_narrow([client_uid])
         return data

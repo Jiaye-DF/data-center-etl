@@ -1,7 +1,7 @@
 ---
 id: task-006
 title: 特例權限 + API Client 指派 API(可重用組 + 效期綁定)
-status: pending
+status: done
 parallel: false
 depends_on: [task-005]
 affected_files:

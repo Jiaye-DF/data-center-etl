@@ -13,9 +13,17 @@
   `GET|PUT /profiles/{uid}/operations/{operation_uid}/items`(授權矩陣整批置換)。
 - Role:`GET|POST /roles`、`PATCH|DELETE /roles/{uid}`(必綁 1 設定檔;被 Client 指派
   不得刪)。與既有 `/api/v1/roles`(後台人員角色)分屬不同資源,勿混用。
+- 特例權限組(task-006):`GET|POST /exception-sets`、`PATCH|DELETE /exception-sets/{uid}`
+  (可重用,同一組可綁多個 Client;仍被未過期綁定引用不得刪);內容維護端點與設定檔對稱
+  ——`GET|PUT /exception-sets/{uid}/operations`、
+  `GET|PUT /exception-sets/{uid}/operations/{operation_uid}/items`。
+- API Client 指派(task-006):以 client uid 定位於本前綴下,不動既有 `/api/v1/api-clients`
+  資源(預覽端點 `GET /api-clients/{uid}/effective-permissions` 屬 task-007)。
+  `PUT|DELETE /clients/{client_uid}/role`(0..1,PUT 冪等置換);
+  `GET|POST /clients/{client_uid}/exception-sets`、
+  `DELETE /clients/{client_uid}/exception-sets/{binding_uid}`(0..N,綁定帶效期)。
 
-task-006 於本檔續加特例權限組 / Client 指派的路由(router 已於 `api/v1/__init__.py`
-註冊,後續 task 不再動該檔)。
+router 已於 `api/v1/__init__.py` 註冊(task-004 一次完成,後續 task 不再動該檔)。
 """
 
 from typing import Annotated
@@ -28,6 +36,19 @@ from app.api.deps import get_db, require_admin
 from app.core.response import success
 from app.models.user import User
 from app.schemas.client_setting import (
+    ClientExceptionSetBindRequest,
+    ClientExceptionSetListResponse,
+    ClientExceptionSetResponse,
+    ClientRoleAssignRequest,
+    ClientRoleResponse,
+    ExceptionItemListResponse,
+    ExceptionItemsReplaceRequest,
+    ExceptionOperationListResponse,
+    ExceptionOperationsReplaceRequest,
+    ExceptionSetCreateRequest,
+    ExceptionSetListResponse,
+    ExceptionSetResponse,
+    ExceptionSetUpdateRequest,
     OperationCreateRequest,
     OperationItemListResponse,
     OperationItemsReplaceRequest,
@@ -389,4 +410,213 @@ async def delete_client_role(
     user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[RoleResponse]:
     data = await ClientSettingService(db).delete_role(uid, actor_uid=user.uid)
+    return success(data=data)
+
+
+# ── 特例權限組(可重用;結構同設定檔)──────────────────────────────────
+@router.get(
+    "/exception-sets",
+    response_model=ApiResponse[ExceptionSetListResponse],
+    summary="特例權限組清單(讀取走 Redis 快取,排除軟刪)",
+)
+async def list_exception_sets(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ExceptionSetListResponse]:
+    data = await ClientSettingService(db).list_exception_sets()
+    return success(data=data)
+
+
+@router.post(
+    "/exception-sets",
+    response_model=ApiResponse[ExceptionSetResponse],
+    status_code=201,
+    summary="建立特例權限組(name 未刪列唯一,重複 409)",
+)
+async def create_exception_set(
+    payload: ExceptionSetCreateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ExceptionSetResponse]:
+    data = await ClientSettingService(db).create_exception_set(payload, actor_uid=user.uid)
+    return success(data=data, response_code=201)
+
+
+@router.patch(
+    "/exception-sets/{uid}",
+    response_model=ApiResponse[ExceptionSetResponse],
+    summary="更新特例權限組(名稱 / 說明)",
+)
+async def update_exception_set(
+    uid: UUID,
+    payload: ExceptionSetUpdateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ExceptionSetResponse]:
+    data = await ClientSettingService(db).update_exception_set(
+        uid, payload, actor_uid=user.uid
+    )
+    return success(data=data)
+
+
+@router.delete(
+    "/exception-sets/{uid}",
+    response_model=ApiResponse[ExceptionSetResponse],
+    summary="刪除特例權限組(軟刪,勾選 / 授權連動;仍被未過期綁定引用 409)",
+)
+async def delete_exception_set(
+    uid: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ExceptionSetResponse]:
+    data = await ClientSettingService(db).delete_exception_set(uid, actor_uid=user.uid)
+    return success(data=data)
+
+
+# ── 特例組勾選作業 / 授權矩陣(語意同設定檔)──────────────────────────
+@router.get(
+    "/exception-sets/{uid}/operations",
+    response_model=ApiResponse[ExceptionOperationListResponse],
+    summary="特例權限組已勾選的可讀作業",
+)
+async def list_exception_operations(
+    uid: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ExceptionOperationListResponse]:
+    data = await ClientSettingService(db).list_exception_operations(uid)
+    return success(data=data)
+
+
+@router.put(
+    "/exception-sets/{uid}/operations",
+    response_model=ApiResponse[ExceptionOperationListResponse],
+    summary="整批置換勾選作業(取消勾選的作業其授權項同交易清除;不存在的作業 422)",
+)
+async def replace_exception_operations(
+    uid: UUID,
+    payload: ExceptionOperationsReplaceRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ExceptionOperationListResponse]:
+    data = await ClientSettingService(db).replace_exception_operations(
+        uid, payload, actor_uid=user.uid
+    )
+    return success(data=data)
+
+
+@router.get(
+    "/exception-sets/{uid}/operations/{operation_uid}/items",
+    response_model=ApiResponse[ExceptionItemListResponse],
+    summary="特例權限組在單一作業下的授權項",
+)
+async def list_exception_items(
+    uid: UUID,
+    operation_uid: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ExceptionItemListResponse]:
+    data = await ClientSettingService(db).list_exception_items(uid, operation_uid)
+    return success(data=data)
+
+
+@router.put(
+    "/exception-sets/{uid}/operations/{operation_uid}/items",
+    response_model=ApiResponse[ExceptionItemListResponse],
+    summary="整批置換授權矩陣(作業未勾選 409;超出作業範圍上限 / 非 confirmed 逐筆 422)",
+)
+async def replace_exception_items(
+    uid: UUID,
+    operation_uid: UUID,
+    payload: ExceptionItemsReplaceRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ExceptionItemListResponse]:
+    data = await ClientSettingService(db).replace_exception_items(
+        uid, operation_uid, payload, actor_uid=user.uid
+    )
+    return success(data=data)
+
+
+# ── API Client 的 Role 指派(0..1)─────────────────────────────────────
+@router.put(
+    "/clients/{client_uid}/role",
+    response_model=ApiResponse[ClientRoleResponse],
+    summary="指派 / 改指派 Role(冪等置換;Client 或 Role 不存在 404)",
+)
+async def assign_client_role(
+    client_uid: UUID,
+    payload: ClientRoleAssignRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ClientRoleResponse]:
+    data = await ClientSettingService(db).assign_client_role(
+        client_uid, payload, actor_uid=user.uid
+    )
+    return success(data=data)
+
+
+@router.delete(
+    "/clients/{client_uid}/role",
+    response_model=ApiResponse[ClientRoleResponse],
+    summary="解除 Role 指派(本來就沒指派 404)",
+)
+async def remove_client_role(
+    client_uid: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ClientRoleResponse]:
+    data = await ClientSettingService(db).remove_client_role(
+        client_uid, actor_uid=user.uid
+    )
+    return success(data=data)
+
+
+# ── API Client 的特例組綁定(0..N,各自效期)──────────────────────────
+@router.get(
+    "/clients/{client_uid}/exception-sets",
+    response_model=ApiResponse[ClientExceptionSetListResponse],
+    summary="特例綁定清單(含已過期,以 is_expired 標示)",
+)
+async def list_client_exception_sets(
+    client_uid: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ClientExceptionSetListResponse]:
+    data = await ClientSettingService(db).list_client_exception_sets(client_uid)
+    return success(data=data)
+
+
+@router.post(
+    "/clients/{client_uid}/exception-sets",
+    response_model=ApiResponse[ClientExceptionSetResponse],
+    status_code=201,
+    summary="綁定特例權限組(expires_at 省略 = 不設限;重複綁同組 409)",
+)
+async def bind_client_exception_set(
+    client_uid: UUID,
+    payload: ClientExceptionSetBindRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ClientExceptionSetResponse]:
+    data = await ClientSettingService(db).bind_client_exception_set(
+        client_uid, payload, actor_uid=user.uid
+    )
+    return success(data=data, response_code=201)
+
+
+@router.delete(
+    "/clients/{client_uid}/exception-sets/{binding_uid}",
+    response_model=ApiResponse[ClientExceptionSetResponse],
+    summary="解除單筆特例綁定(以綁定列 uid 定位;不屬於該 Client 404)",
+)
+async def unbind_client_exception_set(
+    client_uid: UUID,
+    binding_uid: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ClientExceptionSetResponse]:
+    data = await ClientSettingService(db).unbind_client_exception_set(
+        client_uid, binding_uid, actor_uid=user.uid
+    )
     return success(data=data)

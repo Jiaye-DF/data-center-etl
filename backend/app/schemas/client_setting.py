@@ -6,6 +6,8 @@
   代表該表全欄位。合法性(須為 confirmed 語意映射)由 service 層驗證,非 schema 層。
 - task-005 / 006 於本檔續加設定檔 / Role / 特例權限組的 schema,命名沿用
   `<實體><用途>Request` / `<實體>Response` / `<實體>ListResponse` 慣例。
+- 效期 `expires_at` 同樣是 UTC+8 wall-clock:帶時區的輸入由 service 換算為台北時間後
+  去 tzinfo,naive 輸入視為已是 UTC+8(禁前後端各轉一次造成雙偏移)。
 """
 
 from datetime import datetime
@@ -227,3 +229,111 @@ class RoleUpdateRequest(BaseModel):
         ):
             raise ValueError("Role 必綁 1 個權限設定檔,permission_profile_uid 不可清空")
         return self
+
+
+# ── 特例權限組 exception_sets(task-006;結構同設定檔,可重用)──────────
+class ExceptionSetResponse(BaseModel):
+    uid: UUID = Field(description="特例權限組對外識別碼")
+    name: str = Field(description="特例權限組名(唯一)")
+    description: str | None = Field(default=None, description="臨時分派用說明")
+    created_at: datetime = Field(description="建立時間(Asia/Taipei wall-clock)")
+    updated_at: datetime = Field(description="最後更新時間(Asia/Taipei wall-clock)")
+
+
+class ExceptionSetListResponse(BaseModel):
+    items: list[ExceptionSetResponse] = Field(description="特例權限組清單(排除軟刪)")
+    total: int = Field(description="總筆數")
+
+
+class ExceptionSetCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100, description="特例權限組名(未刪列唯一)")
+    description: str | None = Field(default=None, description="臨時分派用說明")
+
+
+class ExceptionSetUpdateRequest(BaseModel):
+    """部分更新;省略即不變更。"""
+
+    name: str | None = Field(
+        default=None, min_length=1, max_length=100, description="特例權限組名(未刪列唯一)"
+    )
+    description: str | None = Field(default=None, description="臨時分派用說明")
+
+
+# ── 特例組勾選作業 exception_operations ────────────────────────────────
+class ExceptionOperationResponse(BaseModel):
+    uid: UUID = Field(description="勾選列對外識別碼")
+    operation_uid: UUID = Field(description="勾選的作業")
+
+
+class ExceptionOperationListResponse(BaseModel):
+    items: list[ExceptionOperationResponse] = Field(description="已勾選作業(排除軟刪)")
+    total: int = Field(description="總筆數")
+
+
+class ExceptionOperationsReplaceRequest(BaseModel):
+    """整批置換勾選作業:空陣列 = 全部取消勾選(移除的作業其授權項同交易清除)。"""
+
+    operation_uids: list[UUID] = Field(description="置換後的完整勾選作業集合")
+
+
+# ── 特例組授權矩陣 exception_items ─────────────────────────────────────
+class ExceptionItemResponse(BaseModel):
+    uid: UUID = Field(description="授權項對外識別碼")
+    table_name: str = Field(description="資料表(語意層英文名)")
+    column_name: str = Field(description="欄位(`*` = 全欄位)")
+    action: PermissionAction = Field(description="動作(read / edit)")
+
+
+class ExceptionItemListResponse(BaseModel):
+    items: list[ExceptionItemResponse] = Field(description="該作業下的授權項(排除軟刪)")
+    total: int = Field(description="總筆數")
+
+
+class ExceptionItemsReplaceRequest(BaseModel):
+    """整批置換「特例組 × 單一作業」的授權矩陣:空陣列 = 該作業下無任何欄位授權。"""
+
+    items: list[PermissionItemRequest] = Field(description="置換後的完整授權集合")
+
+
+# ── API Client 的 Role 指派 client_roles ───────────────────────────────
+class ClientRoleAssignRequest(BaseModel):
+    """指派 / 改指派 Role(0..1,冪等置換);解除請改用 DELETE。"""
+
+    role_uid: UUID = Field(description="要指派的 Role")
+
+
+class ClientRoleResponse(BaseModel):
+    uid: UUID = Field(description="指派列對外識別碼")
+    api_client_uid: UUID = Field(description="API Client 對外識別碼")
+    role_uid: UUID = Field(description="指派的 Role")
+    created_at: datetime = Field(description="建立時間(Asia/Taipei wall-clock)")
+    updated_at: datetime = Field(description="最後更新時間(Asia/Taipei wall-clock)")
+
+
+# ── API Client 的特例綁定 client_exception_sets ────────────────────────
+class ClientExceptionSetBindRequest(BaseModel):
+    """綁定特例權限組(0..N);同一 Client 重複綁同組 409(需先解除再重綁以續期)。"""
+
+    exception_set_uid: UUID = Field(description="要綁定的特例權限組")
+    expires_at: datetime | None = Field(
+        default=None,
+        description="效期(Asia/Taipei wall-clock;省略 / null = 不設限,到期即自動失效)",
+    )
+
+
+class ClientExceptionSetResponse(BaseModel):
+    uid: UUID = Field(description="綁定列對外識別碼(解除綁定以此定位)")
+    api_client_uid: UUID = Field(description="API Client 對外識別碼")
+    exception_set_uid: UUID = Field(description="綁定的特例權限組")
+    exception_set_name: str = Field(description="特例權限組名(免前端另查清單)")
+    expires_at: datetime | None = Field(
+        default=None, description="效期(Asia/Taipei wall-clock;null = 不設限)"
+    )
+    is_expired: bool = Field(description="是否已過期(過期綁定不進最終權限)")
+
+
+class ClientExceptionSetListResponse(BaseModel):
+    items: list[ClientExceptionSetResponse] = Field(
+        description="該 Client 的特例綁定(含已過期,以 `is_expired` 標示)"
+    )
+    total: int = Field(description="總筆數")
