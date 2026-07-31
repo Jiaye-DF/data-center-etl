@@ -1,7 +1,7 @@
 ---
 id: task-010
 title: 前端 API Client 頁整合(Role 指派 + 特例綁定 + 權限檢視)
-status: pending
+status: done
 parallel: true
 depends_on: [task-007, task-008]
 affected_files:

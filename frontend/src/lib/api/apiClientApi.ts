@@ -85,8 +85,86 @@ export interface RevealApiClientSecretResult {
   client_secret: string
 }
 
+/* ---------------------------------------------------------------------- */
+/* 權限指派 / 檢視(v1.6.1 task-010;端點屬 /client-settings、/api-clients 前綴, */
+/* 型別集中放此檔,對應 clientSettingApi.ts 頂部註記)                          */
+/* ---------------------------------------------------------------------- */
+
+/** Client 的 Role 指派(0..1);與 `ClientSettingRole`(Role 定義本身)不同資源 */
+export interface ClientRoleAssignment {
+  uid: string
+  api_client_uid: string
+  role_uid: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AssignClientRolePayload {
+  clientUid: string
+  role_uid: string
+}
+
+/** Client 的特例權限組綁定列(0..N,各自效期) */
+export interface ClientExceptionSetBinding {
+  uid: string
+  api_client_uid: string
+  exception_set_uid: string
+  exception_set_name: string
+  expires_at: string | null
+  is_expired: boolean
+}
+
+export interface ClientExceptionSetBindingListData {
+  items: ClientExceptionSetBinding[]
+  total: number
+}
+
+export interface BindClientExceptionSetPayload {
+  clientUid: string
+  exception_set_uid: string
+  /** 台北 wall-clock `YYYY-MM-DDTHH:mm:ss`;省略 / null = 不設限 */
+  expires_at?: string | null
+}
+
+export interface UnbindClientExceptionSetPayload {
+  clientUid: string
+  bindingUid: string
+}
+
+/** 授權動作:read(唯讀)/ edit(含新增 / 更新 / 軟刪) */
+export type EffectivePermissionAction = 'read' | 'edit'
+
+export interface EffectiveRoleSummary {
+  uid: string
+  name: string
+  permission_profile_uid: string | null
+  permission_profile_name: string | null
+}
+
+export interface EffectiveExceptionSetSummary {
+  uid: string
+  name: string
+  expires_at: string | null
+}
+
+export interface EffectiveOperationPermission {
+  operation_uid: string
+  operation_name: string
+  service_code: string
+  /** `{表: {欄位: read/edit}}`;空物件 = 作業有入口但無可見欄位(default-closed) */
+  tables: Record<string, Record<string, EffectivePermissionAction>>
+}
+
+/** 單一 API Client 的最終權限預覽(Role 設定檔 ∪ 未過期特例,再 ∩ 作業範圍) */
+export interface EffectivePermissions {
+  client_uid: string
+  role: EffectiveRoleSummary | null
+  exception_sets: EffectiveExceptionSetSummary[]
+  operations: EffectiveOperationPermission[]
+}
+
 export const apiClientApi = baseApi
-  .enhanceEndpoints({ addTagTypes: ['ApiClient'] })
+  .enhanceEndpoints({ addTagTypes: ['ApiClient', 'ApiClientPermission', 'ApiClientExceptionSet'] })
   .injectEndpoints({
     endpoints: (build) => ({
       listApiClients: build.query<ApiClientListData, ApiClientListParams>({
@@ -172,6 +250,86 @@ export const apiClientApi = baseApi
           response: ApiEnvelope<ApiClientListItem>,
         ): ApiClientListItem => unwrap(response),
       }),
+
+      // ── 權限指派 / 檢視(task-010)──────────────────────────────────
+      getEffectivePermissions: build.query<EffectivePermissions, string>({
+        query: (clientUid) => ({ url: `/api-clients/${clientUid}/effective-permissions` }),
+        providesTags: (_result, _error, clientUid) => [
+          { type: 'ApiClientPermission', id: clientUid },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<EffectivePermissions>,
+        ): EffectivePermissions => unwrap(response),
+      }),
+      assignClientRole: build.mutation<ClientRoleAssignment, AssignClientRolePayload>({
+        query: ({ clientUid, ...body }) => ({
+          url: `/client-settings/clients/${clientUid}/role`,
+          method: 'PUT',
+          body,
+        }),
+        invalidatesTags: (_result, _error, { clientUid }) => [
+          { type: 'ApiClientPermission', id: clientUid },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<ClientRoleAssignment>,
+        ): ClientRoleAssignment => unwrap(response),
+      }),
+      removeClientRole: build.mutation<ClientRoleAssignment, string>({
+        query: (clientUid) => ({
+          url: `/client-settings/clients/${clientUid}/role`,
+          method: 'DELETE',
+        }),
+        invalidatesTags: (_result, _error, clientUid) => [
+          { type: 'ApiClientPermission', id: clientUid },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<ClientRoleAssignment>,
+        ): ClientRoleAssignment => unwrap(response),
+      }),
+      listClientExceptionSets: build.query<ClientExceptionSetBindingListData, string>({
+        query: (clientUid) => ({
+          url: `/client-settings/clients/${clientUid}/exception-sets`,
+        }),
+        providesTags: (_result, _error, clientUid) => [
+          { type: 'ApiClientExceptionSet', id: clientUid },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<ClientExceptionSetBindingListData>,
+        ): ClientExceptionSetBindingListData => unwrap(response),
+      }),
+      bindClientExceptionSet: build.mutation<
+        ClientExceptionSetBinding,
+        BindClientExceptionSetPayload
+      >({
+        query: ({ clientUid, ...body }) => ({
+          url: `/client-settings/clients/${clientUid}/exception-sets`,
+          method: 'POST',
+          body,
+        }),
+        invalidatesTags: (_result, _error, { clientUid }) => [
+          { type: 'ApiClientPermission', id: clientUid },
+          { type: 'ApiClientExceptionSet', id: clientUid },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<ClientExceptionSetBinding>,
+        ): ClientExceptionSetBinding => unwrap(response),
+      }),
+      unbindClientExceptionSet: build.mutation<
+        ClientExceptionSetBinding,
+        UnbindClientExceptionSetPayload
+      >({
+        query: ({ clientUid, bindingUid }) => ({
+          url: `/client-settings/clients/${clientUid}/exception-sets/${bindingUid}`,
+          method: 'DELETE',
+        }),
+        invalidatesTags: (_result, _error, { clientUid }) => [
+          { type: 'ApiClientPermission', id: clientUid },
+          { type: 'ApiClientExceptionSet', id: clientUid },
+        ],
+        transformResponse: (
+          response: ApiEnvelope<ClientExceptionSetBinding>,
+        ): ClientExceptionSetBinding => unwrap(response),
+      }),
     }),
   })
 
@@ -184,4 +342,10 @@ export const {
   useRotateApiClientSecretMutation,
   useRetireApiClientSecretMutation,
   useRevealApiClientSecretMutation,
+  useGetEffectivePermissionsQuery,
+  useAssignClientRoleMutation,
+  useRemoveClientRoleMutation,
+  useListClientExceptionSetsQuery,
+  useBindClientExceptionSetMutation,
+  useUnbindClientExceptionSetMutation,
 } = apiClientApi

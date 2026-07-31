@@ -2,19 +2,31 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  useAssignClientRoleMutation,
+  useBindClientExceptionSetMutation,
   useCreateApiClientMutation,
   useDeleteApiClientMutation,
+  useGetEffectivePermissionsQuery,
   useListApiClientSecretsQuery,
   useListApiClientsQuery,
+  useListClientExceptionSetsQuery,
+  useRemoveClientRoleMutation,
   useRevealApiClientSecretMutation,
   useRotateApiClientSecretMutation,
+  useUnbindClientExceptionSetMutation,
   useUpdateApiClientMutation,
   type ApiClientListItem,
   type ApiClientSecretItem,
   type ApiClientStatus,
+  type ClientExceptionSetBinding,
   type CreateApiClientPayload,
+  type EffectivePermissionAction,
   type UpdateApiClientPayload,
 } from '@/lib/api/apiClientApi'
+import {
+  useListClientSettingRolesQuery,
+  useListExceptionSetsQuery,
+} from '@/lib/api/clientSettingApi'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { Pagination } from '@/components/common/Pagination'
 import { extractApiErrorDetail } from '@/utils/apiError'
@@ -788,6 +800,444 @@ function EditClientDialog({
 }
 
 /* ---------------------------------------------------------------------- */
+/* 權限面板(Role 指派 + 特例綁定 + 最終可見欄位頁內檢視;task-010)             */
+/* ---------------------------------------------------------------------- */
+
+const EFFECTIVE_ACTION_LABEL: Record<EffectivePermissionAction, string> = {
+  read: '唯讀',
+  edit: '可編輯',
+}
+
+const EFFECTIVE_ACTION_BADGE: Record<EffectivePermissionAction, string> = {
+  read: 'df-badge bg-muted text-muted-foreground',
+  edit: 'df-badge bg-primary/15 text-primary',
+}
+
+/** Role 指派區:下拉直接指派;已指派時顯示解除鈕(走 ConfirmDialog)。 */
+interface RoleAssignmentSectionProps {
+  clientUid: string
+  currentRoleUid: string | null
+}
+
+function RoleAssignmentSection({
+  clientUid,
+  currentRoleUid,
+}: RoleAssignmentSectionProps): React.ReactNode {
+  const { data: roleData, isLoading: isLoadingRoles } = useListClientSettingRolesQuery()
+  const [assignClientRole, { isLoading: isAssigning }] = useAssignClientRoleMutation()
+  const [removeClientRole, { isLoading: isRemoving }] = useRemoveClientRoleMutation()
+  const [assignError, setAssignError] = useState<string | null>(null)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+
+  const roles = useMemo(
+    (): { uid: string; name: string }[] => roleData?.items ?? [],
+    [roleData],
+  )
+
+  const handleRoleChange = useCallback(
+    async (event: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
+      const roleUid = event.target.value
+      if (roleUid === '') return
+      setAssignError(null)
+      const result = await assignClientRole({ clientUid, role_uid: roleUid })
+      if ('error' in result) {
+        setAssignError(extractApiErrorDetail(result.error, '指派 Role 失敗,請稍後再試'))
+      }
+    },
+    [assignClientRole, clientUid],
+  )
+
+  const openConfirmRemove = useCallback((): void => setConfirmingRemove(true), [])
+  const cancelConfirmRemove = useCallback((): void => setConfirmingRemove(false), [])
+  const handleConfirmRemove = useCallback(async (): Promise<void> => {
+    setConfirmingRemove(false)
+    setAssignError(null)
+    const result = await removeClientRole(clientUid)
+    if ('error' in result) {
+      setAssignError(extractApiErrorDetail(result.error, '解除 Role 指派失敗,請稍後再試'))
+    }
+  }, [removeClientRole, clientUid])
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-sm font-semibold text-foreground md:text-base">目前 Role</h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={currentRoleUid ?? ''}
+          onChange={handleRoleChange}
+          disabled={isLoadingRoles || isAssigning}
+          className="df-input w-auto min-w-[180px]"
+        >
+          <option value="" disabled>
+            {currentRoleUid === null ? '未指派' : '請選擇'}
+          </option>
+          {roles.map((role) => (
+            <option key={role.uid} value={role.uid}>
+              {role.name}
+            </option>
+          ))}
+        </select>
+        {currentRoleUid !== null ? (
+          <button
+            type="button"
+            onClick={openConfirmRemove}
+            disabled={isRemoving}
+            className="df-btn-danger-soft min-h-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
+          >
+            解除指派
+          </button>
+        ) : null}
+      </div>
+      {assignError !== null ? (
+        <p role="alert" className="text-sm text-danger">
+          {assignError}
+        </p>
+      ) : null}
+      <ConfirmDialog
+        open={confirmingRemove}
+        title="解除 Role 指派"
+        confirmLabel="確認解除"
+        tone="danger"
+        confirmDisabled={isRemoving}
+        onConfirm={handleConfirmRemove}
+        onCancel={cancelConfirmRemove}
+      >
+        <p>確定要解除目前指派的 Role?</p>
+        <p>解除後該 Client 將失去此 Role 授予的可見欄位。</p>
+      </ConfirmDialog>
+    </div>
+  )
+}
+
+/** 特例組綁定區:選組 + 選填效期綁定;清單顯示過期標示與解除。 */
+interface ExceptionSetSectionProps {
+  clientUid: string
+}
+
+function ExceptionSetSection({ clientUid }: ExceptionSetSectionProps): React.ReactNode {
+  const { data: bindingData, isLoading: isLoadingBindings } =
+    useListClientExceptionSetsQuery(clientUid)
+  const { data: setData, isLoading: isLoadingSets } = useListExceptionSetsQuery()
+  const [bindClientExceptionSet, { isLoading: isBinding }] = useBindClientExceptionSetMutation()
+  const [unbindClientExceptionSet, { isLoading: isUnbinding }] =
+    useUnbindClientExceptionSetMutation()
+
+  const [exceptionSetUid, setExceptionSetUid] = useState('')
+  const [expiresAtLocal, setExpiresAtLocal] = useState('')
+  const [bindError, setBindError] = useState<string | null>(null)
+  const [unbindError, setUnbindError] = useState<string | null>(null)
+  const [unbindTarget, setUnbindTarget] = useState<ClientExceptionSetBinding | null>(null)
+
+  const bindings = useMemo(
+    (): ClientExceptionSetBinding[] => bindingData?.items ?? [],
+    [bindingData],
+  )
+
+  // 排除目前已生效綁定,避免選了就直接撞後端 409(過期綁定可再重綁,不排除)
+  const availableSets = useMemo((): { uid: string; name: string }[] => {
+    const activeBoundUids = new Set(
+      bindings.filter((binding) => !binding.is_expired).map((binding) => binding.exception_set_uid),
+    )
+    return (setData?.items ?? []).filter((set) => !activeBoundUids.has(set.uid))
+  }, [setData, bindings])
+
+  const handleSetChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>): void => setExceptionSetUid(event.target.value),
+    [],
+  )
+  const handleExpiresAtChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>): void =>
+      setExpiresAtLocal(event.target.value),
+    [],
+  )
+
+  const handleBindSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+      event.preventDefault()
+      if (exceptionSetUid === '') return
+      setBindError(null)
+      // datetime-local 只給到分鐘,補秒對齊後端 `YYYY-MM-DDTHH:mm:ss`(台北 wall-clock,不轉 UTC)
+      const result = await bindClientExceptionSet({
+        clientUid,
+        exception_set_uid: exceptionSetUid,
+        expires_at: expiresAtLocal === '' ? undefined : `${expiresAtLocal}:00`,
+      })
+      if ('error' in result) {
+        setBindError(extractApiErrorDetail(result.error, '綁定特例權限組失敗,請稍後再試'))
+        return
+      }
+      setExceptionSetUid('')
+      setExpiresAtLocal('')
+    },
+    [bindClientExceptionSet, clientUid, exceptionSetUid, expiresAtLocal],
+  )
+
+  const requestUnbind = useCallback((binding: ClientExceptionSetBinding): void => {
+    setUnbindError(null)
+    setUnbindTarget(binding)
+  }, [])
+  const cancelUnbind = useCallback((): void => setUnbindTarget(null), [])
+  const handleConfirmUnbind = useCallback(async (): Promise<void> => {
+    if (unbindTarget === null) return
+    const target = unbindTarget
+    setUnbindTarget(null)
+    const result = await unbindClientExceptionSet({ clientUid, bindingUid: target.uid })
+    if ('error' in result) {
+      setUnbindError(extractApiErrorDetail(result.error, '解除特例綁定失敗,請稍後再試'))
+    }
+  }, [unbindClientExceptionSet, clientUid, unbindTarget])
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-sm font-semibold text-foreground md:text-base">特例權限組綁定</h3>
+      <form onSubmit={handleBindSubmit} className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          特例權限組
+          <select
+            value={exceptionSetUid}
+            onChange={handleSetChange}
+            disabled={isLoadingSets}
+            className="df-input w-auto min-w-[180px]"
+          >
+            <option value="">請選擇</option>
+            {availableSets.map((set) => (
+              <option key={set.uid} value={set.uid}>
+                {set.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
+          效期(選填,不設限留空)
+          <input
+            type="datetime-local"
+            value={expiresAtLocal}
+            onChange={handleExpiresAtChange}
+            className="df-input w-auto"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={isBinding || exceptionSetUid === ''}
+          className="df-btn-primary min-h-0 rounded-full px-4 py-1.5 text-sm"
+        >
+          綁定
+        </button>
+      </form>
+      {bindError !== null ? (
+        <p role="alert" className="text-sm text-danger">
+          {bindError}
+        </p>
+      ) : null}
+      {unbindError !== null ? (
+        <p role="alert" className="text-sm text-danger">
+          {unbindError}
+        </p>
+      ) : null}
+      {isLoadingBindings ? (
+        <p className="text-sm text-muted-foreground">載入中…</p>
+      ) : bindings.length === 0 ? (
+        <p className="text-sm text-muted-foreground">尚無綁定的特例權限組</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {bindings.map((binding) => (
+            <li
+              key={binding.uid}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 px-3 py-2"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-foreground">
+                  {binding.exception_set_name}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  效期:{formatDateTime(binding.expires_at)}
+                </span>
+                {binding.is_expired ? (
+                  <span className="df-badge bg-danger/10 text-danger">已過期</span>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => requestUnbind(binding)}
+                disabled={isUnbinding}
+                className="df-btn-danger-soft min-h-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
+              >
+                解除
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <ConfirmDialog
+        open={unbindTarget !== null}
+        title="解除特例綁定"
+        confirmLabel="確認解除"
+        tone="danger"
+        confirmDisabled={isUnbinding}
+        onConfirm={handleConfirmUnbind}
+        onCancel={cancelUnbind}
+      >
+        {unbindTarget !== null ? (
+          <p>確定要解除「{unbindTarget.exception_set_name}」的綁定?</p>
+        ) : null}
+        <p>如需續期,解除後可重新綁定並設定新效期。</p>
+      </ConfirmDialog>
+    </div>
+  )
+}
+
+/** 最終可見欄位頁內檢視:`{作業: {表: {欄位: read/edit}}}` 分組呈現;空結構顯示 default-closed 提示。 */
+interface EffectivePermissionPreviewProps {
+  clientUid: string
+}
+
+function EffectivePermissionPreview({
+  clientUid,
+}: EffectivePermissionPreviewProps): React.ReactNode {
+  const { data, isLoading, isError } = useGetEffectivePermissionsQuery(clientUid)
+
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground">載入中…</p>
+  }
+  if (isError || data === undefined) {
+    return (
+      <p role="alert" className="text-sm text-danger">
+        載入最終可見欄位失敗,請稍後再試
+      </p>
+    )
+  }
+  if (data.operations.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        尚未指派任何權限(無 Role 或有效特例),無可見欄位
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {data.operations.map((operation) => {
+        const tableEntries = Object.entries(operation.tables)
+        return (
+          <div key={operation.operation_uid} className="rounded-lg border border-border p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="df-badge bg-muted text-muted-foreground">
+                {operation.service_code}
+              </span>
+              <span className="text-sm font-medium text-foreground md:text-base">
+                {operation.operation_name}
+              </span>
+            </div>
+            {tableEntries.length === 0 ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                此作業無可見欄位(default-closed)
+              </p>
+            ) : (
+              <div className="mt-2 flex flex-col gap-1.5">
+                {tableEntries.map(([tableName, columns]) => (
+                  <div key={tableName} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="w-32 shrink-0 text-sm font-medium text-foreground">
+                      {tableName}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(columns).map(([columnName, action]) => (
+                        <span
+                          key={columnName}
+                          className={EFFECTIVE_ACTION_BADGE[action]}
+                          title={EFFECTIVE_ACTION_LABEL[action]}
+                        >
+                          {columnName === '*' ? '全部欄位' : columnName}
+                          <span className="ml-1 text-[0.7em] opacity-80">
+                            {EFFECTIVE_ACTION_LABEL[action]}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+interface ClientPermissionDialogProps {
+  client: ApiClientListItem | null
+  onClose: () => void
+}
+
+function ClientPermissionDialog({
+  client,
+  onClose,
+}: ClientPermissionDialogProps): React.ReactNode {
+  useEffect(() => {
+    if (client === null) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [client, onClose])
+
+  // effective-permissions 提供目前 Role 摘要,免另開一支查詢
+  const { data: effectiveData } = useGetEffectivePermissionsQuery(client?.uid ?? '', {
+    skip: client === null,
+  })
+
+  if (client === null) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button
+        type="button"
+        aria-label="關閉對話框"
+        onClick={onClose}
+        className="absolute inset-0 cursor-default bg-black/40"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="client-permission-dialog-title"
+        className="df-card relative z-10 flex max-h-[90vh] w-full max-w-3xl flex-col gap-5 overflow-y-auto p-6 md:p-8"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <h2
+            id="client-permission-dialog-title"
+            className="text-lg font-bold text-foreground md:text-xl"
+          >
+            權限管理:{client.name}
+          </h2>
+          <button type="button" onClick={onClose} className="df-btn-outline min-h-0 px-3 py-1.5">
+            關閉
+          </button>
+        </div>
+
+        <RoleAssignmentSection
+          clientUid={client.uid}
+          currentRoleUid={effectiveData?.role?.uid ?? null}
+        />
+
+        <hr className="border-border" />
+
+        <ExceptionSetSection clientUid={client.uid} />
+
+        <hr className="border-border" />
+
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-semibold text-foreground md:text-base">
+            最終可見欄位(檢視)
+          </h3>
+          <EffectivePermissionPreview clientUid={client.uid} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------------- */
 /* 清單列                                                                   */
 /* ---------------------------------------------------------------------- */
 
@@ -798,6 +1248,7 @@ interface ApiClientRowProps {
   onEdit: (client: ApiClientListItem) => void
   onRotate: (client: ApiClientListItem) => void
   onDelete: (client: ApiClientListItem) => void
+  onViewPermissions: (client: ApiClientListItem) => void
 }
 
 const ApiClientRow = memo(function ApiClientRow({
@@ -807,10 +1258,15 @@ const ApiClientRow = memo(function ApiClientRow({
   onEdit,
   onRotate,
   onDelete,
+  onViewPermissions,
 }: ApiClientRowProps): React.ReactNode {
   const handleEdit = useCallback((): void => onEdit(client), [onEdit, client])
   const handleRotate = useCallback((): void => onRotate(client), [onRotate, client])
   const handleDelete = useCallback((): void => onDelete(client), [onDelete, client])
+  const handleViewPermissions = useCallback(
+    (): void => onViewPermissions(client),
+    [onViewPermissions, client],
+  )
 
   return (
     <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/50">
@@ -822,6 +1278,13 @@ const ApiClientRow = memo(function ApiClientRow({
             className="df-btn-outline min-h-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
           >
             編輯
+          </button>
+          <button
+            type="button"
+            onClick={handleViewPermissions}
+            className="df-btn-outline min-h-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
+          >
+            權限
           </button>
           <button
             type="button"
@@ -892,6 +1355,7 @@ export default function ApiClientsPage(): React.ReactNode {
   const [rotateTarget, setRotateTarget] = useState<ApiClientListItem | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ApiClientListItem | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [permissionClient, setPermissionClient] = useState<ApiClientListItem | null>(null)
 
   const { data, isLoading, isError, isFetching } = useListApiClientsQuery({
     page,
@@ -953,6 +1417,11 @@ export default function ApiClientsPage(): React.ReactNode {
     },
     [updateApiClient],
   )
+
+  const openPermissions = useCallback((client: ApiClientListItem): void => {
+    setPermissionClient(client)
+  }, [])
+  const closePermissions = useCallback((): void => setPermissionClient(null), [])
 
   const handleRequestRotate = useCallback((client: ApiClientListItem): void => {
     setActionError(null)
@@ -1056,6 +1525,7 @@ export default function ApiClientsPage(): React.ReactNode {
                     onEdit={openEdit}
                     onRotate={handleRequestRotate}
                     onDelete={handleRequestDelete}
+                    onViewPermissions={openPermissions}
                   />
                 ))}
               </tbody>
@@ -1091,6 +1561,12 @@ export default function ApiClientsPage(): React.ReactNode {
         submitError={editError}
         onSubmit={handleEditSubmit}
         onCancel={closeEdit}
+      />
+
+      <ClientPermissionDialog
+        key={permissionClient?.uid ?? 'closed'}
+        client={permissionClient}
+        onClose={closePermissions}
       />
 
       {issuedSecret !== null ? (
