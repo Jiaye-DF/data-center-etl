@@ -1,7 +1,7 @@
 ---
 id: task-001
 title: RDS `client_setting` schema + 11 張權限表 DDL + models
-status: pending
+status: done
 parallel: true
 depends_on: []
 affected_files:

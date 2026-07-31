@@ -1,10 +1,10 @@
 # Tasks v1.6.1
 
-> 狀態:待認領(0/11)
+> 狀態:進行中(1/11 done)
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
-| 001 | RDS `client_setting` schema + 11 張權限表 DDL + models | pending | ✓ | — | `backend/app/models/client_setting.py` / `backend/app/etl/client_setting_schema.py` / `backend/tests/test_client_setting_schema.py` |
+| 001 | RDS `client_setting` schema + 12 張權限表 DDL + models | done | ✓ | — | `backend/app/models/client_setting.py` / `backend/app/etl/client_setting_schema.py` / `backend/tests/test_client_setting_schema.py` |
 | 002 | 權限資料存取層 repository(RDS 直讀寫 + 綁定防呆查詢) | pending | ✗ | 001 | `backend/app/repositories/client_setting_repo.py` / `backend/tests/test_client_setting_repo.py` |
 | 003 | Redis 讀取快取層(cache-aside + 異動失效 + 降級直讀) | pending | ✗ | 002 | `backend/app/services/permission_cache.py` / `backend/tests/test_permission_cache.py` |
 | 004 | 系統別 / 作業管理 API(CRUD + 範圍 items + semantic 驗證) | pending | ✗ | 002, 003 | `backend/app/api/v1/client_settings.py` / `backend/app/api/v1/__init__.py` / `backend/app/services/client_setting_service.py` / `backend/app/schemas/client_setting.py` / `backend/tests/test_client_settings_services_api.py` |
@@ -31,6 +31,7 @@
 - **In Scope 對映**(無 orphan):11 張表 / client_setting schema → 001 + 002;系統別 / 作業管理 → 004 + 008 + 009;設定檔管理 → 005 + 009;Role 管理 → 005 + 009;API Client 指派 → 006 + 010;預覽 → 007 + 010;Redis 快取層 → 003(004–007 讀路徑掛用);加法模型 → 004–007 語意 + 007 測試鎖定;稽核 → 004 / 005 / 006 / 007 各寫端點 + 011 驗證。
 - **阻塞點**:001 是全部的根;004–006 鏈是後端最長段;008 是全部前端的前置;011 需本地 docker compose(Redis + PG)+ 可連 RDS 的環境。
 - **拆解註記(請 user 留意)**:
+  - 表數勘誤:propose / tasks 原寫「11 張」,但兩份文件的表名列舉皆為 **12 個**(與 ERD 一致;特例組 4 表被誤算 3)。task-001 依列舉實作 12 張,本檔已更正。
   - 權限表 **DDL 不走自有 DB alembic**,比照 `semantic_schema.py` 前例以「啟動 / 指令時 ensure schema + 表存在」方式建置(`CREATE SCHEMA IF NOT EXISTS client_setting` + `CREATE TABLE IF NOT EXISTS`),冪等可重跑。
   - 快取 key 前綴拆解定為 **`client_setting:`**(如 `client_setting:effective:<client_uid>`),TTL 預設 **300s**(propose 未定數值,不同意請改 task-003)。
   - 管理端點路徑拆解定為 `/api/v1/client-settings/*`(系統別 / 作業 / 設定檔 / Role / 特例統一掛此前綴,與既有 `/api/v1/roles`(後台人角色)明確區隔);預覽維持裁定的 `GET /api/v1/api-clients/{uid}/effective-permissions`。
