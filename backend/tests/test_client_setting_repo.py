@@ -551,3 +551,54 @@ async def test_role_rebinding_profile_round_trip(
 
     bound = await repo.get_permission_profile_by_pid(by_uid.permission_profile_pid)
     assert bound is not None and bound.name == "P2"
+
+
+# ── 快取失效扇出反查(task-003)──────────────────────────────────────────
+async def test_invalidation_fanout_lookups(
+    repo: ClientSettingRepository, session: AsyncSession
+) -> None:
+    """設定檔 / 特例組異動時,反查受影響 Client 的兩段查詢(供快取失效)。"""
+    profile = await repo.create_permission_profile(name="P1", actor_uid=ACTOR_UID)
+    role1 = await repo.create_role(
+        permission_profile_pid=profile.pid, name="R1", actor_uid=ACTOR_UID
+    )
+    role2 = await repo.create_role(
+        permission_profile_pid=profile.pid, name="R2", actor_uid=ACTOR_UID
+    )
+    profile_pid, role1_pid, role2_pid = profile.pid, role1.pid, role2.pid
+    client1, client2, client3 = uuid4(), uuid4(), uuid4()
+    for client_uid, role_pid in (
+        (client1, role1_pid),
+        (client2, role1_pid),
+        (client3, role2_pid),
+    ):
+        await repo.assign_client_role(client_uid, role_pid, actor_uid=ACTOR_UID)
+
+    exception_set = await repo.create_exception_set(name="X1", actor_uid=ACTOR_UID)
+    set_pid = exception_set.pid
+    bound_active, bound_expired = uuid4(), uuid4()
+    await repo.bind_client_exception_set(bound_active, set_pid, actor_uid=ACTOR_UID)
+    await repo.bind_client_exception_set(
+        bound_expired,
+        set_pid,
+        expires_at=db_now() - timedelta(days=1),
+        actor_uid=ACTOR_UID,
+    )
+    await session.commit()
+
+    roles = await repo.list_roles_by_profile(profile_pid)
+    assert {role.pid for role in roles} == {role1_pid, role2_pid}
+
+    assignments = await repo.list_client_roles_by_role_pids([r.pid for r in roles])
+    assert {row.api_client_uid for row in assignments} == {client1, client2, client3}
+
+    # 失效扇出寧可多刪:已過期綁定同樣列入
+    bindings = await repo.list_client_exception_sets_by_set_pids([set_pid])
+    assert {row.api_client_uid for row in bindings} == {bound_active, bound_expired}
+
+    assert await repo.list_client_roles_by_role_pids([]) == []
+    assert await repo.list_client_exception_sets_by_set_pids([]) == []
+
+    await repo.soft_delete_role(role2, actor_uid=ACTOR_UID)
+    await session.commit()
+    assert [role.pid for role in await repo.list_roles_by_profile(profile_pid)] == [role1_pid]

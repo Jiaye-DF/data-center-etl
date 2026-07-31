@@ -1,12 +1,12 @@
 # Tasks v1.6.1
 
-> 狀態:進行中(2/11 done)
+> 狀態:進行中(3/11 done)
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
 | 001 | RDS `client_setting` schema + 12 張權限表 DDL + models | done | ✓ | — | `backend/app/models/client_setting.py` / `backend/app/etl/client_setting_schema.py` / `backend/tests/test_client_setting_schema.py` |
 | 002 | 權限資料存取層 repository(RDS 直讀寫 + 綁定防呆查詢) | done | ✗ | 001 | `backend/app/repositories/client_setting_repo.py` / `backend/tests/test_client_setting_repo.py` |
-| 003 | Redis 讀取快取層(cache-aside + 異動失效 + 降級直讀) | pending | ✗ | 002 | `backend/app/services/permission_cache.py` / `backend/tests/test_permission_cache.py` |
+| 003 | Redis 讀取快取層(cache-aside + 異動失效 + 降級直讀) | done | ✗ | 002 | `backend/app/services/permission_cache.py` / `backend/tests/test_permission_cache.py` |
 | 004 | 系統別 / 作業管理 API(CRUD + 範圍 items + semantic 驗證) | pending | ✗ | 002, 003 | `backend/app/api/v1/client_settings.py` / `backend/app/api/v1/__init__.py` / `backend/app/services/client_setting_service.py` / `backend/app/schemas/client_setting.py` / `backend/tests/test_client_settings_services_api.py` |
 | 005 | 設定檔 / Role 管理 API(勾作業 + 授權矩陣 + 必綁防呆) | pending | ✗ | 004 | `backend/app/api/v1/client_settings.py` / `backend/app/services/client_setting_service.py` / `backend/app/schemas/client_setting.py` / `backend/tests/test_client_settings_profiles_api.py` |
 | 006 | 特例權限 + API Client 指派 API(可重用組 + 效期綁定) | pending | ✗ | 005 | `backend/app/api/v1/client_settings.py` / `backend/app/services/client_setting_service.py` / `backend/app/schemas/client_setting.py` / `backend/tests/test_client_settings_exceptions_api.py` |

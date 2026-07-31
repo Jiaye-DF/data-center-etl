@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: Redis 讀取快取層(cache-aside + 異動失效 + 降級直讀)
-status: pending
+status: done
 parallel: false
 depends_on: [task-002]
 affected_files:

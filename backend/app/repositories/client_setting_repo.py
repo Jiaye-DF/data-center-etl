@@ -412,6 +412,20 @@ class ClientSettingRepository:
             )
         )
 
+    async def list_roles_by_profile(self, permission_profile_pid: int) -> list[Role]:
+        """綁定該設定檔的未刪 Role(設定檔內容異動時,反查受影響 Client 的第一段)。"""
+        rows = (
+            await self._db.execute(
+                select(Role)
+                .where(
+                    Role.permission_profile_pid == permission_profile_pid,
+                    Role.is_deleted.is_(False),
+                )
+                .order_by(Role.pid)
+            )
+        ).scalars()
+        return list(rows.all())
+
     # ── 設定檔勾選作業 profile_operations ────────────────────────────────
     async def list_profile_operations(
         self, permission_profile_pid: int
@@ -602,6 +616,24 @@ class ClientSettingRepository:
                 )
             )
         ).scalar_one_or_none()
+
+    async def list_client_roles_by_role_pids(
+        self, role_pids: Sequence[int]
+    ) -> list[ClientRole]:
+        """指派這些 Role 的未刪指派列(權限異動時反查受影響 Client 的第二段)。"""
+        if not role_pids:
+            return []
+        rows = (
+            await self._db.execute(
+                select(ClientRole)
+                .where(
+                    ClientRole.role_pid.in_(role_pids),
+                    ClientRole.is_deleted.is_(False),
+                )
+                .order_by(ClientRole.pid)
+            )
+        ).scalars()
+        return list(rows.all())
 
     async def assign_client_role(
         self, api_client_uid: UUID, role_pid: int, *, actor_uid: UUID
@@ -895,6 +927,27 @@ class ClientSettingRepository:
                         ClientExceptionSet.expires_at.is_(None),
                         ClientExceptionSet.expires_at > moment,
                     ),
+                )
+                .order_by(ClientExceptionSet.pid)
+            )
+        ).scalars()
+        return list(rows.all())
+
+    async def list_client_exception_sets_by_set_pids(
+        self, exception_set_pids: Sequence[int]
+    ) -> list[ClientExceptionSet]:
+        """綁定這些特例組的未刪綁定列(特例組內容異動時反查受影響 Client)。
+
+        含已過期綁定:失效快取寧可多刪(過期綁定本就讀不到,多失效只是多一次回源)。
+        """
+        if not exception_set_pids:
+            return []
+        rows = (
+            await self._db.execute(
+                select(ClientExceptionSet)
+                .where(
+                    ClientExceptionSet.exception_set_pid.in_(exception_set_pids),
+                    ClientExceptionSet.is_deleted.is_(False),
                 )
                 .order_by(ClientExceptionSet.pid)
             )
