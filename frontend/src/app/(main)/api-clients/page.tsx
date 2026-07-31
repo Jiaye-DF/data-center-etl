@@ -21,7 +21,111 @@ import { extractApiErrorDetail } from '@/utils/apiError'
 import { formatDateTime } from '@/utils/datetime'
 
 const PAGE_SIZE = 20
-const SECRET_MASK = '••••••••'
+const SECRET_MASK = '••••••••••••••••'
+
+/** Credentials 風格共用樣式:值框(淡色圓角 + mono)與 icon 按鈕 */
+const CODE_BOX_ID =
+  'break-all rounded-lg bg-primary/10 px-2.5 py-1.5 font-mono text-sm text-primary'
+const CODE_BOX_NEUTRAL =
+  'break-all rounded-lg bg-muted px-2.5 py-1.5 font-mono text-sm text-foreground'
+const ICON_BTN =
+  'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50'
+
+/* ---------------------------------------------------------------------- */
+/* Icons(inline SVG,無外部依賴)                                          */
+/* ---------------------------------------------------------------------- */
+
+interface IconProps {
+  className?: string
+}
+
+function CopyIcon({ className = 'h-4 w-4' }: IconProps): React.ReactNode {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  )
+}
+
+function CheckIcon({ className = 'h-4 w-4' }: IconProps): React.ReactNode {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+function XIcon({ className = 'h-4 w-4' }: IconProps): React.ReactNode {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  )
+}
+
+function EyeIcon({ className = 'h-4 w-4' }: IconProps): React.ReactNode {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+function EyeOffIcon({ className = 'h-4 w-4' }: IconProps): React.ReactNode {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M10.7 5.1A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.2 3.1M6.6 6.6C3.7 8.5 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1M3 3l18 18" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    </svg>
+  )
+}
 
 /* ---------------------------------------------------------------------- */
 /* 小型顯示元件                                                             */
@@ -88,9 +192,19 @@ const CopyButton = memo(function CopyButton({ value }: CopyButtonProps): React.R
     <button
       type="button"
       onClick={handleCopy}
-      className="df-btn-outline min-h-0 shrink-0 px-2 py-1 text-sm"
+      aria-label={COPY_LABEL[copyResult]}
+      title={COPY_LABEL[copyResult]}
+      className={`${ICON_BTN} ${
+        copyResult === 'copied' ? 'text-success' : copyResult === 'failed' ? 'text-danger' : ''
+      }`}
     >
-      {COPY_LABEL[copyResult]}
+      {copyResult === 'copied' ? (
+        <CheckIcon />
+      ) : copyResult === 'failed' ? (
+        <XIcon />
+      ) : (
+        <CopyIcon />
+      )}
     </button>
   )
 })
@@ -143,28 +257,35 @@ const SecretRevealControl = memo(function SecretRevealControl({
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex flex-nowrap items-center gap-2">
-        <code className="font-mono text-sm text-foreground md:text-base">
-          {plainSecret ?? SECRET_MASK}
-        </code>
+      <div className="flex flex-nowrap items-center gap-1.5">
         {plainSecret === null ? (
-          <button
-            type="button"
-            onClick={handleRevealClick}
-            disabled={isLoading}
-            className="df-btn-outline min-h-0 shrink-0 px-2 py-1 text-sm"
-          >
-            {isLoading ? '讀取中…' : '顯示'}
-          </button>
+          <>
+            <span className="select-none font-mono text-sm tracking-widest text-muted-foreground">
+              {SECRET_MASK}
+            </span>
+            <button
+              type="button"
+              onClick={handleRevealClick}
+              disabled={isLoading}
+              aria-label="顯示密鑰明文"
+              title={isLoading ? '讀取中…' : '顯示'}
+              className={ICON_BTN}
+            >
+              <EyeIcon />
+            </button>
+          </>
         ) : (
           <>
+            <code className={CODE_BOX_NEUTRAL}>{plainSecret}</code>
             <CopyButton value={plainSecret} />
             <button
               type="button"
               onClick={handleMask}
-              className="df-btn-outline min-h-0 shrink-0 px-2 py-1 text-sm"
+              aria-label="遮蔽密鑰"
+              title="遮蔽"
+              className={ICON_BTN}
             >
-              遮蔽
+              <EyeOffIcon />
             </button>
           </>
         )}
@@ -257,23 +378,21 @@ function IssuedSecretPanel({
         <p className="rounded-lg bg-warning/15 px-3 py-2 text-sm text-warning md:text-base">
           請立即複製並交付該使用者
           <br />
-          關閉後仍可在清單「ClientID-Secret」欄重新檢視明文
+          關閉後仍可在清單「Credentials」欄重新檢視明文
         </p>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground md:text-base">Client ID</span>
-          <div className="flex items-center gap-2">
-            <code className="df-input w-fit max-w-full overflow-x-auto font-mono text-sm">
-              {clientId}
-            </code>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <span className="w-28 shrink-0 text-sm font-medium text-muted-foreground md:text-base">
+              Client ID
+            </span>
+            <code className={`min-w-0 ${CODE_BOX_ID}`}>{clientId}</code>
             <CopyButton value={clientId} />
           </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground md:text-base">Client Secret</span>
-          <div className="flex items-center gap-2">
-            <code className="df-input w-fit max-w-full overflow-x-auto font-mono text-sm">
-              {clientSecret}
-            </code>
+          <div className="flex items-center gap-3">
+            <span className="w-28 shrink-0 text-sm font-medium text-muted-foreground md:text-base">
+              Client Secret
+            </span>
+            <code className={`min-w-0 ${CODE_BOX_NEUTRAL}`}>{clientSecret}</code>
             <CopyButton value={clientSecret} />
           </div>
         </div>
@@ -292,7 +411,7 @@ function IssuedSecretPanel({
         onCancel={handleCancelClose}
       >
         <p>請確認已複製此密鑰明文</p>
-        <p>關閉後可在清單「ClientID-Secret」欄重新檢視</p>
+        <p>關閉後可在清單「Credentials」欄重新檢視</p>
       </ConfirmDialog>
     </div>
   )
@@ -727,16 +846,14 @@ const ApiClientRow = memo(function ApiClientRow({
       </td>
       <td className="whitespace-nowrap px-3 py-3">
         <div className="flex flex-col gap-1.5">
-          <div className="flex flex-nowrap items-center gap-2">
+          <div className="flex flex-nowrap items-center gap-1.5">
             <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">
               Client ID
             </span>
-            <code className="text-sm font-mono text-muted-foreground md:text-base">
-              {client.client_id}
-            </code>
+            <code className={CODE_BOX_ID}>{client.client_id}</code>
             <CopyButton value={client.client_id} />
           </div>
-          <div className="flex flex-nowrap items-center gap-2">
+          <div className="flex flex-nowrap items-center gap-1.5">
             <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">
               Secret
             </span>
@@ -923,7 +1040,7 @@ export default function ApiClientsPage(): React.ReactNode {
                 <tr className="border-b border-border bg-muted/50">
                   <th className="df-th">操作</th>
                   <th className="df-th">使用者</th>
-                  <th className="df-th">ClientID-Secret</th>
+                  <th className="df-th">Credentials</th>
                   <th className="df-th">狀態</th>
                   <th className="df-th">流量上限</th>
                   <th className="df-th">建立時間</th>
