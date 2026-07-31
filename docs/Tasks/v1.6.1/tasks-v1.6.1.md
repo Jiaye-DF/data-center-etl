@@ -1,6 +1,6 @@
 # Tasks v1.6.1
 
-> 狀態:進行中(7/11 done)
+> 狀態:進行中(8/11 done)
 
 | # | 標題 | 狀態 | 並行 | 依賴 | 影響檔案 |
 | --- | --- | --- | --- | --- | --- |
@@ -11,7 +11,7 @@
 | 005 | 設定檔 / Role 管理 API(勾作業 + 授權矩陣 + 必綁防呆) | done | ✗ | 004 | `backend/app/api/v1/client_settings.py` / `backend/app/services/client_setting_service.py` / `backend/app/schemas/client_setting.py` / `backend/tests/test_client_settings_profiles_api.py` |
 | 006 | 特例權限 + API Client 指派 API(可重用組 + 效期綁定) | done | ✗ | 005 | `backend/app/api/v1/client_settings.py` / `backend/app/services/client_setting_service.py` / `backend/app/schemas/client_setting.py` / `backend/tests/test_client_settings_exceptions_api.py` |
 | 007 | 預覽端點 effective-permissions(聯集 ∩ 範圍,default-closed,走快取) | done | ✓ | 002, 003 | `backend/app/services/effective_permission_service.py` / `backend/app/api/v1/api_clients.py` / `backend/app/schemas/client_setting_preview.py` / `backend/tests/test_effective_permissions.py` |
-| 008 | 前端 API 層 + 權限管理頁骨架(併入 API Client nav 區塊) | pending | ✗ | 004, 005, 006 | `frontend/src/lib/api/clientSettingApi.ts` / `frontend/src/components/layout/Sidebar.tsx` / `frontend/src/app/(main)/client-settings/page.tsx` |
+| 008 | 前端 API 層 + 權限管理頁骨架(併入 API Client nav 區塊) | done | ✗ | 004, 005, 006 | `frontend/src/lib/api/clientSettingApi.ts` / `frontend/src/components/layout/Sidebar.tsx` / `frontend/src/app/(main)/client-settings/page.tsx` |
 | 009 | 前端授權管理 UI(系統別 / 作業範圍 / 設定檔矩陣 / Role / 特例) | pending | ✗ | 008 | `frontend/src/app/(main)/client-settings/page.tsx` / `frontend/src/lib/api/clientSettingApi.ts` |
 | 010 | 前端 API Client 頁整合(Role 指派 + 特例綁定 + 權限檢視) | pending | ✗ | 007, 008 | `frontend/src/app/(main)/api-clients/page.tsx` / `frontend/src/lib/api/apiClientApi.ts` |
 | 011 | e2e 收口 + 稽核驗證 + verification 文件 + Arch 回寫 | pending | ✗ | 001–010 | `docs/Tasks/v1.6.1/verification-v1.6.1.md` / `docs/Arch/datahub-api-gateway-arch.html` |

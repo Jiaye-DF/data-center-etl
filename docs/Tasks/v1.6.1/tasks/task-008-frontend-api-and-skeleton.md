@@ -1,7 +1,7 @@
 ---
 id: task-008
 title: 前端 API 層 + 權限管理頁骨架(併入 API Client nav 區塊)
-status: pending
+status: done
 parallel: false
 depends_on: [task-004, task-005, task-006]
 affected_files:

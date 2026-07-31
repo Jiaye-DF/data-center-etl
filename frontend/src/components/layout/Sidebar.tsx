@@ -44,7 +44,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: 'API Client 設定',
-    items: [{ href: '/api-clients', label: 'API Client 設定', icon: <ApiClientIcon /> }],
+    items: [
+      { href: '/api-clients', label: 'API Client 設定', icon: <ApiClientIcon /> },
+      { href: '/client-settings', label: '組織權限管理', icon: <ShieldIcon /> },
+    ],
   },
 ]
 
@@ -228,6 +231,15 @@ function ApiClientIcon(): React.ReactNode {
       <path d="M8 9h8" />
       <path d="M8 13h5" />
       <circle cx="17.5" cy="16.5" r="1.5" />
+    </svg>
+  )
+}
+
+function ShieldIcon(): React.ReactNode {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6z" />
+      <path d="m9 12 2 2 4-4" />
     </svg>
   )
 }
