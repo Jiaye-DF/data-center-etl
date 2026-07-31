@@ -1,7 +1,7 @@
 ---
 id: task-004
 title: 系統別 / 作業管理 API(CRUD + 範圍 items + semantic 驗證)
-status: pending
+status: done
 parallel: false
 depends_on: [task-002, task-003]
 affected_files:

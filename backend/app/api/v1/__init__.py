@@ -4,6 +4,7 @@ from . import (
     api_clients,
     audit_logs,
     auth,
+    client_settings,
     dashboard,
     datasets,
     health,
@@ -34,3 +35,6 @@ router.include_router(
 router.include_router(roles.router, prefix="/roles", tags=["roles"])
 router.include_router(users.router, prefix="/users", tags=["users"])
 router.include_router(api_clients.router, prefix="/api-clients", tags=["api-clients"])
+router.include_router(
+    client_settings.router, prefix="/client-settings", tags=["client-settings"]
+)
