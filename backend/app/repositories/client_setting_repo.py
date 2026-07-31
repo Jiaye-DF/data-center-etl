@@ -105,6 +105,16 @@ class ClientSettingRepository:
     async def _count(self, stmt: Select[tuple[int]]) -> int:
         return int((await self._db.execute(stmt)).scalar_one())
 
+    @staticmethod
+    def _lock[RowT](stmt: Select[tuple[RowT]], *, for_update: bool) -> Select[tuple[RowT]]:
+        """`for_update=True` 時對父列加行鎖(`SELECT ... FOR UPDATE`)。
+
+        整批置換系列是 read-then-write:未鎖父列時,READ COMMITTED 下兩管理員併發存檔會
+        各刪自己看到的舊列、各插自己的新集合,落地成兩邊聯集(授權被放大)。置換路徑於
+        交易開頭以鎖定版取父列,同一父列的置換即序列化為「後者覆蓋」。
+        """
+        return stmt.with_for_update() if for_update else stmt
+
     # ── 系統別 services ──────────────────────────────────────────────────
     async def list_services(self) -> list[Service]:
         rows = (
@@ -183,10 +193,17 @@ class ClientSettingRepository:
         ).scalars()
         return list(rows.all())
 
-    async def get_operation_by_uid(self, uid: UUID) -> Operation | None:
+    async def get_operation_by_uid(
+        self, uid: UUID, *, for_update: bool = False
+    ) -> Operation | None:
         return (
             await self._db.execute(
-                select(Operation).where(Operation.uid == uid, Operation.is_deleted.is_(False))
+                self._lock(
+                    select(Operation).where(
+                        Operation.uid == uid, Operation.is_deleted.is_(False)
+                    ),
+                    for_update=for_update,
+                )
             )
         ).scalar_one_or_none()
 
@@ -333,11 +350,17 @@ class ClientSettingRepository:
         ).scalars()
         return list(rows.all())
 
-    async def get_permission_profile_by_uid(self, uid: UUID) -> PermissionProfile | None:
+    async def get_permission_profile_by_uid(
+        self, uid: UUID, *, for_update: bool = False
+    ) -> PermissionProfile | None:
         return (
             await self._db.execute(
-                select(PermissionProfile).where(
-                    PermissionProfile.uid == uid, PermissionProfile.is_deleted.is_(False)
+                self._lock(
+                    select(PermissionProfile).where(
+                        PermissionProfile.uid == uid,
+                        PermissionProfile.is_deleted.is_(False),
+                    ),
+                    for_update=for_update,
                 )
             )
         ).scalar_one_or_none()
@@ -659,6 +682,29 @@ class ClientSettingRepository:
         await self._soft_delete(assignment, actor_uid)
         return True
 
+    async def soft_delete_client_grants(
+        self, api_client_uid: UUID, *, actor_uid: UUID
+    ) -> None:
+        """同交易軟刪該 Client 在 RDS 的全部指派與綁定(API Client 註銷的跨庫連動)。
+
+        自有 DB 的 Client 註銷後,RDS 側的 `client_roles` / `client_exception_sets` 若留著
+        就成了解不掉的孤兒(Role / 特例組因而永久刪不掉),故註銷一併清除。
+        """
+        await self._soft_delete_where(
+            update(ClientRole).where(
+                ClientRole.api_client_uid == api_client_uid,
+                ClientRole.is_deleted.is_(False),
+            ),
+            actor_uid=actor_uid,
+        )
+        await self._soft_delete_where(
+            update(ClientExceptionSet).where(
+                ClientExceptionSet.api_client_uid == api_client_uid,
+                ClientExceptionSet.is_deleted.is_(False),
+            ),
+            actor_uid=actor_uid,
+        )
+
     # ── 特例權限組 exception_sets ────────────────────────────────────────
     async def list_exception_sets(self) -> list[ExceptionSet]:
         rows = (
@@ -687,11 +733,16 @@ class ClientSettingRepository:
         ).scalars()
         return list(rows.all())
 
-    async def get_exception_set_by_uid(self, uid: UUID) -> ExceptionSet | None:
+    async def get_exception_set_by_uid(
+        self, uid: UUID, *, for_update: bool = False
+    ) -> ExceptionSet | None:
         return (
             await self._db.execute(
-                select(ExceptionSet).where(
-                    ExceptionSet.uid == uid, ExceptionSet.is_deleted.is_(False)
+                self._lock(
+                    select(ExceptionSet).where(
+                        ExceptionSet.uid == uid, ExceptionSet.is_deleted.is_(False)
+                    ),
+                    for_update=for_update,
                 )
             )
         ).scalar_one_or_none()
@@ -728,7 +779,11 @@ class ClientSettingRepository:
     async def soft_delete_exception_set(
         self, exception_set: ExceptionSet, *, actor_uid: UUID
     ) -> None:
-        """軟刪特例組並連動軟刪其勾選作業與授權項(內含子集合)。"""
+        """軟刪特例組並連動軟刪其勾選作業、授權項與殘留綁定。
+
+        綁定列本非「內含子集合」,但未過期綁定在 service 層已擋刪(409)→ 走到這裡的只會是
+        已過期綁定,對權限判斷本就不生效;留著會變成清單看不到、unbind 又 404 的殭屍列。
+        """
         exception_set_pid = exception_set.pid
         await self._soft_delete(exception_set, actor_uid)
         await self._soft_delete_where(
@@ -742,6 +797,13 @@ class ClientSettingRepository:
             update(ExceptionItem).where(
                 ExceptionItem.exception_set_pid == exception_set_pid,
                 ExceptionItem.is_deleted.is_(False),
+            ),
+            actor_uid=actor_uid,
+        )
+        await self._soft_delete_where(
+            update(ClientExceptionSet).where(
+                ClientExceptionSet.exception_set_pid == exception_set_pid,
+                ClientExceptionSet.is_deleted.is_(False),
             ),
             actor_uid=actor_uid,
         )

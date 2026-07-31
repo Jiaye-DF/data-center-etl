@@ -38,7 +38,7 @@ from uuid import uuid4  # noqa: E402
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from sqlalchemy import func, select, text  # noqa: E402
-from sqlalchemy.exc import IntegrityError  # noqa: E402
+from sqlalchemy.exc import DBAPIError, IntegrityError  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # noqa: E402
 
 from app.etl import introspect  # noqa: E402
@@ -602,3 +602,99 @@ async def test_invalidation_fanout_lookups(
     await repo.soft_delete_role(role2, actor_uid=ACTOR_UID)
     await session.commit()
     assert [role.pid for role in await repo.list_roles_by_profile(profile_pid)] == [role1_pid]
+
+
+# ── v1.6.1 fixed:跨庫連動 / 併發鎖 / 殭屍綁定 ──────────────────────────
+async def test_soft_delete_client_grants_clears_both_tables(
+    repo: ClientSettingRepository, session: AsyncSession
+) -> None:
+    """AD-152:註銷 API Client 時,RDS 側指派與綁定同交易軟刪,其他 Client 不受影響。"""
+    profile = await repo.create_permission_profile(name="P1", actor_uid=ACTOR_UID)
+    role = await repo.create_role(
+        permission_profile_pid=profile.pid, name="R1", actor_uid=ACTOR_UID
+    )
+    role_pid = role.pid
+    exception_set = await repo.create_exception_set(name="X1", actor_uid=ACTOR_UID)
+    set_pid = exception_set.pid
+    doomed, survivor = uuid4(), uuid4()
+    for client_uid in (doomed, survivor):
+        await repo.assign_client_role(client_uid, role_pid, actor_uid=ACTOR_UID)
+        await repo.bind_client_exception_set(client_uid, set_pid, actor_uid=ACTOR_UID)
+    await session.commit()
+
+    await repo.soft_delete_client_grants(doomed, actor_uid=ACTOR_UID)
+    await session.commit()
+
+    assert await repo.get_client_role(doomed) is None
+    assert await repo.list_client_exception_sets(doomed) == []
+    # 孤兒清乾淨 → Role 與特例組的刪除防呆不再被已註銷 Client 卡住
+    assert await repo.count_clients_by_role(role_pid) == 1
+    assert await repo.count_active_bindings_by_exception_set(set_pid) == 1
+    assert await repo.get_client_role(survivor) is not None
+
+
+async def test_soft_delete_exception_set_clears_leftover_bindings(
+    repo: ClientSettingRepository, session: AsyncSession
+) -> None:
+    """AD-156:特例組軟刪連動軟刪其殘留(已過期)綁定,不留看不到又解不掉的殭屍列。"""
+    exception_set = await repo.create_exception_set(name="X1", actor_uid=ACTOR_UID)
+    set_pid = exception_set.pid
+    api_client_uid = uuid4()
+    binding = await repo.bind_client_exception_set(
+        api_client_uid,
+        set_pid,
+        expires_at=db_now() - timedelta(days=1),
+        actor_uid=ACTOR_UID,
+    )
+    binding_uid = binding.uid
+    await session.commit()
+
+    await repo.soft_delete_exception_set(exception_set, actor_uid=ACTOR_UID)
+    await session.commit()
+
+    assert await repo.list_client_exception_sets(api_client_uid) == []
+    assert await repo.get_client_exception_set_by_uid(binding_uid) is None
+    assert await repo.list_client_exception_sets_by_set_pids([set_pid]) == []
+
+
+@pytest.mark.parametrize(
+    ("table", "getter"),
+    [
+        ("permission_profiles", "get_permission_profile_by_uid"),
+        ("exception_sets", "get_exception_set_by_uid"),
+        ("operations", "get_operation_by_uid"),
+    ],
+)
+async def test_parent_getters_take_row_lock_when_for_update(
+    repo: ClientSettingRepository, session: AsyncSession, table: str, getter: str
+) -> None:
+    """AD-153:置換路徑取父列時加行鎖,另一條連線再取同列即取不到(併發置換序列化)。"""
+    if table == "permission_profiles":
+        parent = await repo.create_permission_profile(name="P-lock", actor_uid=ACTOR_UID)
+    elif table == "exception_sets":
+        parent = await repo.create_exception_set(name="X-lock", actor_uid=ACTOR_UID)
+    else:
+        service = await repo.create_service(code="lock", name="LOCK", actor_uid=ACTOR_UID)
+        parent = await repo.create_operation(
+            service_pid=service.pid, name="O-lock", actor_uid=ACTOR_UID
+        )
+    parent_uid, parent_pid = parent.uid, parent.pid
+    await session.commit()
+
+    # 無鎖版不佔鎖 → 他人可正常取件
+    assert await getattr(repo, getter)(parent_uid) is not None
+    await session.rollback()
+
+    nowait_sql = text(
+        f"SELECT pid FROM {CLIENT_SETTING_SCHEMA}.{table} WHERE pid = :pid FOR UPDATE NOWAIT"
+    )
+    try:
+        locked = await getattr(repo, getter)(parent_uid, for_update=True)
+        assert locked is not None
+        async with client_setting_session() as other:
+            with pytest.raises(DBAPIError):
+                await other.execute(nowait_sql, {"pid": parent_pid})
+            await other.rollback()
+    finally:
+        # 務必釋放鎖,否則 fixture 的清理 DELETE 會卡住
+        await session.rollback()

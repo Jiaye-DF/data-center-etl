@@ -8,7 +8,8 @@
   勾了作業卻沒給授權 → 該作業回空 `tables`(有入口、無欄位),缺一不可。
 - 授權項再 ∩ 作業範圍(`operation_items`):範圍外的表 / 欄位一律不生效;`*` 依範圍展開為
   該表全欄位(範圍本身為 `*` 時無具體欄位清單可展開,原樣保留 `*` 代表全欄位)。
-- 同欄位多筆授權取較高動作(`edit` 隱含 `read`)。
+- 同欄位多筆授權取較高動作(`edit` 隱含 `read`);同一張表 `*` 與具名欄位並存時,具名欄位
+  只在動作**高於** `*` 時保留(具名 = `*` 的更高權限覆寫),其餘一律收斂進 `*`。
 - 「開門」與「授權」的配對**以授權來源為單位**判定(設定檔一組、每個特例組各一組),
   避免 A 來源開門、B 來源給欄位被拼裝成雙方都沒真正授予的權限;各來源結果再聯集。
 - 效期比較走 naive UTC+8(`04-databases/06-timezone.md`),過期特例由 repo 層直接濾掉。
@@ -59,6 +60,23 @@ def _higher_action(current: str | None, candidate: str) -> str:
     if _ACTION_RANK.get(candidate, 0) > _ACTION_RANK.get(current, 0):
         return candidate
     return current
+
+
+def _collapse_all_columns(columns: dict[str, str]) -> dict[str, str]:
+    """同一張表同時出現 `*` 與具名欄位時收斂(v1.6.1 fixed AD-155)。
+
+    `*` 已涵蓋全欄位,故具名欄位只有在**動作更高**(`*` read + 具名 edit)時才有意義,
+    否則一律剔除 → 契約明確化為「具名欄位是 `*` 的更高權限覆寫」,消費端不必自行猜優先權。
+    """
+    star = columns.get(ALL_COLUMNS)
+    if star is None:
+        return columns
+    return {
+        column: action
+        for column, action in columns.items()
+        if column == ALL_COLUMNS
+        or _ACTION_RANK.get(action, 0) > _ACTION_RANK.get(star, 0)
+    }
 
 
 def _effective_columns(scope_columns: set[str], column: str) -> list[str]:
@@ -179,7 +197,7 @@ async def _build_operations(
                 else ""
             ),
             tables={
-                table_name: dict(sorted(columns.items()))
+                table_name: dict(sorted(_collapse_all_columns(columns).items()))
                 for table_name, columns in sorted(granted[operation.pid].items())
             },
         )

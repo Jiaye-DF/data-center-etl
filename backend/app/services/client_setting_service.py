@@ -25,8 +25,10 @@
   驗證關卡(confirmed 語意映射、∩ 作業範圍上限)與設定檔共用同一組函式 —— 特例是加法模型
   的另一個授權來源,不是繞過作業範圍的後門。`expires_at` 為 naive UTC+8,到期由讀取端
   自動過濾(加法模型的收權手段之一,無需人工解除)。
-- **API Client 指派**:Client 本體在自有 DB,RDS 端冷關聯無 FK → 指派 / 綁定前一律先
-  `_ensure_client_exists()` 驗存在且未軟刪(防呆只能落在這層)。
+- **API Client 指派**:Client 本體在自有 DB,RDS 端冷關聯無 FK → **新增**授權(指派 / 綁定)
+  前一律先 `_ensure_client_exists()` 驗存在且未軟刪(防呆只能落在這層);**解除 / 解綁**
+  刻意不驗(AD-152):Client 註銷後殘留的指派 / 綁定仍須解得掉,否則 Role 與特例組永久
+  刪不掉。註銷本身另由 `api_client_service.delete_client` 連動清 RDS 兩表。
 """
 
 from __future__ import annotations
@@ -237,17 +239,19 @@ async def _get_service_or_404(repo: ClientSettingRepository, uid: UUID) -> Servi
     return service
 
 
-async def _get_operation_or_404(repo: ClientSettingRepository, uid: UUID) -> Operation:
-    operation = await repo.get_operation_by_uid(uid)
+async def _get_operation_or_404(
+    repo: ClientSettingRepository, uid: UUID, *, for_update: bool = False
+) -> Operation:
+    operation = await repo.get_operation_by_uid(uid, for_update=for_update)
     if operation is None:
         raise AppError(_OPERATION_NOT_FOUND, response_code=404, status_code=404)
     return operation
 
 
 async def _get_permission_profile_or_404(
-    repo: ClientSettingRepository, uid: UUID
+    repo: ClientSettingRepository, uid: UUID, *, for_update: bool = False
 ) -> PermissionProfile:
-    profile = await repo.get_permission_profile_by_uid(uid)
+    profile = await repo.get_permission_profile_by_uid(uid, for_update=for_update)
     if profile is None:
         raise AppError(_PROFILE_NOT_FOUND, response_code=404, status_code=404)
     return profile
@@ -261,9 +265,9 @@ async def _get_role_or_404(repo: ClientSettingRepository, uid: UUID) -> Role:
 
 
 async def _get_exception_set_or_404(
-    repo: ClientSettingRepository, uid: UUID
+    repo: ClientSettingRepository, uid: UUID, *, for_update: bool = False
 ) -> ExceptionSet:
-    exception_set = await repo.get_exception_set_by_uid(uid)
+    exception_set = await repo.get_exception_set_by_uid(uid, for_update=for_update)
     if exception_set is None:
         raise AppError(_EXCEPTION_SET_NOT_FOUND, response_code=404, status_code=404)
     return exception_set
@@ -827,10 +831,14 @@ class ClientSettingService:
     async def replace_operation_items(
         self, uid: UUID, payload: OperationItemsReplaceRequest, *, actor_uid: UUID
     ) -> OperationItemListResponse:
-        """整批置換作業範圍:同交易軟刪舊集合 + 插入新集合(空陣列 = 清空)。"""
+        """整批置換作業範圍:同交易軟刪舊集合 + 插入新集合(空陣列 = 清空)。
+
+        父列(作業)於交易開頭即加行鎖:置換為 read-then-write,不鎖會讓雙管理員併發存檔
+        落地成兩邊聯集(AD-153);鎖住後同一作業的置換序列化為「後者覆蓋」。
+        """
         async with _rds_write(_SCOPE_ITEM_CONFLICT) as session:
             repo = ClientSettingRepository(session)
-            operation = await _get_operation_or_404(repo, uid)
+            operation = await _get_operation_or_404(repo, uid, for_update=True)
             scope = _validate_scope_items(
                 payload.items, await _load_confirmed_semantic(session)
             )
@@ -946,10 +954,13 @@ class ClientSettingService:
     async def replace_profile_operations(
         self, uid: UUID, payload: ProfileOperationsReplaceRequest, *, actor_uid: UUID
     ) -> ProfileOperationListResponse:
-        """整批置換勾選作業;被移除的作業其授權項同交易一併清除(repo 層負責)。"""
+        """整批置換勾選作業;被移除的作業其授權項同交易一併清除(repo 層負責)。
+
+        父列(設定檔)於交易開頭即加行鎖,同一設定檔的併發置換序列化(AD-153)。
+        """
         async with _rds_write(_PROFILE_OPERATION_CONFLICT) as session:
             repo = ClientSettingRepository(session)
-            profile = await _get_permission_profile_or_404(repo, uid)
+            profile = await _get_permission_profile_or_404(repo, uid, for_update=True)
             operation_pids = await _resolve_operation_pids(repo, payload.operation_uids)
             rows = await repo.replace_profile_operations(
                 profile.pid, operation_pids, actor_uid=actor_uid
@@ -994,10 +1005,13 @@ class ClientSettingService:
         *,
         actor_uid: UUID,
     ) -> ProfileItemListResponse:
-        """整批置換「設定檔 × 單一作業」授權矩陣;作業須先被勾選(未勾選 409)。"""
+        """整批置換「設定檔 × 單一作業」授權矩陣;作業須先被勾選(未勾選 409)。
+
+        父列(設定檔)於交易開頭即加行鎖,同一設定檔的併發置換序列化(AD-153)。
+        """
         async with _rds_write(_PROFILE_ITEM_CONFLICT) as session:
             repo = ClientSettingRepository(session)
-            profile = await _get_permission_profile_or_404(repo, uid)
+            profile = await _get_permission_profile_or_404(repo, uid, for_update=True)
             operation = await _get_operation_or_404(repo, operation_uid)
             granted_pids = {
                 row.operation_pid for row in await repo.list_profile_operations(profile.pid)
@@ -1229,10 +1243,13 @@ class ClientSettingService:
     async def replace_exception_operations(
         self, uid: UUID, payload: ExceptionOperationsReplaceRequest, *, actor_uid: UUID
     ) -> ExceptionOperationListResponse:
-        """整批置換勾選作業;被移除的作業其授權項同交易一併清除(repo 層負責)。"""
+        """整批置換勾選作業;被移除的作業其授權項同交易一併清除(repo 層負責)。
+
+        父列(特例組)於交易開頭即加行鎖,同一特例組的併發置換序列化(AD-153)。
+        """
         async with _rds_write(_PROFILE_OPERATION_CONFLICT) as session:
             repo = ClientSettingRepository(session)
-            exception_set = await _get_exception_set_or_404(repo, uid)
+            exception_set = await _get_exception_set_or_404(repo, uid, for_update=True)
             operation_pids = await _resolve_operation_pids(repo, payload.operation_uids)
             rows = await repo.replace_exception_operations(
                 exception_set.pid, operation_pids, actor_uid=actor_uid
@@ -1283,10 +1300,12 @@ class ClientSettingService:
 
         特例是加法模型的另一個授權來源,不是繞過作業範圍的後門 → 同樣受
         confirmed 語意映射與「∩ 作業範圍上限」兩關把守。
+
+        父列(特例組)於交易開頭即加行鎖,同一特例組的併發置換序列化(AD-153)。
         """
         async with _rds_write(_PROFILE_ITEM_CONFLICT) as session:
             repo = ClientSettingRepository(session)
-            exception_set = await _get_exception_set_or_404(repo, uid)
+            exception_set = await _get_exception_set_or_404(repo, uid, for_update=True)
             operation = await _get_operation_or_404(repo, operation_uid)
             granted_pids = {
                 row.operation_pid
@@ -1347,8 +1366,12 @@ class ClientSettingService:
     async def remove_client_role(
         self, client_uid: UUID, *, actor_uid: UUID
     ) -> ClientRoleResponse:
-        """解除指派;本來就沒指派 → 404(避免前端誤以為解除了某個實際存在的指派)。"""
-        await self._ensure_client_exists(client_uid)
+        """解除指派;本來就沒指派 → 404(避免前端誤以為解除了某個實際存在的指派)。
+
+        **不驗 Client 是否仍存在**(AD-152):Client 註銷後殘留的指派仍須解得掉,否則該
+        Role 因 `count_clients_by_role > 0` 永久刪不掉,UI 又找不到可解除的 Client。
+        存在性檢核保留在 `assign_client_role`(新增授權才需要防呆)。
+        """
         async with _rds_write(_WRITE_CONFLICT) as session:
             repo = ClientSettingRepository(session)
             assignment = await repo.get_client_role(client_uid)
@@ -1440,8 +1463,11 @@ class ClientSettingService:
     async def unbind_client_exception_set(
         self, client_uid: UUID, binding_uid: UUID, *, actor_uid: UUID
     ) -> ClientExceptionSetResponse:
-        """解除單筆綁定(以綁定列 uid 定位);綁定不屬於該 Client 一律 404。"""
-        await self._ensure_client_exists(client_uid)
+        """解除單筆綁定(以綁定列 uid 定位);綁定不屬於該 Client 一律 404。
+
+        **不驗 Client 是否仍存在**(AD-152):理由同 `remove_client_role` —— 註銷後殘留的
+        綁定仍須解得掉,否則該特例權限組永久刪不掉。存在性檢核保留在 `bind_*`。
+        """
         async with _rds_write(_WRITE_CONFLICT) as session:
             repo = ClientSettingRepository(session)
             binding = await repo.get_client_exception_set_by_uid(binding_uid)

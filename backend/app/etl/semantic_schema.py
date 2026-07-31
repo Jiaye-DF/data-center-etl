@@ -16,10 +16,14 @@ ensure 冪等偵測並就地轉型(ALTER TYPE + USING 保資料,非破壞性)。
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.etl.comments import quote_ident
+
+logger = logging.getLogger(__name__)
 
 # 目標 schema / 表名:語意層唯一事實來源
 SEMANTIC_SCHEMA = "erp_metadata"
@@ -102,6 +106,22 @@ _MIGRATE_UPDATED_AT_SQL = text(
     """
 )
 
+# v1.6.1 fixed AD-154 / AD-150:表層級英文名(column_name = '')為權限授權的引用鍵
+# (`client_setting.*_items.table_name` 存的就是它),必須全域唯一 —— 否則 A 表英文名改成
+# B 表原名時,既有授權會靜默改指向另一張表。
+_ENGLISH_TABLE_UNIQUE_INDEX = "uq_semantic_mappings_english_table"
+
+_ENGLISH_TABLE_DUPLICATE_SQL = text(
+    f"SELECT english_name, count(*) AS n FROM {_QUALIFIED}"
+    " WHERE column_name = '' GROUP BY english_name HAVING count(*) > 1"
+    " ORDER BY english_name"
+)
+
+_ENGLISH_TABLE_UNIQUE_SQL = text(
+    f"CREATE UNIQUE INDEX IF NOT EXISTS {_ENGLISH_TABLE_UNIQUE_INDEX}"
+    f" ON {_QUALIFIED} (english_name) WHERE column_name = ''"
+)
+
 
 async def ensure_semantic_schema(conn: AsyncConnection) -> None:
     """冪等建置 `erp_metadata.semantic_mappings`:存在則略過,不刪除既有結構。
@@ -109,6 +129,9 @@ async def ensure_semantic_schema(conn: AsyncConnection) -> None:
     另冪等遷移舊版欄位型別(USING 轉換保留既有資料,已是目標型別則不動作):
     - `updated_at`:timestamptz → timestamp(UTC+8 naive,datetime2 等價)。
     - `updated_by`:text → uuid(v1.5.1 fixed #3;非 UUID 的工具標記轉系統全零 UUID)。
+
+    最後補表層級英文名的全域唯一索引(AD-154);既有資料已有重複時只 log warning 並跳過,
+    不讓啟動 / 建置流程炸掉 —— 人工清重後下次 ensure 會自動補上。
     """
     await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {quote_ident(SEMANTIC_SCHEMA)}"))
     await conn.execute(_CREATE_TABLE_SQL)
@@ -134,3 +157,18 @@ async def ensure_semantic_schema(conn: AsyncConnection) -> None:
     if row is not None and row[0] == "YES":
         await conn.execute(_BACKFILL_UPDATED_BY_SQL)
         await conn.execute(_ENFORCE_UPDATED_BY_SQL)
+    await _ensure_english_table_unique(conn)
+
+
+async def _ensure_english_table_unique(conn: AsyncConnection) -> None:
+    """建立表層級英文名唯一索引;現存重複值則列明並跳過(不擋建置流程)。"""
+    duplicates = (await conn.execute(_ENGLISH_TABLE_DUPLICATE_SQL)).all()
+    if duplicates:
+        logger.warning(
+            "semantic_mappings 表層級英文名有重複,略過建立唯一索引 %s;"
+            "請人工清重後重跑 ensure(重複值:%s)",
+            _ENGLISH_TABLE_UNIQUE_INDEX,
+            ", ".join(f"{row[0]}×{row[1]}" for row in duplicates),
+        )
+        return
+    await conn.execute(_ENGLISH_TABLE_UNIQUE_SQL)

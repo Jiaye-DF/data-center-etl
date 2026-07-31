@@ -43,7 +43,9 @@ class EffectiveOperationPermission(BaseModel):
     tables: dict[str, dict[str, str]] = Field(
         description=(
             "最終可見欄位 `{表: {欄位: read/edit}}`(授權 ∩ 作業範圍;"
-            "交集為空的表整張省略,欄位 `*` = 該表全欄位)"
+            "交集為空的表整張省略,欄位 `*` = 該表全欄位;"
+            "`*` 與具名欄位並存時,具名欄位為更高權限的覆寫 —— "
+            "動作不高於 `*` 的具名欄位一律收斂省略)"
         )
     )
 

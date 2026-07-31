@@ -26,12 +26,22 @@ TEST_DATABASE_URL = f"{_BASE_URL}/{TEST_DB_NAME}"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("INIT_ADMIN_USERNAME", "init-admin")
 os.environ.setdefault("INIT_ADMIN_PASSWORD", "init-admin-password-for-test")
+# 註銷會連動清 RDS client_setting 的指派 / 綁定(AD-152)→ AWS_RDS_* 明確指向本地測試 DB,
+# 不依賴其他測試檔的 import 副作用,確保永不觸碰真正 AWS RDS
+os.environ["AWS_RDS_HOST"] = _PG_HOST
+os.environ["AWS_RDS_PORT"] = _PG_PORT
+os.environ["AWS_RDS_USER"] = _PG_USER
+os.environ["AWS_RDS_PASSWORD"] = _PG_PASSWORD
+os.environ["AWS_RDS_TARGET_DB"] = TEST_DB_NAME
+os.environ.setdefault("AWS_RDS_SOURCE_DB", TEST_DB_NAME)
 # 本檔自帶 Fernet 測試金鑰,不依賴 backend/.env(reveal 的加解密須同一把)
 CLIENT_SECRET_ENCRYPTION_KEY = "gV9B0ldDujaVk-KpKzDOSm6TSAFPgGIfNxu1NxLr8oY="
 os.environ["CLIENT_SECRET_ENCRYPTION_KEY"] = CLIENT_SECRET_ENCRYPTION_KEY
 
+import asyncio  # noqa: E402
 from collections.abc import AsyncIterator  # noqa: E402
 
+import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -46,6 +56,8 @@ from sqlalchemy.pool import NullPool  # noqa: E402
 
 from app.api.deps import get_db  # noqa: E402
 from app.core.security import hash_password_async, verify_password_async  # noqa: E402
+from app.etl import introspect  # noqa: E402
+from app.etl.client_setting_schema import ensure_client_setting_schema  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models import AuditLog  # noqa: E402
 from app.models.api_client_secret import (  # noqa: E402
@@ -63,6 +75,31 @@ _FAKE_UID = "00000000-0000-0000-0000-0000000000ff"
 
 
 # ── fixtures(建庫 / create_all 由 tests/conftest.py 中央處理)──────────────
+@pytest.fixture(scope="session", autouse=True)
+def _prepare_client_setting_schema() -> None:
+    """註銷連動清理會寫 RDS `client_setting`(AD-152)→ 先冪等建齊 12 表;不做任何 DROP。"""
+
+    async def _prepare() -> None:
+        engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
+        try:
+            async with engine.begin() as conn:
+                await ensure_client_setting_schema(conn)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_prepare())
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_introspect_engines() -> AsyncIterator[None]:
+    """introspect 以 module-level 連線池快取 RDS engine;pytest 每測試獨立 event loop,
+    跨 loop 重用池內連線會失效。每測試後 dispose + 清快取(對齊 test_data_query_api.py)。"""
+    yield
+    for engine in list(introspect._ENGINES.values()):
+        await engine.dispose()
+    introspect._ENGINES.clear()
+
+
 @pytest_asyncio.fixture
 async def db_engine() -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)

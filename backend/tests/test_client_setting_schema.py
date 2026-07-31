@@ -31,11 +31,18 @@ os.environ.setdefault(
 os.environ.setdefault("INIT_ADMIN_USERNAME", "init-admin")
 os.environ.setdefault("INIT_ADMIN_PASSWORD", "init-admin-password-for-test")
 
+import sys  # noqa: E402
 from collections.abc import AsyncIterator  # noqa: E402
+from pathlib import Path  # noqa: E402
 from uuid import uuid4  # noqa: E402
+
+# scripts/ 非 package(無 __init__.py):加入 sys.path 以頂層模組名 import(對齊
+# test_seed_semantic_mappings.py),用來驗證 AD-151 補的維運入口真的跑得起來
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
+from ensure_client_setting_schema import run_ensure  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 from sqlalchemy.exc import IntegrityError  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine  # noqa: E402
@@ -130,6 +137,16 @@ async def test_ensure_is_idempotent(target_engine: AsyncEngine) -> None:
     for _ in range(2):
         async with target_engine.begin() as conn:
             await ensure_client_setting_schema(conn)
+
+
+async def test_maintenance_script_entrypoint_builds_all_tables() -> None:
+    """AD-151:`scripts/ensure_client_setting_schema.py` 的入口自建連線可建齊 12 表。
+
+    正式環境唯一的建置入口(部署 runbook 上站前跑一次);重跑冪等。
+    """
+    for _ in range(2):
+        tables = await run_ensure()
+        assert set(CLIENT_SETTING_TABLES).issubset(set(tables))
 
 
 async def test_all_tables_created(prepared_engine: AsyncEngine) -> None:

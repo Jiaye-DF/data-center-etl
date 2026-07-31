@@ -572,6 +572,50 @@ async def test_concrete_grant_passes_wildcard_scope(
     }
 
 
+async def test_wildcard_and_named_columns_converge_to_higher_action(
+    repo: ClientSettingRepository,
+    session: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """AD-155:同表 `*` 與具名欄位並存時,只保留動作**高於** `*` 的具名欄位。
+
+    `*` read + C11 edit → C11 是更高權限的覆寫,保留;`*` read + C12 read 無額外資訊,
+    收斂進 `*`;`*` edit 之下任何具名欄位都不可能更高,一律省略。
+    """
+    client_uid = await _create_client_row(session_factory)
+    service = await repo.create_service(code=_uniq("erp"), name="ERP", actor_uid=ACTOR_UID)
+    operation = await repo.create_operation(
+        service_pid=service.pid, name="O1", actor_uid=ACTOR_UID
+    )
+    await repo.replace_operation_items(
+        operation.pid,
+        [ScopeItem("T1", ALL_COLUMNS), ScopeItem("T2", ALL_COLUMNS)],
+        actor_uid=ACTOR_UID,
+    )
+    await _assign_profile(
+        repo,
+        client_uid,
+        operation_pids=[operation.pid],
+        items={
+            operation.pid: [
+                PermissionItem("T1", ALL_COLUMNS, ACTION_READ),
+                PermissionItem("T1", "C11", ACTION_EDIT),
+                PermissionItem("T1", "C12", ACTION_READ),
+                PermissionItem("T2", ALL_COLUMNS, ACTION_EDIT),
+                PermissionItem("T2", "C21", ACTION_READ),
+            ]
+        },
+    )
+    await session.commit()
+
+    assert await _preview(session_factory, client_uid) == {
+        "O1": {
+            "T1": {ALL_COLUMNS: ACTION_READ, "C11": ACTION_EDIT},
+            "T2": {ALL_COLUMNS: ACTION_EDIT},
+        }
+    }
+
+
 # ── 特例權限:效期與聯集 ────────────────────────────────────────────────
 async def test_expired_exception_excluded_and_active_included(
     repo: ClientSettingRepository,

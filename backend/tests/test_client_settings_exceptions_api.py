@@ -356,6 +356,27 @@ def _role_path(client_uid: str) -> str:
     return f"{_CLIENTS}/{client_uid}/role"
 
 
+async def _grant_row_states(
+    db_engine: AsyncEngine, table: str, client_uid: str
+) -> list[bool]:
+    """該 Client 在 RDS 某張指派 / 綁定表上的全部列的 `is_deleted`(繞過 API 直查真身)。"""
+    async with db_engine.connect() as conn:
+        rows = (
+            (
+                await conn.execute(
+                    text(
+                        f"SELECT is_deleted FROM {CLIENT_SETTING_SCHEMA}.{table}"
+                        " WHERE api_client_uid = :uid ORDER BY pid"
+                    ),
+                    {"uid": client_uid},
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return [bool(row) for row in rows]
+
+
 async def _audit_details(db_engine: AsyncEngine, action: str, target_uid: str) -> list[str]:
     async with db_engine.connect() as conn:
         rows = (
@@ -899,6 +920,114 @@ async def test_exception_set_delete_blocked_while_active_binding(
     assert {str(i["exception_set_uid"]) for i in await _bindings(client, client_uid)} == {
         active_set["uid"]
     }
+
+
+async def test_exception_set_delete_soft_deletes_leftover_bindings(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    db_engine: AsyncEngine,
+    tag: str,
+) -> None:
+    """AD-156:特例組軟刪時,其殘留(已過期)綁定一併軟刪,不留看不到又解不掉的殭屍列。"""
+    await _login_as(client, session_factory, "admin")
+    client_uid = await _create_api_client(session_factory)
+    expired_set = await _create_exception_set(client, f"E-{tag}-expired")
+
+    bound = await client.post(
+        _bindings_path(client_uid),
+        json={"exception_set_uid": expired_set["uid"], "expires_at": _PAST},
+    )
+    assert bound.status_code == 201, bound.text
+    assert await _grant_row_states(db_engine, "client_exception_sets", client_uid) == [False]
+
+    assert (await client.delete(f"{_EXCEPTION_SETS}/{expired_set['uid']}")).status_code == 200
+    assert await _grant_row_states(db_engine, "client_exception_sets", client_uid) == [True]
+
+
+# ── 註銷連動(AD-152)────────────────────────────────────────────────────
+async def test_api_client_delete_clears_rds_grants_and_frees_role_and_set(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    db_engine: AsyncEngine,
+    tag: str,
+) -> None:
+    """註銷 API Client → RDS 指派 / 綁定同步軟刪、快取失效,Role 與特例組因而刪得掉。"""
+    await _login_as(client, session_factory, "admin")
+    client_uid = await _create_api_client(session_factory)
+    unrelated_uid = str(uuid4())
+    role = await _create_role(client, tag, "a")
+    exception_set = await _create_exception_set(client, f"E-{tag}")
+
+    assert (
+        await client.put(_role_path(client_uid), json={"role_uid": role["uid"]})
+    ).status_code == 200
+    bound = await client.post(
+        _bindings_path(client_uid), json={"exception_set_uid": exception_set["uid"]}
+    )
+    assert bound.status_code == 201, bound.text
+    # 註銷前:Role 被指派、特例組被未過期綁定引用 → 兩者都刪不掉
+    assert (await client.delete(f"{_ROLES}/{role['uid']}")).status_code == 409
+    assert (await client.delete(f"{_EXCEPTION_SETS}/{exception_set['uid']}")).status_code == 409
+
+    for uid in (client_uid, unrelated_uid):
+        await cache.cache_set(effective_key(uid), "{}", ttl_seconds=300)
+
+    deleted = await client.delete(f"/api/v1/api-clients/{client_uid}")
+    assert deleted.status_code == 200, deleted.text
+
+    # RDS 兩表該 Client 的列皆已軟刪(直查真身,不經 API 過濾)
+    assert await _grant_row_states(db_engine, "client_roles", client_uid) == [True]
+    assert await _grant_row_states(db_engine, "client_exception_sets", client_uid) == [True]
+    # 該 Client 的最終權限快取已失效,其他 Client 不受影響
+    assert await cache.cache_get(effective_key(client_uid)) is None
+    assert await cache.cache_get(effective_key(unrelated_uid)) is not None
+    # 孤兒清乾淨 → 不再是「UI 說請先解除指派、清單裡卻沒有 Client 可解」的死路
+    assert (await client.delete(f"{_ROLES}/{role['uid']}")).status_code == 200
+    assert (await client.delete(f"{_EXCEPTION_SETS}/{exception_set['uid']}")).status_code == 200
+
+
+async def test_release_paths_still_work_for_soft_deleted_client(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    db_engine: AsyncEngine,
+    tag: str,
+) -> None:
+    """AD-152(b):Client 已軟刪(例:舊資料無連動清理)時,解除指派 / 解綁仍須放行。
+
+    新增路徑(指派 / 綁定)的存在性防呆不受影響,仍為 404。
+    """
+    await _login_as(client, session_factory, "admin")
+    client_uid = await _create_api_client(session_factory)
+    role = await _create_role(client, tag, "a")
+    exception_set = await _create_exception_set(client, f"E-{tag}")
+
+    assert (
+        await client.put(_role_path(client_uid), json={"role_uid": role["uid"]})
+    ).status_code == 200
+    bound = await client.post(
+        _bindings_path(client_uid), json={"exception_set_uid": exception_set["uid"]}
+    )
+    assert bound.status_code == 201, bound.text
+    binding_uid = str(bound.json()["data"]["uid"])
+
+    # 繞過 service 直接軟刪 → RDS 側的指派 / 綁定成為孤兒
+    await _soft_delete_api_client(db_engine, client_uid)
+
+    assert (await client.delete(_role_path(client_uid))).status_code == 200
+    unbound = await client.delete(f"{_bindings_path(client_uid)}/{binding_uid}")
+    assert unbound.status_code == 200, unbound.text
+    assert await _grant_row_states(db_engine, "client_roles", client_uid) == [True]
+    assert await _grant_row_states(db_engine, "client_exception_sets", client_uid) == [True]
+
+    # 新增路徑仍擋(已註銷的 Client 不得再被授權)
+    assert (
+        await client.put(_role_path(client_uid), json={"role_uid": role["uid"]})
+    ).status_code == 404
+    assert (
+        await client.post(
+            _bindings_path(client_uid), json={"exception_set_uid": exception_set["uid"]}
+        )
+    ).status_code == 404
 
 
 # ── 失效扇出 ────────────────────────────────────────────────────────────

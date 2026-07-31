@@ -33,6 +33,7 @@ os.environ.setdefault("INIT_ADMIN_USERNAME", "init-admin")
 os.environ.setdefault("INIT_ADMIN_PASSWORD", "init-admin-password-for-test")
 
 from collections.abc import AsyncIterator  # noqa: E402
+from uuid import uuid4  # noqa: E402
 
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
@@ -53,8 +54,13 @@ from app.core import redis as cache  # noqa: E402
 from app.core.db import Base  # noqa: E402
 from app.core.security import hash_password_async  # noqa: E402
 from app.etl import introspect  # noqa: E402
+from app.etl.client_setting_schema import ensure_client_setting_schema  # noqa: E402
 from app.etl.semantic_schema import ensure_semantic_schema  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.models.client_setting import (  # noqa: E402
+    CLIENT_SETTING_SCHEMA,
+    CLIENT_SETTING_TABLES,
+)
 from app.repositories.user_repo import UserRepository  # noqa: E402
 from app.worker import tasks  # noqa: E402
 
@@ -64,7 +70,8 @@ _BASE_PATH = "/api/v1/semantic-mappings"
 # ── fixtures(對齊 test_snapshot_refresh_progress.py 慣例)──────────────
 @pytest.fixture(scope="session", autouse=True)
 def _prepare_test_db() -> None:
-    """建立測試 DB(不存在才建)+ metadata 建 schema + erp_metadata 語意表;不做任何 DROP。"""
+    """建立測試 DB(不存在才建)+ metadata 建 schema + erp_metadata 語意表 + client_setting
+    權限表(english_name 改名的下游引用檢核要查它);全為冪等 DDL,不做任何 DROP。"""
 
     async def _prepare() -> None:
         admin_engine = create_async_engine(
@@ -88,6 +95,7 @@ def _prepare_test_db() -> None:
             async with test_engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
                 await ensure_semantic_schema(conn)
+                await ensure_client_setting_schema(conn)
         finally:
             await test_engine.dispose()
 
@@ -110,6 +118,8 @@ async def _clean_tables(db_engine: AsyncEngine) -> None:
         await conn.execute(text("DELETE FROM semantic_mappings"))  # 自有 DB 本地副本
         await conn.execute(text("DELETE FROM users"))
         await conn.execute(text("DELETE FROM audit_logs"))  # 稽核斷言決定性(AD-123)
+        for table in reversed(CLIENT_SETTING_TABLES):  # 引用檢核用的權限列(禁 DROP)
+            await conn.execute(text(f"DELETE FROM {CLIENT_SETTING_SCHEMA}.{table}"))
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -199,6 +209,41 @@ async def _seed_rows(db_engine: AsyncEngine) -> None:
                 ),
                 {"t": t, "c": c, "e": e, "z": z, "s": s},
             )
+
+
+async def _seed_operation_scope(
+    db_engine: AsyncEngine, table_name: str, column_name: str
+) -> None:
+    """在 RDS `client_setting` 種一筆作業範圍項,模擬「該英文名已被權限設定引用」。
+
+    授權以英文名純字串儲存、與語意映射無 FK(AD-154)→ 改名檢核只能靠反查這三張 items 表。
+    """
+    async with db_engine.begin() as conn:
+        service_pid = (
+            await conn.execute(
+                text(
+                    f"INSERT INTO {CLIENT_SETTING_SCHEMA}.services (code, name)"
+                    " VALUES (:code, :name) RETURNING pid"
+                ),
+                {"code": f"svc_{uuid4().hex[:8]}", "name": "引用測試服務"},
+            )
+        ).scalar_one()
+        operation_pid = (
+            await conn.execute(
+                text(
+                    f"INSERT INTO {CLIENT_SETTING_SCHEMA}.operations (service_pid, name)"
+                    " VALUES (:s, :n) RETURNING pid"
+                ),
+                {"s": service_pid, "n": f"O-{uuid4().hex[:6]}"},
+            )
+        ).scalar_one()
+        await conn.execute(
+            text(
+                f"INSERT INTO {CLIENT_SETTING_SCHEMA}.operation_items"
+                " (operation_pid, table_name, column_name) VALUES (:o, :t, :c)"
+            ),
+            {"o": operation_pid, "t": table_name, "c": column_name},
+        )
 
 
 # ── 列表 / 篩選 ─────────────────────────────────────────────────────────
@@ -330,6 +375,113 @@ async def test_patch_without_updatable_fields_returns_422(
         _BASE_PATH, json={"table_name": "BMA_FILE", "column_name": "BMA002"}
     )
     assert resp.status_code == 422, resp.text
+
+
+# ── english_name 改名防護(v1.6.1 fixed AD-154 + AD-150)────────────────
+async def test_patch_english_name_blocked_when_referenced_by_grant(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    db_engine: AsyncEngine,
+) -> None:
+    """confirmed 列的英文名已被權限設定引用 → 409(改名會靜默作廢 / 錯接既有授權)。"""
+    await _login_as(client, session_factory, "admin")
+    await _seed_rows(db_engine)
+    # 表層級英文名 bma_file 被授權引用(`*` 代表全欄位,不指名欄位)
+    await _seed_operation_scope(db_engine, "bma_file", "*")
+
+    blocked = await client.patch(
+        _BASE_PATH,
+        json={"table_name": "BMA_FILE", "column_name": "", "english_name": "renamed_file"},
+    )
+    assert blocked.status_code == 409, blocked.text
+    assert "權限設定引用" in str(blocked.json()["detail"])
+
+    # 未被引用的欄位仍可改名(引用檢核只擋真正有下游授權的名字)
+    allowed = await client.patch(
+        _BASE_PATH,
+        json={
+            "table_name": "BMA_FILE",
+            "column_name": "BMA001",
+            "english_name": "part_no",
+        },
+    )
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["data"]["english_name"] == "part_no"
+
+
+async def test_patch_column_english_name_blocked_when_referenced_by_grant(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    db_engine: AsyncEngine,
+) -> None:
+    """欄位級改名以 (表英文名, 欄位英文名) 反查引用 → 命中即 409。"""
+    await _login_as(client, session_factory, "admin")
+    await _seed_rows(db_engine)
+    await _seed_operation_scope(db_engine, "bma_file", "part_number")
+
+    blocked = await client.patch(
+        _BASE_PATH,
+        json={
+            "table_name": "BMA_FILE",
+            "column_name": "BMA001",
+            "english_name": "part_no",
+        },
+    )
+    assert blocked.status_code == 409, blocked.text
+
+    # 同表另一欄未被引用 → 放行(且該列為 draft,本就不可能被授權)
+    allowed = await client.patch(
+        _BASE_PATH,
+        json={
+            "table_name": "BMA_FILE",
+            "column_name": "BMA002",
+            "english_name": "part_desc",
+        },
+    )
+    assert allowed.status_code == 200, allowed.text
+
+
+async def test_patch_english_name_rejects_duplicates(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    db_engine: AsyncEngine,
+) -> None:
+    """AD-150:表層級英文名全域唯一、欄位英文名同表唯一,撞名一律 409。"""
+    await _login_as(client, session_factory, "admin")
+    await _seed_rows(db_engine)
+
+    # 表層級:改成另一張表已用的表英文名
+    resp = await client.patch(
+        _BASE_PATH,
+        json={
+            "table_name": "BMA_FILE",
+            "column_name": "",
+            "english_name": "voucher_type_config",
+        },
+    )
+    assert resp.status_code == 409, resp.text
+
+    # 欄位級:改成同表另一欄已用的英文名
+    resp = await client.patch(
+        _BASE_PATH,
+        json={
+            "table_name": "BMA_FILE",
+            "column_name": "BMA002",
+            "english_name": "part_number",
+        },
+    )
+    assert resp.status_code == 409, resp.text
+
+    # 跨表同名欄位合法(對外 key 是 表.欄位)
+    resp = await client.patch(
+        _BASE_PATH,
+        json={
+            "table_name": "GAT06",
+            "column_name": "GAT061",
+            "english_name": "part_number",
+        },
+    )
+    assert resp.status_code == 200, resp.text
 
 
 # ── confirm-table ───────────────────────────────────────────────────────

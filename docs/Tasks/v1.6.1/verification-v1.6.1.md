@@ -149,7 +149,13 @@
 
 ## 7. 殘留事項
 
-1. **`ensure_client_setting_schema_on_target()` 尚無正式呼叫端**(task-001 既有記錄,本次收口再次確認):目前僅測試檔呼叫;本次為完成 (1) 節建表驗收,已對真實 RDS(`erp_etl_hub_test`)執行一次冪等建置(`CREATE SCHEMA/TABLE IF NOT EXISTS`,無 DROP),12 表已存在於該 RDS。**正式環境(staging/production)的 RDS 建表仍屬部署動作**,尚無自動觸發點(如啟動 hook / 部署腳本),需後續版本補上正式呼叫端或部署 runbook 註記,否則新環境的 backend 啟動後管理頁會因 schema 不存在而 500。
+1. ~~**`ensure_client_setting_schema_on_target()` 尚無正式呼叫端**~~ → **已補 script(scan AD-151 修畢)**:新增 `backend/scripts/ensure_client_setting_schema.py`(結構比照 `scripts/seed_semantic_mappings.py`:`asyncio.run` + 呼叫 `ensure_client_setting_schema_on_target()`,並輸出建置後的表清單與缺表警示)。**部署 runbook:上站前(含測試站 / 正式站)對目標 RDS 跑一次**
+
+   ```
+   cd backend && uv run python scripts/ensure_client_setting_schema.py
+   ```
+
+   內部全為 `CREATE SCHEMA / TABLE / INDEX IF NOT EXISTS`(冪等、無任何 DROP),重跑安全;需 `AWS_RDS_HOST/PORT/USER/PASSWORD/AWS_RDS_TARGET_DB` env。此入口另有測試覆蓋(`test_client_setting_schema.py::test_maintenance_script_entrypoint_builds_all_tables`,兼驗重跑冪等)。原記錄之真實 RDS(`erp_etl_hub_test`)12 表已存在,不受影響。
 2. **前端 UI 人工複測**(待辦,環境受限無瀏覽器自動化):
    - task-009 矩陣 UI 全流程操作(勾選作業 / 授權矩陣即選即用 / 範圍縮小殘留項提示)、409 錯誤顯示樣式。
    - task-010 API Client 頁權限對話框:Role 指派即時反映、特例效期 datetime-local 輸入、解除 Role 後預覽變空、解除特例後預覽變窄。
