@@ -5,7 +5,7 @@ import { unwrap, type ApiEnvelope } from '@/types/api'
  * 組織權限管理 API 層(v1.6.1 task-008)。
  *
  * 對應後端 `/api/v1/client-settings` 前綴(admin-only,見 `backend/app/api/v1/client_settings.py`):
- * 系統別 → 作業(表 × 欄位範圍)→ 權限設定檔(勾作業 + 授權矩陣)→ Role(綁 1 設定檔);
+ * 服務 → 作業(表 × 欄位範圍)→ 權限設定檔(勾作業 + 授權矩陣)→ Role(綁 1 設定檔);
  * 特例權限組(task-006)結構與設定檔對稱,獨立可重用、可綁多個 API Client。
  *
  * **不含**:API Client 的 Role 指派 / 特例綁定 / 最終權限預覽(`effective-permissions`)
@@ -36,7 +36,7 @@ export interface ListData<T> {
 }
 
 /* ---------------------------------------------------------------------- */
-/* 系統別 services                                                          */
+/* 服務 services                                                          */
 /* ---------------------------------------------------------------------- */
 
 export interface ClientSettingService {
@@ -277,7 +277,7 @@ export const clientSettingApi = baseApi
   })
   .injectEndpoints({
     endpoints: (build) => ({
-      // ── 系統別 ──────────────────────────────────────────────────────
+      // ── 服務 ──────────────────────────────────────────────────────
       listServices: build.query<ClientSettingServiceListData, void>({
         query: () => ({ url: '/client-settings/services' }),
         providesTags: [{ type: 'ClientSettingService', id: 'LIST' }],

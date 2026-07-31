@@ -197,8 +197,8 @@ async def client(
 
 @pytest.fixture
 def tag() -> str:
-    """本測試專屬前綴:避免與並行測試 / 殘留資料撞唯一鍵。"""
-    return uuid4().hex[:8]
+    """本測試專屬前綴:避免與並行測試 / 殘留資料撞唯一鍵(轉純小寫字母,服務代碼僅允許 a-z 與底線)。"""
+    return uuid4().hex[:8].translate(str.maketrans("0123456789", "ghijklmnop"))
 
 
 # ── helpers ─────────────────────────────────────────────────────────────
@@ -263,7 +263,7 @@ async def _seed_semantic(db_engine: AsyncEngine, tag: str) -> dict[str, str]:
 async def _create_service(client: AsyncClient, tag: str, suffix: str = "") -> dict[str, str]:
     resp = await client.post(
         _SERVICES,
-        json={"code": f"svc-{tag}{suffix}", "name": f"系統別 {tag}{suffix}", "description": "測試"},
+        json={"code": f"svc_{tag}{suffix}", "name": f"系統別 {tag}{suffix}", "description": "測試"},
     )
     assert resp.status_code == 201, resp.text
     data: dict[str, str] = resp.json()["data"]
@@ -336,12 +336,12 @@ async def test_service_crud_round_trip(
     await _login_as(client, session_factory, "admin")
     created = await _create_service(client, tag)
     uid = created["uid"]
-    assert created["code"] == f"svc-{tag}"
+    assert created["code"] == f"svc_{tag}"
     assert UUID(uid)
 
     listed = await client.get(_SERVICES)
     assert listed.status_code == 200, listed.text
-    assert f"svc-{tag}" in _codes(listed)
+    assert f"svc_{tag}" in _codes(listed)
 
     patched = await client.patch(f"{_SERVICES}/{uid}", json={"name": "改名後"})
     assert patched.status_code == 200, patched.text
@@ -350,12 +350,12 @@ async def test_service_crud_round_trip(
     # 寫入後清單即讀到新值(快取已失效)
     listed = await client.get(_SERVICES)
     names = {i["code"]: i["name"] for i in listed.json()["data"]["items"]}
-    assert names[f"svc-{tag}"] == "改名後"
+    assert names[f"svc_{tag}"] == "改名後"
 
     deleted = await client.delete(f"{_SERVICES}/{uid}")
     assert deleted.status_code == 200, deleted.text
     listed = await client.get(_SERVICES)
-    assert f"svc-{tag}" not in _codes(listed)
+    assert f"svc_{tag}" not in _codes(listed)
 
     for action in (
         "client_setting.service_create",
@@ -370,7 +370,7 @@ async def test_service_code_must_be_unique(
 ) -> None:
     await _login_as(client, session_factory, "admin")
     await _create_service(client, tag)
-    resp = await client.post(_SERVICES, json={"code": f"svc-{tag}", "name": "重複"})
+    resp = await client.post(_SERVICES, json={"code": f"svc_{tag}", "name": "重複"})
     assert resp.status_code == 409, resp.text
 
 
@@ -384,7 +384,7 @@ async def test_service_code_is_not_patchable(
         f"{_SERVICES}/{created['uid']}", json={"code": "hacked", "name": "新名"}
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["code"] == f"svc-{tag}"
+    assert resp.json()["data"]["code"] == f"svc_{tag}"
     assert resp.json()["data"]["name"] == "新名"
 
 
@@ -405,7 +405,7 @@ async def test_service_delete_blocked_while_operations_exist(
 
     blocked = await client.delete(f"{_SERVICES}/{service['uid']}")
     assert blocked.status_code == 409, blocked.text
-    assert f"svc-{tag}" in _codes(await client.get(_SERVICES))
+    assert f"svc_{tag}" in _codes(await client.get(_SERVICES))
 
     assert (await client.delete(f"{_OPERATIONS}/{operation['uid']}")).status_code == 200
     assert (await client.delete(f"{_SERVICES}/{service['uid']}")).status_code == 200
@@ -664,17 +664,17 @@ async def test_service_list_uses_cache_until_write_invalidates(
     await _create_service(client, tag, suffix="a")
 
     # 第一次讀取回源並回填
-    assert f"svc-{tag}a" in _codes(await client.get(_SERVICES))
+    assert f"svc_{tag}a" in _codes(await client.get(_SERVICES))
 
     # 繞過 API 直改 RDS(模擬他機寫入):快取未失效 → 仍讀到舊值
     async with client_setting_session() as session:
         await ClientSettingRepository(session).create_service(
-            code=f"svc-{tag}b", name="繞過 API", actor_uid=ACTOR_UID
+            code=f"svc_{tag}b", name="繞過 API", actor_uid=ACTOR_UID
         )
         await session.commit()
-    assert f"svc-{tag}b" not in _codes(await client.get(_SERVICES))
+    assert f"svc_{tag}b" not in _codes(await client.get(_SERVICES))
 
     # 經 API 寫入 → 失效扇出 → 兩筆皆讀得到
     await _create_service(client, tag, suffix="c")
     codes = _codes(await client.get(_SERVICES))
-    assert {f"svc-{tag}a", f"svc-{tag}b", f"svc-{tag}c"} <= codes
+    assert {f"svc_{tag}a", f"svc_{tag}b", f"svc_{tag}c"} <= codes

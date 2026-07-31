@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, memo, useCallback, useMemo, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { skipToken } from '@reduxjs/toolkit/query'
 import {
   useCreateClientSettingRoleMutation,
@@ -64,8 +64,13 @@ const CONFIRMED_MAPPING_HINT =
 const ALL_COLUMNS = '*'
 /** 複合鍵分隔字元(不可能出現在表 / 欄位英文名內) */
 const KEY_SEP = '::'
-/** 單表欄位選項一次撈完的上限(語意映射為單表欄位數,遠低於此) */
-const COLUMN_PAGE_SIZE = 500
+/** 單表欄位選項一次撈完的上限;**必**對齊後端 `page_size` 的 `le=200`(超出即 422) */
+const COLUMN_PAGE_SIZE = 200
+
+/** 服務代碼白名單(對齊後端 `SERVICE_CODE_PATTERN`):小寫字母開頭,僅小寫英文與底線 */
+const SERVICE_CODE_RE = /^[a-z][a-z_]*$/
+const SERVICE_CODE_HINT = '僅限英文小寫與底線、小寫字母開頭(URL 允許格式),建立後不可改'
+const SERVICE_CODE_ERROR = `服務代碼格式不符:${SERVICE_CODE_HINT}`
 
 const CHECKBOX_CLASS = 'h-5 w-5 accent-[rgb(var(--primary))]'
 
@@ -78,7 +83,7 @@ const ACTION_LABELS: Record<PermissionAction, string> = {
 type TabKey = 'services' | 'profiles' | 'roles' | 'exceptions'
 
 const TAB_OPTIONS: ReadonlyArray<SegmentedOption<TabKey>> = [
-  { value: 'services', label: '系統別 / 作業' },
+  { value: 'services', label: '服務 / 作業' },
   { value: 'profiles', label: '設定檔' },
   { value: 'roles', label: 'Role' },
   { value: 'exceptions', label: '特例' },
@@ -245,20 +250,112 @@ function EditorActions({
   )
 }
 
-/** 名稱 + 說明(選填)建立表單;設定檔 / 特例組共用同一形狀 */
-interface NameDescriptionCreateFormProps {
-  submitting: boolean
-  submitLabel: string
-  nameLabel: string
-  onSubmit: (payload: { name: string; description: string | null }) => void
+/** 「新增」按鈕(各 section 卡片標題列右側,開啟對應建立對話框) */
+interface CreateButtonProps {
+  label: string
+  disabled?: boolean
+  onClick: () => void
 }
 
-function NameDescriptionCreateForm({
-  submitting,
+function CreateButton({ label, disabled = false, onClick }: CreateButtonProps): React.ReactNode {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} className="df-btn-primary">
+      {label}
+    </button>
+  )
+}
+
+/**
+ * 建立對話框外殼(遮罩 + df-card + Esc / 點遮罩關閉);沿用 api-clients 頁建立對話框版式。
+ *
+ * 只在開啟時掛載(由父層條件 render),故欄位 state 每次開啟都是乾淨的。
+ */
+interface FormDialogProps {
+  title: string
+  submitLabel: string
+  submitDisabled: boolean
+  errorMessage: string | null
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
+  onCancel: () => void
+  children: React.ReactNode
+}
+
+function FormDialog({
+  title,
   submitLabel,
-  nameLabel,
+  submitDisabled,
+  errorMessage,
   onSubmit,
-}: NameDescriptionCreateFormProps): React.ReactNode {
+  onCancel,
+  children,
+}: FormDialogProps): React.ReactNode {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button
+        type="button"
+        aria-label="關閉對話框"
+        onClick={onCancel}
+        className="absolute inset-0 cursor-default bg-black/40"
+      />
+      <form
+        onSubmit={onSubmit}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="df-card relative z-10 flex max-h-[90vh] w-full max-w-xl flex-col gap-4 overflow-y-auto p-6 md:p-8"
+      >
+        <h2 className="text-lg font-bold text-foreground md:text-xl">{title}</h2>
+        <InlineError message={errorMessage} />
+        {children}
+        <div className="mt-1 flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="df-btn-outline min-h-[52px] flex-1 border-2 text-base font-semibold md:text-lg"
+          >
+            取消
+          </button>
+          <button
+            type="submit"
+            disabled={submitDisabled}
+            className="df-btn-primary min-h-[52px] flex-1 text-base font-semibold md:text-lg"
+          >
+            {submitLabel}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+/** 名稱 + 說明(選填)建立對話框;作業 / 設定檔 / 特例組共用同一形狀 */
+interface NameDescriptionCreateDialogProps {
+  title: string
+  nameLabel: string
+  submitLabel: string
+  submitting: boolean
+  submitError: string | null
+  onSubmit: (payload: { name: string; description: string | null }) => void
+  onCancel: () => void
+}
+
+function NameDescriptionCreateDialog({
+  title,
+  nameLabel,
+  submitLabel,
+  submitting,
+  submitError,
+  onSubmit,
+  onCancel,
+}: NameDescriptionCreateDialogProps): React.ReactNode {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
 
@@ -284,7 +381,14 @@ function NameDescriptionCreateForm({
   )
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">
+    <FormDialog
+      title={title}
+      submitLabel={submitting ? '建立中…' : submitLabel}
+      submitDisabled={submitting || name.trim() === ''}
+      errorMessage={submitError}
+      onSubmit={handleSubmit}
+      onCancel={onCancel}
+    >
       <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
         {nameLabel}
         <input
@@ -304,14 +408,7 @@ function NameDescriptionCreateForm({
           className="df-input"
         />
       </label>
-      <button
-        type="submit"
-        disabled={submitting || name.trim() === ''}
-        className="df-btn-primary"
-      >
-        {submitLabel}
-      </button>
-    </form>
+    </FormDialog>
   )
 }
 
@@ -509,14 +606,19 @@ function OperationScopeEditor({ operation }: OperationScopeEditorProps): React.R
           },
     [selectedTable],
   )
-  const { data: columnData, isFetching: isColumnsFetching } =
-    useListSemanticMappingsQuery(columnQueryArg)
+  const {
+    data: columnData,
+    isFetching: isColumnsFetching,
+    isError: isColumnsError,
+  } = useListSemanticMappingsQuery(columnQueryArg)
 
-  // 表層級列(column_name = '')未 confirmed 的表沒有可用英文表名 → 後端一律視為不可授權
+  // 表層級列(column_name = '')未 confirmed 的表沒有可用英文表名 → 後端一律視為不可授權。
+  // 僅在「確實取得資料」時才成立;載入失敗不得被誤判為「尚未確認映射」
   const tableLevelConfirmed = useMemo(
     (): boolean => (columnData?.items ?? []).some((item) => item.column_name === ''),
     [columnData],
   )
+  const columnsLoaded = columnData !== undefined && !isColumnsError
 
   const columnOptions = useMemo((): ColumnOption[] => {
     const seen = new Set<string>()
@@ -615,13 +717,17 @@ function OperationScopeEditor({ operation }: OperationScopeEditorProps): React.R
             </select>
           </label>
 
-          {selectedTable !== null && !isColumnsFetching && !tableLevelConfirmed ? (
+          {selectedTable !== null && isColumnsError ? (
+            <InlineError message="載入欄位選項失敗,請稍後再試" />
+          ) : null}
+
+          {selectedTable !== null && columnsLoaded && !isColumnsFetching && !tableLevelConfirmed ? (
             <EmptyState
               message={`此表尚未確認「表層級」語意映射(表名英文對照),後端不接受授權。${CONFIRMED_MAPPING_HINT}`}
             />
           ) : null}
 
-          {selectedTable !== null && (tableLevelConfirmed || isColumnsFetching) ? (
+          {selectedTable !== null && !isColumnsError && (tableLevelConfirmed || isColumnsFetching) ? (
             <div className="flex flex-col gap-3 rounded-lg border border-border p-3 md:p-4">
               <p className="text-sm font-medium text-foreground md:text-base">
                 欄位(勾選即加入範圍)
@@ -639,7 +745,7 @@ function OperationScopeEditor({ operation }: OperationScopeEditorProps): React.R
                 <span className="font-medium">全欄位(*)</span>
                 <span className="text-muted-foreground">— 該表所有欄位一次開放</span>
               </label>
-              {columnOptions.length === 0 && !isColumnsFetching ? (
+              {columnOptions.length === 0 && columnsLoaded && !isColumnsFetching ? (
                 <EmptyState message={`此表尚無已確認的欄位映射。${CONFIRMED_MAPPING_HINT}`} />
               ) : (
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -716,23 +822,31 @@ function OperationScopeEditor({ operation }: OperationScopeEditorProps): React.R
 }
 
 /* ---------------------------------------------------------------------- */
-/* 系統別 / 作業                                                            */
+/* 服務 / 作業                                                              */
 /* ---------------------------------------------------------------------- */
 
-interface ServiceCreateFormProps {
+interface ServiceCreateDialogProps {
   submitting: boolean
+  submitError: string | null
   onSubmit: (payload: CreateClientSettingServicePayload) => void
+  onCancel: () => void
 }
 
-function ServiceCreateForm({ submitting, onSubmit }: ServiceCreateFormProps): React.ReactNode {
+function ServiceCreateDialog({
+  submitting,
+  submitError,
+  onSubmit,
+  onCancel,
+}: ServiceCreateDialogProps): React.ReactNode {
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [codeError, setCodeError] = useState<string | null>(null)
 
-  const handleCodeChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>): void => setCode(event.target.value),
-    [],
-  )
+  const handleCodeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>): void => {
+    setCode(event.target.value)
+    setCodeError(null)
+  }, [])
   const handleNameChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>): void => setName(event.target.value),
     [],
@@ -747,6 +861,11 @@ function ServiceCreateForm({ submitting, onSubmit }: ServiceCreateFormProps): Re
       const trimmedCode = code.trim()
       const trimmedName = name.trim()
       if (trimmedCode === '' || trimmedName === '') return
+      if (!SERVICE_CODE_RE.test(trimmedCode)) {
+        setCodeError(SERVICE_CODE_ERROR)
+        return
+      }
+      setCodeError(null)
       onSubmit({
         code: trimmedCode,
         name: trimmedName,
@@ -757,19 +876,30 @@ function ServiceCreateForm({ submitting, onSubmit }: ServiceCreateFormProps): Re
   )
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">
+    <FormDialog
+      title="新增服務"
+      submitLabel={submitting ? '建立中…' : '建立服務'}
+      submitDisabled={submitting || code.trim() === '' || name.trim() === ''}
+      errorMessage={submitError}
+      onSubmit={handleSubmit}
+      onCancel={onCancel}
+    >
       <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-        代碼(erp / crm…;建立後不可改)
+        服務代碼
         <input
           type="text"
           value={code}
           onChange={handleCodeChange}
+          placeholder="例 erp / crm / hrm"
           required
+          aria-invalid={codeError !== null}
           className="df-input font-mono"
         />
+        <span className="text-sm font-normal text-muted-foreground">{SERVICE_CODE_HINT}</span>
       </label>
+      <InlineError message={codeError} />
       <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-        名稱
+        顯示名稱
         <input
           type="text"
           value={name}
@@ -787,14 +917,7 @@ function ServiceCreateForm({ submitting, onSubmit }: ServiceCreateFormProps): Re
           className="df-input"
         />
       </label>
-      <button
-        type="submit"
-        disabled={submitting || code.trim() === '' || name.trim() === ''}
-        className="df-btn-primary"
-      >
-        新增系統別
-      </button>
-    </form>
+    </FormDialog>
   )
 }
 
@@ -813,13 +936,13 @@ const ServiceTable = memo(function ServiceTable({
   onSelect,
   onDelete,
 }: ServiceTableProps): React.ReactNode {
-  if (items.length === 0) return <EmptyState message="尚無系統別" />
+  if (items.length === 0) return <EmptyState message="尚無服務" />
   return (
     <table className="df-table min-w-[720px]">
       <thead>
         <tr className="border-b border-border bg-muted/50">
           <th className="df-th">代碼</th>
-          <th className="df-th">名稱</th>
+          <th className="df-th">顯示名稱</th>
           <th className="df-th">說明</th>
           <th className="df-th">操作</th>
         </tr>
@@ -929,17 +1052,17 @@ const OperationTable = memo(function OperationTable({
 function ServicesOperationsSection(): React.ReactNode {
   const [selectedService, setSelectedService] = useState<ClientSettingService | null>(null)
   const [selectedOperation, setSelectedOperation] = useState<ClientSettingOperation | null>(null)
+  const [serviceCreateOpen, setServiceCreateOpen] = useState(false)
   const [serviceCreateError, setServiceCreateError] = useState<string | null>(null)
   const [serviceDeleteTarget, setServiceDeleteTarget] = useState<ClientSettingService | null>(
     null,
   )
   const [serviceDeleteError, setServiceDeleteError] = useState<string | null>(null)
+  const [operationCreateOpen, setOperationCreateOpen] = useState(false)
   const [operationCreateError, setOperationCreateError] = useState<string | null>(null)
   const [operationDeleteTarget, setOperationDeleteTarget] =
     useState<ClientSettingOperation | null>(null)
   const [operationDeleteError, setOperationDeleteError] = useState<string | null>(null)
-  const [operationName, setOperationName] = useState('')
-  const [operationDescription, setOperationDescription] = useState('')
 
   const {
     data: serviceData,
@@ -963,7 +1086,7 @@ function ServicesOperationsSection(): React.ReactNode {
     [operationData],
   )
 
-  // 作業清單換了(切系統別 / 刪除)後,已選作業可能不在清單內 → 收起範圍編輯區
+  // 作業清單換了(切服務 / 刪除)後,已選作業可能不在清單內 → 收起範圍編輯區
   if (
     selectedOperation !== null &&
     operationData !== undefined &&
@@ -977,13 +1100,20 @@ function ServicesOperationsSection(): React.ReactNode {
     setSelectedOperation(null)
   }, [])
 
+  const openServiceCreate = useCallback((): void => {
+    setServiceCreateError(null)
+    setServiceCreateOpen(true)
+  }, [])
+  const cancelServiceCreate = useCallback((): void => setServiceCreateOpen(false), [])
   const handleCreateService = useCallback(
     async (payload: CreateClientSettingServicePayload): Promise<void> => {
       setServiceCreateError(null)
       const result = await createService(payload)
       if ('error' in result) {
-        setServiceCreateError(extractApiErrorDetail(result.error, '建立系統別失敗,請稍後再試'))
+        setServiceCreateError(extractApiErrorDetail(result.error, '建立服務失敗,請稍後再試'))
+        return
       }
+      setServiceCreateOpen(false)
     },
     [createService],
   )
@@ -1000,7 +1130,7 @@ function ServicesOperationsSection(): React.ReactNode {
     const result = await deleteService(target.uid)
     setServiceDeleteTarget(null)
     if ('error' in result) {
-      setServiceDeleteError(extractApiErrorDetail(result.error, '刪除系統別失敗,請稍後再試'))
+      setServiceDeleteError(extractApiErrorDetail(result.error, '刪除服務失敗,請稍後再試'))
       return
     }
     if (selectedService?.uid === target.uid) {
@@ -1009,27 +1139,28 @@ function ServicesOperationsSection(): React.ReactNode {
     }
   }, [serviceDeleteTarget, deleteService, selectedService])
 
+  const openOperationCreate = useCallback((): void => {
+    setOperationCreateError(null)
+    setOperationCreateOpen(true)
+  }, [])
+  const cancelOperationCreate = useCallback((): void => setOperationCreateOpen(false), [])
   const handleCreateOperation = useCallback(
-    async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
-      event.preventDefault()
+    async (payload: { name: string; description: string | null }): Promise<void> => {
       if (selectedService === null) return
-      const trimmedName = operationName.trim()
-      if (trimmedName === '') return
       setOperationCreateError(null)
-      const payload: CreateClientSettingOperationPayload = {
+      const body: CreateClientSettingOperationPayload = {
         service_uid: selectedService.uid,
-        name: trimmedName,
-        description: operationDescription.trim() === '' ? null : operationDescription.trim(),
+        name: payload.name,
+        description: payload.description,
       }
-      const result = await createOperation(payload)
+      const result = await createOperation(body)
       if ('error' in result) {
         setOperationCreateError(extractApiErrorDetail(result.error, '建立作業失敗,請稍後再試'))
         return
       }
-      setOperationName('')
-      setOperationDescription('')
+      setOperationCreateOpen(false)
     },
-    [selectedService, operationName, operationDescription, createOperation],
+    [selectedService, createOperation],
   )
 
   const requestDeleteOperation = useCallback((operation: ClientSettingOperation): void => {
@@ -1050,13 +1181,14 @@ function ServicesOperationsSection(): React.ReactNode {
   return (
     <div className="flex flex-col gap-6">
       <div className="df-card flex flex-col gap-4 p-4 md:p-5">
-        <h2 className="text-base font-semibold text-foreground md:text-lg">系統別</h2>
-        <ServiceCreateForm submitting={isCreatingService} onSubmit={handleCreateService} />
-        <InlineError message={serviceCreateError} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-foreground md:text-lg">服務名稱</h2>
+          <CreateButton label="新增服務" onClick={openServiceCreate} />
+        </div>
         {isServicesLoading ? (
           <p className="text-sm text-muted-foreground md:text-base">載入中…</p>
         ) : null}
-        {isServicesError ? <InlineError message="載入系統別清單失敗,請稍後再試" /> : null}
+        {isServicesError ? <InlineError message="載入服務清單失敗,請稍後再試" /> : null}
         {serviceData !== undefined ? (
           <div className="overflow-x-auto">
             <ServiceTable
@@ -1071,43 +1203,21 @@ function ServicesOperationsSection(): React.ReactNode {
       </div>
 
       <div className="df-card flex flex-col gap-4 p-4 md:p-5">
-        <h2 className="text-base font-semibold text-foreground md:text-lg">
-          作業{selectedService !== null ? `(${selectedService.name})` : ''}
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-foreground md:text-lg">
+            作業{selectedService !== null ? `(${selectedService.name})` : ''}
+          </h2>
+          <CreateButton
+            label="新增作業"
+            disabled={selectedService === null}
+            onClick={openOperationCreate}
+          />
+        </div>
         <p className="text-sm text-muted-foreground md:text-base">{CONFIRMED_MAPPING_HINT}</p>
         {selectedService === null ? (
-          <EmptyState message="請先於上方選取一個系統別" />
+          <EmptyState message="請先於上方選取一個服務" />
         ) : (
           <>
-            <form onSubmit={handleCreateOperation} className="flex flex-wrap items-end gap-3">
-              <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-                作業名稱
-                <input
-                  type="text"
-                  value={operationName}
-                  onChange={(event) => setOperationName(event.target.value)}
-                  required
-                  className="df-input"
-                />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-                說明(選填)
-                <input
-                  type="text"
-                  value={operationDescription}
-                  onChange={(event) => setOperationDescription(event.target.value)}
-                  className="df-input"
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={isCreatingOperation || operationName.trim() === ''}
-                className="df-btn-primary"
-              >
-                新增作業
-              </button>
-            </form>
-            <InlineError message={operationCreateError} />
             {isOperationsLoading ? (
               <p className="text-sm text-muted-foreground md:text-base">載入中…</p>
             ) : null}
@@ -1133,16 +1243,37 @@ function ServicesOperationsSection(): React.ReactNode {
         <OperationScopeEditor key={selectedOperation.uid} operation={selectedOperation} />
       ) : null}
 
+      {serviceCreateOpen ? (
+        <ServiceCreateDialog
+          submitting={isCreatingService}
+          submitError={serviceCreateError}
+          onSubmit={handleCreateService}
+          onCancel={cancelServiceCreate}
+        />
+      ) : null}
+
+      {operationCreateOpen && selectedService !== null ? (
+        <NameDescriptionCreateDialog
+          title={`新增作業(${selectedService.name})`}
+          nameLabel="作業名稱"
+          submitLabel="建立作業"
+          submitting={isCreatingOperation}
+          submitError={operationCreateError}
+          onSubmit={handleCreateOperation}
+          onCancel={cancelOperationCreate}
+        />
+      ) : null}
+
       <ConfirmDialog
         open={serviceDeleteTarget !== null}
-        title="刪除系統別"
+        title="刪除服務"
         confirmLabel="確認刪除"
         tone="danger"
         confirmDisabled={isDeletingService}
         onConfirm={confirmDeleteService}
         onCancel={cancelDeleteService}
       >
-        {serviceDeleteTarget !== null ? <p>確定要刪除系統別「{serviceDeleteTarget.name}」?</p> : null}
+        {serviceDeleteTarget !== null ? <p>確定要刪除服務「{serviceDeleteTarget.name}」?</p> : null}
         <p>底下仍有作業時後端將拒絕刪除(409)。</p>
         <InlineError message={serviceDeleteError} />
       </ConfirmDialog>
@@ -1412,7 +1543,7 @@ function PermissionMatrixEditor({
   if (isScopeError) return <InlineError message="載入作業範圍失敗,請稍後再試" />
   if (groups.length === 0) {
     return (
-      <EmptyState message="此作業尚未設定範圍,請先至「系統別 / 作業」分頁設定表 × 欄位範圍" />
+      <EmptyState message="此作業尚未設定範圍,請先至「服務 / 作業」分頁設定表 × 欄位範圍" />
     )
   }
 
@@ -1498,7 +1629,7 @@ const OperationPicker = memo(function OperationPicker({
   onToggle,
 }: OperationPickerProps): React.ReactNode {
   if (groups.length === 0) {
-    return <EmptyState message="尚無作業,請先於「系統別 / 作業」分頁建立" />
+    return <EmptyState message="尚無作業,請先於「服務 / 作業」分頁建立" />
   }
   return (
     <div className="flex flex-col gap-4">
@@ -1595,7 +1726,7 @@ function PermissionSetEditor({
     for (const [serviceUid, groupOperations] of operationsByService) {
       out.push({
         serviceUid,
-        serviceName: serviceNameByUid.get(serviceUid) ?? '(未知系統別)',
+        serviceName: serviceNameByUid.get(serviceUid) ?? '(未知服務)',
         operations: [...groupOperations].sort((a, b) => a.name.localeCompare(b.name)),
       })
     }
@@ -1735,6 +1866,7 @@ function PermissionSetEditor({
 /* ---------------------------------------------------------------------- */
 
 function ProfilesSection(): React.ReactNode {
+  const [createOpen, setCreateOpen] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<PermissionProfile | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -1755,13 +1887,20 @@ function ProfilesSection(): React.ReactNode {
     setSelected(null)
   }
 
+  const openCreate = useCallback((): void => {
+    setCreateError(null)
+    setCreateOpen(true)
+  }, [])
+  const cancelCreate = useCallback((): void => setCreateOpen(false), [])
   const handleCreate = useCallback(
     async (payload: CreatePermissionProfilePayload): Promise<void> => {
       setCreateError(null)
       const result = await createPermissionProfile(payload)
       if ('error' in result) {
         setCreateError(extractApiErrorDetail(result.error, '建立設定檔失敗,請稍後再試'))
+        return
       }
+      setCreateOpen(false)
     },
     [createPermissionProfile],
   )
@@ -1784,17 +1923,13 @@ function ProfilesSection(): React.ReactNode {
   return (
     <div className="flex flex-col gap-6">
       <div className="df-card flex flex-col gap-4 p-4 md:p-5">
-        <h2 className="text-base font-semibold text-foreground md:text-lg">權限設定檔</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-foreground md:text-lg">權限設定檔</h2>
+          <CreateButton label="新增設定檔" onClick={openCreate} />
+        </div>
         <p className="text-sm text-muted-foreground md:text-base">
           選一列(或按「設定授權」)即可於下方勾選作業與設定逐表逐欄授權矩陣
         </p>
-        <NameDescriptionCreateForm
-          submitting={isCreating}
-          submitLabel="新增設定檔"
-          nameLabel="設定檔名稱"
-          onSubmit={handleCreate}
-        />
-        <InlineError message={createError} />
         {isLoading ? <p className="text-sm text-muted-foreground md:text-base">載入中…</p> : null}
         {isError ? <InlineError message="載入設定檔清單失敗,請稍後再試" /> : null}
         {data !== undefined ? (
@@ -1824,6 +1959,18 @@ function ProfilesSection(): React.ReactNode {
         </ConfirmDialog>
       </div>
 
+      {createOpen ? (
+        <NameDescriptionCreateDialog
+          title="新增權限設定檔"
+          nameLabel="設定檔名稱"
+          submitLabel="建立設定檔"
+          submitting={isCreating}
+          submitError={createError}
+          onSubmit={handleCreate}
+          onCancel={cancelCreate}
+        />
+      ) : null}
+
       {selected !== null ? (
         <PermissionSetEditor
           key={`profile-${selected.uid}`}
@@ -1840,13 +1987,21 @@ function ProfilesSection(): React.ReactNode {
 /* Role                                                                     */
 /* ---------------------------------------------------------------------- */
 
-interface RoleCreateFormProps {
+interface RoleCreateDialogProps {
   submitting: boolean
+  submitError: string | null
   profiles: PermissionProfile[]
   onSubmit: (payload: CreateClientSettingRolePayload) => void
+  onCancel: () => void
 }
 
-function RoleCreateForm({ submitting, profiles, onSubmit }: RoleCreateFormProps): React.ReactNode {
+function RoleCreateDialog({
+  submitting,
+  submitError,
+  profiles,
+  onSubmit,
+  onCancel,
+}: RoleCreateDialogProps): React.ReactNode {
   const [profileUid, setProfileUid] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -1866,7 +2021,14 @@ function RoleCreateForm({ submitting, profiles, onSubmit }: RoleCreateFormProps)
   )
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">
+    <FormDialog
+      title="新增 Role"
+      submitLabel={submitting ? '建立中…' : '建立 Role'}
+      submitDisabled={submitting || name.trim() === '' || profileUid === ''}
+      errorMessage={submitError}
+      onSubmit={handleSubmit}
+      onCancel={onCancel}
+    >
       <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
         綁定設定檔(必選)
         <select
@@ -1902,14 +2064,7 @@ function RoleCreateForm({ submitting, profiles, onSubmit }: RoleCreateFormProps)
           className="df-input"
         />
       </label>
-      <button
-        type="submit"
-        disabled={submitting || name.trim() === '' || profileUid === ''}
-        className="df-btn-primary"
-      >
-        新增 Role
-      </button>
-    </form>
+    </FormDialog>
   )
 }
 
@@ -1982,6 +2137,7 @@ const RoleTable = memo(function RoleTable({
 })
 
 function RolesSection(): React.ReactNode {
+  const [createOpen, setCreateOpen] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ClientSettingRole | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -1998,13 +2154,20 @@ function RolesSection(): React.ReactNode {
   const profiles = useMemo((): PermissionProfile[] => profileData?.items ?? [], [profileData])
   const items = useMemo((): ClientSettingRole[] => data?.items ?? [], [data])
 
+  const openCreate = useCallback((): void => {
+    setCreateError(null)
+    setCreateOpen(true)
+  }, [])
+  const cancelCreate = useCallback((): void => setCreateOpen(false), [])
   const handleCreate = useCallback(
     async (payload: CreateClientSettingRolePayload): Promise<void> => {
       setCreateError(null)
       const result = await createClientSettingRole(payload)
       if ('error' in result) {
         setCreateError(extractApiErrorDetail(result.error, '建立 Role 失敗,請稍後再試'))
+        return
       }
+      setCreateOpen(false)
     },
     [createClientSettingRole],
   )
@@ -2047,15 +2210,20 @@ function RolesSection(): React.ReactNode {
 
   return (
     <div className="df-card flex flex-col gap-4 p-4 md:p-5">
-      <h2 className="text-base font-semibold text-foreground md:text-lg">Role</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-semibold text-foreground md:text-lg">Role</h2>
+        <CreateButton
+          label="新增 Role"
+          disabled={profiles.length === 0}
+          onClick={openCreate}
+        />
+      </div>
       <p className="text-sm text-muted-foreground md:text-base">
         每個 Role 必綁 1 個權限設定檔(可改綁、不可清空);指派給使用者見「API Client 設定」頁
       </p>
       {profiles.length === 0 ? (
         <InlineError message="尚無權限設定檔,請先於「設定檔」分頁建立後再建 Role" />
       ) : null}
-      <RoleCreateForm submitting={isCreating} profiles={profiles} onSubmit={handleCreate} />
-      <InlineError message={createError} />
       {isLoading ? <p className="text-sm text-muted-foreground md:text-base">載入中…</p> : null}
       {isError ? <InlineError message="載入 Role 清單失敗,請稍後再試" /> : null}
       {data !== undefined ? (
@@ -2085,6 +2253,15 @@ function RolesSection(): React.ReactNode {
         <p>仍被使用者指派時後端將拒絕刪除(409)。</p>
         <InlineError message={deleteError} />
       </ConfirmDialog>
+      {createOpen ? (
+        <RoleCreateDialog
+          submitting={isCreating}
+          submitError={createError}
+          profiles={profiles}
+          onSubmit={handleCreate}
+          onCancel={cancelCreate}
+        />
+      ) : null}
     </div>
   )
 }
@@ -2094,6 +2271,7 @@ function RolesSection(): React.ReactNode {
 /* ---------------------------------------------------------------------- */
 
 function ExceptionSetsSection(): React.ReactNode {
+  const [createOpen, setCreateOpen] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ExceptionSet | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -2113,13 +2291,20 @@ function ExceptionSetsSection(): React.ReactNode {
     setSelected(null)
   }
 
+  const openCreate = useCallback((): void => {
+    setCreateError(null)
+    setCreateOpen(true)
+  }, [])
+  const cancelCreate = useCallback((): void => setCreateOpen(false), [])
   const handleCreate = useCallback(
     async (payload: CreateExceptionSetPayload): Promise<void> => {
       setCreateError(null)
       const result = await createExceptionSet(payload)
       if ('error' in result) {
         setCreateError(extractApiErrorDetail(result.error, '建立特例權限組失敗,請稍後再試'))
+        return
       }
+      setCreateOpen(false)
     },
     [createExceptionSet],
   )
@@ -2142,18 +2327,14 @@ function ExceptionSetsSection(): React.ReactNode {
   return (
     <div className="flex flex-col gap-6">
       <div className="df-card flex flex-col gap-4 p-4 md:p-5">
-        <h2 className="text-base font-semibold text-foreground md:text-lg">特例權限組</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-foreground md:text-lg">特例權限組</h2>
+          <CreateButton label="新增特例權限組" onClick={openCreate} />
+        </div>
         <p className="text-sm text-muted-foreground md:text-base">
           結構同設定檔(勾作業 + 授權矩陣),可重用、可綁多個使用者;綁定與效期(到期自動失效)
           於「API Client 設定」頁設定
         </p>
-        <NameDescriptionCreateForm
-          submitting={isCreating}
-          submitLabel="新增特例權限組"
-          nameLabel="特例權限組名稱"
-          onSubmit={handleCreate}
-        />
-        <InlineError message={createError} />
         {isLoading ? <p className="text-sm text-muted-foreground md:text-base">載入中…</p> : null}
         {isError ? <InlineError message="載入特例權限組清單失敗,請稍後再試" /> : null}
         {data !== undefined ? (
@@ -2183,6 +2364,18 @@ function ExceptionSetsSection(): React.ReactNode {
         </ConfirmDialog>
       </div>
 
+      {createOpen ? (
+        <NameDescriptionCreateDialog
+          title="新增特例權限組"
+          nameLabel="特例權限組名稱"
+          submitLabel="建立特例權限組"
+          submitting={isCreating}
+          submitError={createError}
+          onSubmit={handleCreate}
+          onCancel={cancelCreate}
+        />
+      ) : null}
+
       {selected !== null ? (
         <PermissionSetEditor
           key={`exception-${selected.uid}`}
@@ -2207,7 +2400,7 @@ export default function ClientSettingsPage(): React.ReactNode {
       <div>
         <h1 className="text-xl font-bold text-foreground md:text-2xl">組織權限管理</h1>
         <p className="mt-1 text-sm text-muted-foreground md:text-base">
-          系統別 / 作業範圍 → 權限設定檔矩陣 → Role;特例權限組另可臨時綁定使用者
+          服務 / 作業範圍 → 權限設定檔矩陣 → Role;特例權限組另可臨時綁定使用者
         </p>
       </div>
 

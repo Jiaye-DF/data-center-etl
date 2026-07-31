@@ -3,9 +3,9 @@
 真身在目標 RDS `client_setting` schema(propose v1.6.1),本路由只做參數驗證與封套;
 交易 / 稽核 / 快取失效全在 `client_setting_service.py`。
 
-- 系統別:`GET|POST /services`、`PATCH|DELETE /services/{uid}`(code 建立後不可改;
+- 服務:`GET|POST /services`、`PATCH|DELETE /services/{uid}`(code 建立後不可改;
   底下仍有作業不得刪)。
-- 作業:`GET|POST /operations`、`PATCH|DELETE /operations/{uid}`(歸屬系統別不可改;
+- 作業:`GET|POST /operations`、`PATCH|DELETE /operations/{uid}`(歸屬服務不可改;
   被設定檔 / 特例組引用不得刪)。
 - 作業範圍:`GET|PUT /operations/{uid}/items`(整批置換;表 / 欄位須為 confirmed 語意映射)。
 - 權限設定檔:`GET|POST /profiles`、`PATCH|DELETE /profiles/{uid}`(被 Role 綁不得刪);
@@ -78,11 +78,11 @@ from app.services.client_setting_service import ClientSettingService
 router = APIRouter()
 
 
-# ── 系統別 ──────────────────────────────────────────────────────────────
+# ── 服務 ──────────────────────────────────────────────────────────────
 @router.get(
     "/services",
     response_model=ApiResponse[ServiceListResponse],
-    summary="系統別清單(admin 專用;讀取走 Redis 快取,排除軟刪)",
+    summary="服務清單(admin 專用;讀取走 Redis 快取,排除軟刪)",
 )
 async def list_services(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -96,7 +96,7 @@ async def list_services(
     "/services",
     response_model=ApiResponse[ServiceResponse],
     status_code=201,
-    summary="建立系統別(code 未刪列唯一,重複 409)",
+    summary="建立服務(code 未刪列唯一,重複 409)",
 )
 async def create_service(
     payload: ServiceCreateRequest,
@@ -110,7 +110,7 @@ async def create_service(
 @router.patch(
     "/services/{uid}",
     response_model=ApiResponse[ServiceResponse],
-    summary="更新系統別(名稱 / 說明;code 為路由分段契約不可改)",
+    summary="更新服務(名稱 / 說明;code 為路由分段契約不可改)",
 )
 async def update_service(
     uid: UUID,
@@ -125,7 +125,7 @@ async def update_service(
 @router.delete(
     "/services/{uid}",
     response_model=ApiResponse[ServiceResponse],
-    summary="刪除系統別(軟刪;底下仍有作業 409,不做連鎖刪除)",
+    summary="刪除服務(軟刪;底下仍有作業 409,不做連鎖刪除)",
 )
 async def delete_service(
     uid: UUID,
@@ -140,12 +140,12 @@ async def delete_service(
 @router.get(
     "/operations",
     response_model=ApiResponse[OperationListResponse],
-    summary="作業清單(可依系統別過濾;讀取走 Redis 快取)",
+    summary="作業清單(可依服務過濾;讀取走 Redis 快取)",
 )
 async def list_operations(
     db: Annotated[AsyncSession, Depends(get_db)],
     _user: Annotated[User, Depends(require_admin)],
-    service_uid: Annotated[UUID | None, Query(description="歸屬系統別;省略即全部")] = None,
+    service_uid: Annotated[UUID | None, Query(description="歸屬服務;省略即全部")] = None,
 ) -> ApiResponse[OperationListResponse]:
     data = await ClientSettingService(db).list_operations(service_uid=service_uid)
     return success(data=data)
@@ -155,7 +155,7 @@ async def list_operations(
     "/operations",
     response_model=ApiResponse[OperationResponse],
     status_code=201,
-    summary="建立作業(name 於同一系統別內唯一,重複 409)",
+    summary="建立作業(name 於同一服務內唯一,重複 409)",
 )
 async def create_operation(
     payload: OperationCreateRequest,
@@ -169,7 +169,7 @@ async def create_operation(
 @router.patch(
     "/operations/{uid}",
     response_model=ApiResponse[OperationResponse],
-    summary="更新作業(名稱 / 說明;歸屬系統別不可改)",
+    summary="更新作業(名稱 / 說明;歸屬服務不可改)",
 )
 async def update_operation(
     uid: UUID,

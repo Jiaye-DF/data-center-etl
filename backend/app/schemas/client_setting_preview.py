@@ -1,7 +1,7 @@
 """API Client 最終可見欄位預覽 schema(v1.6.1 task-007)。
 
 回應核心為 `operations[].tables`,形狀等價於 propose 的 `{作業: {表: {欄位: read/edit}}}`;
-作業另帶 uid / 系統別代碼供前端定位(作業名僅在系統別內唯一,不可當全域 key)。
+作業另帶 uid / 服務代碼供前端定位(作業名僅在服務內唯一,不可當全域 key)。
 `role` / `exception_sets` 為預覽脈絡(這些權限從哪來),非權限計算結果本身。
 """
 
@@ -38,8 +38,8 @@ class EffectiveOperationPermission(BaseModel):
     """單一作業的最終可見欄位;`tables` 為空 = 作業有開門但無欄位授權(default-closed)。"""
 
     operation_uid: UUID = Field(description="作業公開識別碼")
-    operation_name: str = Field(description="作業名稱(僅在系統別內唯一)")
-    service_code: str = Field(description="所屬系統別代碼(erp / crm…)")
+    operation_name: str = Field(description="作業名稱(僅在服務內唯一)")
+    service_code: str = Field(description="所屬服務代碼(erp / crm…)")
     tables: dict[str, dict[str, str]] = Field(
         description=(
             "最終可見欄位 `{表: {欄位: read/edit}}`(授權 ∩ 作業範圍;"
@@ -59,5 +59,5 @@ class EffectivePermissionsResponse(BaseModel):
         description="納入計算的特例權限組(未過期;無則空陣列)"
     )
     operations: list[EffectiveOperationPermission] = Field(
-        description="有授權入口的作業(依系統別代碼 + 作業名排序;無 Role 無特例則空陣列)"
+        description="有授權入口的作業(依服務代碼 + 作業名排序;無 Role 無特例則空陣列)"
     )

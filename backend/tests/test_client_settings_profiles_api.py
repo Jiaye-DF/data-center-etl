@@ -200,8 +200,8 @@ async def client(
 
 @pytest.fixture
 def tag() -> str:
-    """本測試專屬前綴:避免與並行測試 / 殘留資料撞唯一鍵。"""
-    return uuid4().hex[:8]
+    """本測試專屬前綴:避免與並行測試 / 殘留資料撞唯一鍵(轉純小寫字母,服務代碼僅允許 a-z 與底線)。"""
+    return uuid4().hex[:8].translate(str.maketrans("0123456789", "ghijklmnop"))
 
 
 # ── helpers ─────────────────────────────────────────────────────────────
@@ -265,7 +265,7 @@ async def _seed_semantic(db_engine: AsyncEngine, tag: str) -> dict[str, str]:
 
 async def _create_service(client: AsyncClient, tag: str) -> dict[str, str]:
     resp = await client.post(
-        _SERVICES, json={"code": f"svc-{tag}", "name": f"系統別 {tag}"}
+        _SERVICES, json={"code": f"svc_{tag}", "name": f"系統別 {tag}"}
     )
     assert resp.status_code == 201, resp.text
     data: dict[str, str] = resp.json()["data"]

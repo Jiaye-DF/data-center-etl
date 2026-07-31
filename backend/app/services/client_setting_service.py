@@ -131,7 +131,7 @@ TARGET_TYPE_EXCEPTION_SET = "client_setting_exception_set"
 # 讓「某 Client 的全部異動」在稽核查詢裡是同一條 target 線
 TARGET_TYPE_API_CLIENT = "api_client"
 
-_SERVICE_NOT_FOUND = "系統別不存在"
+_SERVICE_NOT_FOUND = "服務不存在"
 _OPERATION_NOT_FOUND = "作業不存在"
 _PROFILE_NOT_FOUND = "權限設定檔不存在"
 _ROLE_NOT_FOUND = "角色不存在"
@@ -139,13 +139,13 @@ _EXCEPTION_SET_NOT_FOUND = "特例權限組不存在"
 _CLIENT_NOT_FOUND = "API Client 不存在"
 _CLIENT_ROLE_NOT_FOUND = "此 API Client 尚未指派角色"
 _CLIENT_EXCEPTION_NOT_FOUND = "特例權限綁定不存在"
-_SERVICE_CODE_CONFLICT = "系統別代碼已存在"
-_OPERATION_NAME_CONFLICT = "同一系統別下已有同名作業"
+_SERVICE_CODE_CONFLICT = "服務代碼已存在"
+_OPERATION_NAME_CONFLICT = "同一服務下已有同名作業"
 _PROFILE_NAME_CONFLICT = "權限設定檔名稱已存在"
 _ROLE_NAME_CONFLICT = "角色名稱已存在"
 _EXCEPTION_SET_NAME_CONFLICT = "特例權限組名稱已存在"
 _CLIENT_EXCEPTION_CONFLICT = "此 API Client 已綁定該特例權限組,請先解除綁定再重新綁定"
-_SERVICE_HAS_OPERATIONS = "系統別底下仍有作業,請先刪除作業"
+_SERVICE_HAS_OPERATIONS = "服務底下仍有作業,請先刪除作業"
 _OPERATION_REFERENCED = "作業仍被權限設定檔或特例權限組引用,請先解除引用"
 _PROFILE_HAS_ROLES = "權限設定檔仍被角色綁定,請先改綁或刪除角色"
 _ROLE_HAS_CLIENTS = "角色仍被 API Client 指派,請先解除指派"
@@ -672,7 +672,7 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_SERVICE,
             target_uid=data.uid,
-            detail=f"建立系統別 {data.code}({data.name})",
+            detail=f"建立服務 {data.code}({data.name})",
         )
         await _invalidate_wide()
         return data
@@ -697,7 +697,7 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_SERVICE,
             target_uid=data.uid,
-            detail=f"更新系統別 {data.code}(欄位:{changed})",
+            detail=f"更新服務 {data.code}(欄位:{changed})",
         )
         await _invalidate_wide()
         return data
@@ -716,7 +716,7 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_SERVICE,
             target_uid=data.uid,
-            detail=f"刪除系統別 {data.code}({data.name})",
+            detail=f"刪除服務 {data.code}({data.name})",
         )
         await _invalidate_wide()
         return data

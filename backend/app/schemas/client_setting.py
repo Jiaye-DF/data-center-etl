@@ -16,22 +16,22 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-# 系統別代碼對應資料 API 路由 `{service}` 分段 → 限小寫英數起頭的 URL 安全字元
-SERVICE_CODE_PATTERN = r"^[a-z0-9][a-z0-9_-]*$"
+# 服務代碼對應資料 API 路由 `{service}` 分段 → 僅英文小寫與底線(URL 安全),小寫字母開頭
+SERVICE_CODE_PATTERN = r"^[a-z][a-z_]*$"
 
 
-# ── 系統別 services ────────────────────────────────────────────────────
+# ── 服務 services ────────────────────────────────────────────────────
 class ServiceResponse(BaseModel):
-    uid: UUID = Field(description="系統別對外識別碼")
-    code: str = Field(description="系統別代碼(erp / crm / hrm…;建立後不可改)")
-    name: str = Field(description="系統別名稱")
+    uid: UUID = Field(description="服務對外識別碼")
+    code: str = Field(description="服務代碼(erp / crm / hrm…;建立後不可改)")
+    name: str = Field(description="服務名稱")
     description: str | None = Field(default=None, description="說明")
     created_at: datetime = Field(description="建立時間(Asia/Taipei wall-clock)")
     updated_at: datetime = Field(description="最後更新時間(Asia/Taipei wall-clock)")
 
 
 class ServiceListResponse(BaseModel):
-    items: list[ServiceResponse] = Field(description="系統別清單(排除軟刪)")
+    items: list[ServiceResponse] = Field(description="服務清單(排除軟刪)")
     total: int = Field(description="總筆數")
 
 
@@ -40,9 +40,9 @@ class ServiceCreateRequest(BaseModel):
         min_length=1,
         max_length=50,
         pattern=SERVICE_CODE_PATTERN,
-        description="系統別代碼(小寫英數 / `-` / `_`;未刪列唯一)",
+        description="服務代碼(僅英文小寫與底線,小寫字母開頭;未刪列唯一)",
     )
-    name: str = Field(min_length=1, max_length=100, description="系統別名稱")
+    name: str = Field(min_length=1, max_length=100, description="服務名稱")
     description: str | None = Field(default=None, description="說明")
 
 
@@ -50,7 +50,7 @@ class ServiceUpdateRequest(BaseModel):
     """部分更新;省略即不變更。`code` 為對外契約(路由分段)故不開放改。"""
 
     name: str | None = Field(
-        default=None, min_length=1, max_length=100, description="系統別名稱"
+        default=None, min_length=1, max_length=100, description="服務名稱"
     )
     description: str | None = Field(default=None, description="說明")
 
@@ -58,8 +58,8 @@ class ServiceUpdateRequest(BaseModel):
 # ── 作業 operations ────────────────────────────────────────────────────
 class OperationResponse(BaseModel):
     uid: UUID = Field(description="作業對外識別碼")
-    service_uid: UUID = Field(description="歸屬系統別對外識別碼")
-    name: str = Field(description="作業名(同一系統別內唯一)")
+    service_uid: UUID = Field(description="歸屬服務對外識別碼")
+    name: str = Field(description="作業名(同一服務內唯一)")
     description: str | None = Field(default=None, description="業務動作說明")
     created_at: datetime = Field(description="建立時間(Asia/Taipei wall-clock)")
     updated_at: datetime = Field(description="最後更新時間(Asia/Taipei wall-clock)")
@@ -71,16 +71,16 @@ class OperationListResponse(BaseModel):
 
 
 class OperationCreateRequest(BaseModel):
-    service_uid: UUID = Field(description="歸屬系統別(建立後不可改)")
-    name: str = Field(min_length=1, max_length=100, description="作業名(系統別內唯一)")
+    service_uid: UUID = Field(description="歸屬服務(建立後不可改)")
+    name: str = Field(min_length=1, max_length=100, description="作業名(服務內唯一)")
     description: str | None = Field(default=None, description="業務動作說明")
 
 
 class OperationUpdateRequest(BaseModel):
-    """部分更新;省略即不變更。歸屬系統別(`service_uid`)不開放改。"""
+    """部分更新;省略即不變更。歸屬服務(`service_uid`)不開放改。"""
 
     name: str | None = Field(
-        default=None, min_length=1, max_length=100, description="作業名(系統別內唯一)"
+        default=None, min_length=1, max_length=100, description="作業名(服務內唯一)"
     )
     description: str | None = Field(default=None, description="業務動作說明")
 
