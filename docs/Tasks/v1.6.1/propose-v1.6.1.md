@@ -45,7 +45,7 @@ DataHub API Gateway 模組②——「DataHub 後台 · 組織權限管理」落
 
 ## 風險與相依
 
-- 技術風險:**新表數量多(11 張)**,migration 與 model / repo / schema 樣板量大——以既有 BaseModel / api_client 兩表為範本收斂,拆解時控制粒度。
+- 技術風險:**新表數量多(12 張;起草時誤計 11,依表名列舉勘誤)**,migration 與 model / repo / schema 樣板量大——以既有 BaseModel / api_client 兩表為範本收斂,拆解時控制粒度。
 - 技術風險:**授權 UI 複雜度高**(作業 × 表 × 欄位 × 動作巢狀矩陣)——UI 形式屬 task 層決策,但「逐表逐欄勾選 + `*` 全欄位」語意不得簡化;拆解時前端須依既有頁面風格,先讀錨點頁再動手。
 - 技術風險:**預覽 = 未來引擎語意的前哨**——聯集 / 交集 / 過期過濾 / default-closed 的計算結果將被模組③ 直接沿用,語意錯誤會傳染;以測試逐情境鎖定(對齊 Arch「三情境對照」)。
 - 技術風險:**權限表落 RDS 使 RDS 成為權限管理的硬相依**——RDS 不可達時權限管理頁與預覽不可用(既有 semantic_mappings 頁同性質,可接受);表 DDL 不走自有 DB alembic,建置 / 演進方式比照 semantic_mappings 於 RDS 建表的前例,屬 task 層決策。
@@ -58,7 +58,7 @@ DataHub API Gateway 模組②——「DataHub 後台 · 組織權限管理」落
 ## 驗收標準
 
 - 後端 `cd backend && uv run pytest` 全綠;`uv run ruff check app tests` + `uv run mypy app` 無新增錯誤;前端 `npm run lint` + `npm run typecheck` 乾淨。
-- 建表驗證:11 張權限表齊備於 **RDS ETL-Hub `client_setting` schema**(非自有 DB;自有 DB 不新增任何權限表),全含 BaseModel 欄位;`roles.permission_profile_pid` NOT NULL;以另一條 RDS 連線(模擬其他機器)可直接 SELECT `client_setting.*` 讀到後台剛寫入的設定。
+- 建表驗證:12 張權限表齊備於 **RDS ETL-Hub `client_setting` schema**(非自有 DB;自有 DB 不新增任何權限表),全含 BaseModel 欄位;`roles.permission_profile_pid` NOT NULL;以另一條 RDS 連線(模擬其他機器)可直接 SELECT `client_setting.*` 讀到後台剛寫入的設定。
 - 整合驗證(本地 docker compose,對齊 Arch 範例):
   - 建系統別 erp → 建作業 O1(範圍 T1(C11·C12)、T2(C21·C22)、T3(C31·C32))→ 建設定檔 P1 勾 O1 並授權 C11:read、C21:read/edit、C31:read → 建 Role 綁 P1 → 指派給 Client A → 預覽回 `{O1: {T1:{C11:read}, T2:{C21:edit}, T3:{C31:read}}}` 等價結構(read/edit 表徵依 schema 定案)。
   - default-closed:設定檔勾了 O1 但未給任何表欄位授權 → 預覽該作業為空。
@@ -72,9 +72,9 @@ DataHub API Gateway 模組②——「DataHub 後台 · 組織權限管理」落
 ## 決策記錄
 
 - 2026-07-31:本版範圍 = **模組② 維護面整套**(階層資料表 + 管理 API + 前端 + 預覽),判斷面(模組③)與資料端點(模組④)明確遞延——依 user「dev-v1.6.1 主要是組織的問題,DataHub 後台 · 組織權限管理 模組② 區塊」指示劃界。
-- 2026-07-31:資料模型 11 張表、綁定關係(Client 0..1 Role、Role 必綁 1 Profile、特例直綁可設效期)、加法模型與 default-closed 語意,全依 `datahub-api-gateway-arch.html` 模組② 定案內容,無另行發明。
+- 2026-07-31:資料模型 12 張表(起草時誤計 11,task-001 依列舉實作 12 並勘誤)、綁定關係(Client 0..1 Role、Role 必綁 1 Profile、特例直綁可設效期)、加法模型與 default-closed 語意,全依 `datahub-api-gateway-arch.html` 模組② 定案內容,無另行發明。
 - 2026-07-31:**讀取走 Redis 快取**為 user 明示裁定——避免讀取頻繁直打 RDS;寫入直改 RDS 真身 + 異動即失效快取,TTL 兜底、Redis 故障降級直讀 RDS;此層同時是模組③ 快取的地基(推翻初稿 Out of Scope「本版不做快取」)。
-- 2026-07-31:**權限設定表落 RDS ETL-Hub** 為 user 明示裁定——設定資料是給多台機器共讀的交換面,本應用僅為維護入口,直接對 RDS 讀寫即時生效,**不儲存快照、不建本地副本**(推翻初稿「11 張表建於自有 DB + alembic migration」的預設);自有 DB 不新增權限表,稽核仍寫自有 DB audit_logs。schema 初裁 `public`,同日改裁**專用 schema `client_setting`**(user 命名 Client-Setting,依 PostgreSQL 慣例落蛇形),與鏡像資料、語意 view 隔離。
+- 2026-07-31:**權限設定表落 RDS ETL-Hub** 為 user 明示裁定——設定資料是給多台機器共讀的交換面,本應用僅為維護入口,直接對 RDS 讀寫即時生效,**不儲存快照、不建本地副本**(推翻初稿「權限表建於自有 DB + alembic migration」的預設);自有 DB 不新增權限表,稽核仍寫自有 DB audit_logs。schema 初裁 `public`,同日改裁**專用 schema `client_setting`**(user 命名 Client-Setting,依 PostgreSQL 慣例落蛇形),與鏡像資料、語意 view 隔離。
 - 程序註記:本 propose 由 AI 依 2026-07-31 指示起草(比照 v1.5.2 / v1.6.0 慣例),**user 複核後生效**;複核前不拆 tasks。
 
 ### 開放點裁定(2026-07-31)

@@ -199,6 +199,31 @@
 4. **跨庫實體生命週期聯動缺規範**(AD-152 實證):自有 DB 實體(API Client)與 RDS 引用(client_roles 等)無「刪除聯動/孤兒處理」設計準則 — `04-databases` 升規候選(v1.6.1 首次出現跨庫引用,單版本暫記)
 5. **部署 runbook 與程式入口的對應缺檢查**(AD-151 實證):新 schema/新 env 這類「上站前一次性動作」散落 verification 殘留節,無 checklist 機制 — 與前次第 7-4 條(verification 回寫)同族,合併升規候選
 
+## 8. 掃描後修正落地(收口修正窗口,2026-07-31)
+
+user 裁示「全部修正」,🆕15 條中 **14 條已修畢**(唯 AD-149 同族字級案仍待 user 裁定收編或修,維持 ⏸):
+
+- **🔴 AD-157**:`COLUMN_PAGE_SIZE` 500→200 + `isError` 分流(載入失敗不再誤導為「未確認映射」)— 隨 user 的 UI 調整批先行落地(commit 72af1d6)
+- **🟠 AD-151**:新增 `backend/scripts/ensure_client_setting_schema.py`(冪等、缺表 exit 1),verification 殘留 #1 改記部署 runbook 指令;補 script 冪等測試
+- **🟠 AD-152**:(a) `delete_client` 註銷後同步軟刪 RDS `client_roles`/`client_exception_sets`(獨立交易,失敗僅 log 不擋註銷)+ 失效 effective 快取;(b) `remove_client_role`/`unbind_client_exception_set` 移除 `_ensure_client_exists` 前置(新增路徑防呆保留)— 補三支端到端測試(註銷→兩表軟刪→Role/特例組可刪)
+- **🟠 AD-158**:三處 `invalidatesTags` 的 `id:'LIST'` 改整型失效(provider 帶 uid 型 id,`'LIST'` 匹配不到 = 沒失效)
+- **🟡 AD-153**:repo 父列取件加 `for_update`,五條置換路徑交易開頭鎖父列序列化(`FOR UPDATE NOWAIT` 測試證明鎖持有)
+- **🟡 AD-154+AD-150 併案**:(a) `ensure_semantic_schema` 補表層級 english_name partial unique index(現存重複則 warning 列值跳過不炸啟動);(b) `update_mapping` 改 confirmed english_name 前查重 + 反查 `client_setting` 三張 items 表引用 → 409(新環境以 `to_regclass` 探測略過)— 補五支測試
+- **🟡 AD-159**:三個整批置換編輯器 `loadFailed` 時不渲染編輯入口 + 重新載入按鈕(「沒讀到現況就不准整批覆蓋」)
+- **🟡 AD-160**:`clientSettingApi` 10 支權限寫入端點補跨檔失效 `{type:'ApiClientPermission'}`,預覽即時 refetch
+- **🟡 AD-161**:`ClientPermissionDialog` Esc 分流(嵌套 confirm 狀態上提 + 關閉時 cleanup 歸零)
+- **🟡 AD-162**:Role 指派改 ConfirmDialog 二次確認(文案帶 Role 名與立即生效說明),取消還原下拉
+- **🟡 AD-163**:RolesSection / PermissionSetEditor / ExceptionSetSection(+RoleAssignmentSection)接 `isError`,空狀態文案僅在讀取成功時顯示
+- **🔵 AD-155**:展開結果 `*` 與具名並存收斂(僅保留動作嚴格高於 `*` 的具名欄位)+ 契約 description 補明
+- **🔵 AD-156**:`soft_delete_exception_set` 連動軟刪殘留(必為已過期)綁定列
+- **🟡 AD-165**:propose 表數 11→12 勘誤(4 處)
+
+**驗證**:後端全量 **563 passed**(基線 548 + 新增 15 測試)、ruff/mypy 綠;前端 lint/tsc 綠;`docker compose up -d --build` 全容器 healthy、`/client-settings` 與 `/api/v1/health` 皆 200;新 script 對本機測試 DB smoke exit 0(12/12 表)。
+
+**附帶修正**:`test_api_clients_api.py` 補 `_reset_introspect_engines` fixture 與明確 `AWS_RDS_*` 測試 env(delete_client 開始碰 RDS 後暴露的跨 event loop 連線重用問題;原先靠 import 副作用注入 env 對「不可打真 RDS」是風險)— 測試 env 硬覆寫 pattern 佐證再 +1。
+
+**未修(記錄原因)**:AD-149(字級,待 user 裁定)、R-ENV-004 staging/production 兩金鑰(真實 env 檔需 user 自跑)、遺留群(R-SEC-002/003、AD-101/102/103、AD-140、R-TEST-001 等,維持部署前決策)。
+
 ---
 
-> 本次 🔴1 🟠5 🟡15 🔵16 ⚪3;v1.6.1 新碼 🆕15(🔴1 🟠3 🟡8 🔵3)。**部署本版前必修**:AD-157(前端一行)+ AD-151(建置入口)+ R-ENV-004 兩金鑰(user 自跑);**強烈建議同窗修**:AD-158/152。幫你修 Critical(+🟠 三條)?
+> 本次 🔴1 🟠5 🟡15 🔵16 ⚪3;v1.6.1 新碼 🆕15(🔴1 🟠3 🟡8 🔵3)— **14 條已於收口窗口修畢**(見第 8 章)。部署本版前仍須:staging/production 兩把金鑰(user 自跑)+ 上站前跑 `uv run python scripts/ensure_client_setting_schema.py` + 遺留 R-SEC-002/003 + AD-103 決策。
