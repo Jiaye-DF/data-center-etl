@@ -1,7 +1,7 @@
 ---
 id: task-002
 title: 權限資料存取層 repository(RDS 直讀寫 + 綁定防呆查詢)
-status: pending
+status: done
 parallel: false
 depends_on: [task-001]
 affected_files:
