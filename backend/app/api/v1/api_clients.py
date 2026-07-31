@@ -17,8 +17,10 @@ from app.schemas.api_client import (
     ApiClientSecretRevealResponse,
     ApiClientUpdateRequest,
 )
+from app.schemas.client_setting_preview import EffectivePermissionsResponse
 from app.schemas.response import ApiResponse
 from app.services.api_client_service import ApiClientService
+from app.services.effective_permission_service import EffectivePermissionService
 
 router = APIRouter()
 
@@ -108,6 +110,20 @@ async def reveal_api_client_secret(
     user: Annotated[User, Depends(require_admin)],
 ) -> ApiResponse[ApiClientSecretRevealResponse]:
     data = await ApiClientService(db).reveal_secret(uid, secret_uid, actor_uid=user.uid)
+    return success(data=data)
+
+
+@router.get(
+    "/{uid}/effective-permissions",
+    response_model=ApiResponse[EffectivePermissionsResponse],
+    summary="最終可見欄位預覽(Role 設定檔 ∪ 未過期特例,再 ∩ 作業範圍;default-closed)",
+)
+async def get_api_client_effective_permissions(
+    uid: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[EffectivePermissionsResponse]:
+    data = await EffectivePermissionService(db).preview(uid)
     return success(data=data)
 
 

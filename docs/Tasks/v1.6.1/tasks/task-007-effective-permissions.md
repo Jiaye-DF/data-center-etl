@@ -1,7 +1,7 @@
 ---
 id: task-007
 title: 預覽端點 effective-permissions(聯集 ∩ 範圍,default-closed,走快取)
-status: pending
+status: done
 parallel: true
 depends_on: [task-002, task-003]
 affected_files:
