@@ -1,7 +1,7 @@
 ---
 id: task-009
 title: 前端授權管理 UI(系統別 / 作業範圍 / 設定檔矩陣 / Role / 特例)
-status: pending
+status: done
 parallel: false
 depends_on: [task-008]
 affected_files:
