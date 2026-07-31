@@ -68,6 +68,20 @@ async def update_api_client(
     return success(data=data)
 
 
+@router.delete(
+    "/{uid}",
+    response_model=ApiResponse[ApiClientResponse],
+    summary="註銷 API Client(軟刪除;active 密鑰同交易全數撤銷,清單不再顯示)",
+)
+async def delete_api_client(
+    uid: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_admin)],
+) -> ApiResponse[ApiClientResponse]:
+    data = await ApiClientService(db).delete_client(uid, actor_uid=user.uid)
+    return success(data=data)
+
+
 @router.get(
     "/{uid}/secrets",
     response_model=ApiResponse[ApiClientSecretListResponse],

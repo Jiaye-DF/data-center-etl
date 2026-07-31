@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   useCreateApiClientMutation,
+  useDeleteApiClientMutation,
   useListApiClientSecretsQuery,
   useListApiClientsQuery,
   useRevealApiClientSecretMutation,
@@ -261,14 +262,16 @@ function IssuedSecretPanel({
         <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-foreground md:text-base">Client ID</span>
           <div className="flex items-center gap-2">
-            <code className="df-input flex-1 overflow-x-auto font-mono text-sm">{clientId}</code>
+            <code className="df-input w-fit max-w-full overflow-x-auto font-mono text-sm">
+              {clientId}
+            </code>
             <CopyButton value={clientId} />
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium text-foreground md:text-base">Client Secret</span>
           <div className="flex items-center gap-2">
-            <code className="df-input flex-1 overflow-x-auto font-mono text-sm">
+            <code className="df-input w-fit max-w-full overflow-x-auto font-mono text-sm">
               {clientSecret}
             </code>
             <CopyButton value={clientSecret} />
@@ -672,27 +675,32 @@ function EditClientDialog({
 interface ApiClientRowProps {
   client: ApiClientListItem
   rotating: boolean
+  deleting: boolean
   onEdit: (client: ApiClientListItem) => void
   onRotate: (client: ApiClientListItem) => void
+  onDelete: (client: ApiClientListItem) => void
 }
 
 const ApiClientRow = memo(function ApiClientRow({
   client,
   rotating,
+  deleting,
   onEdit,
   onRotate,
+  onDelete,
 }: ApiClientRowProps): React.ReactNode {
   const handleEdit = useCallback((): void => onEdit(client), [onEdit, client])
   const handleRotate = useCallback((): void => onRotate(client), [onRotate, client])
+  const handleDelete = useCallback((): void => onDelete(client), [onDelete, client])
 
   return (
     <tr className="border-b border-border transition-colors last:border-b-0 hover:bg-muted/50">
       <td className="px-3 py-3">
-        <div className="flex flex-nowrap gap-2">
+        <div className="flex flex-col gap-1.5">
           <button
             type="button"
             onClick={handleEdit}
-            className="df-btn-outline min-h-0 shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
+            className="df-btn-outline min-h-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
           >
             編輯
           </button>
@@ -700,9 +708,17 @@ const ApiClientRow = memo(function ApiClientRow({
             type="button"
             onClick={handleRotate}
             disabled={rotating}
-            className="df-btn-outline min-h-0 shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
+            className="df-btn-outline min-h-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
           >
             輪替密鑰
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="df-btn-danger-soft min-h-0 whitespace-nowrap rounded-full px-3 py-1 text-sm"
+          >
+            註銷
           </button>
         </div>
       </td>
@@ -757,6 +773,7 @@ export default function ApiClientsPage(): React.ReactNode {
     secret: string
   } | null>(null)
   const [rotateTarget, setRotateTarget] = useState<ApiClientListItem | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ApiClientListItem | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
   const { data, isLoading, isError, isFetching } = useListApiClientsQuery({
@@ -768,6 +785,7 @@ export default function ApiClientsPage(): React.ReactNode {
   const [updateApiClient, { isLoading: isUpdating }] = useUpdateApiClientMutation()
   const [rotateApiClientSecret, { isLoading: isRotating, reset: resetRotate }] =
     useRotateApiClientSecretMutation()
+  const [deleteApiClient, { isLoading: isDeleting }] = useDeleteApiClientMutation()
 
   const handlePageChange = useCallback((next: number): void => setPage(next), [])
 
@@ -840,6 +858,22 @@ export default function ApiClientsPage(): React.ReactNode {
     setIssuedSecret({ clientId: target.client_id, secret: result.data.client_secret })
   }, [rotateTarget, rotateApiClientSecret, resetRotate])
 
+  const handleRequestDelete = useCallback((client: ApiClientListItem): void => {
+    setActionError(null)
+    setDeleteTarget(client)
+  }, [])
+  const cancelDelete = useCallback((): void => setDeleteTarget(null), [])
+
+  const handleConfirmDelete = useCallback(async (): Promise<void> => {
+    if (deleteTarget === null) return
+    setActionError(null)
+    const result = await deleteApiClient(deleteTarget.uid)
+    setDeleteTarget(null)
+    if ('error' in result) {
+      setActionError(extractApiErrorDetail(result.error, '註銷使用者失敗,請稍後再試'))
+    }
+  }, [deleteTarget, deleteApiClient])
+
   const closeIssued = useCallback((): void => setIssuedSecret(null), [])
 
   const items = useMemo((): ApiClientListItem[] => data?.items ?? [], [data])
@@ -901,8 +935,10 @@ export default function ApiClientsPage(): React.ReactNode {
                     key={client.uid}
                     client={client}
                     rotating={isRotating}
+                    deleting={isDeleting}
                     onEdit={openEdit}
                     onRotate={handleRequestRotate}
+                    onDelete={handleRequestDelete}
                   />
                 ))}
               </tbody>
@@ -963,6 +999,25 @@ export default function ApiClientsPage(): React.ReactNode {
         <p>
           輪替後將核發一把新密鑰,<strong>舊密鑰將立即失效</strong>
           ,使用中的系統須改用新密鑰。
+        </p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="註銷使用者"
+        confirmLabel="確認註銷"
+        tone="danger"
+        confirmDisabled={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={cancelDelete}
+      >
+        {deleteTarget !== null ? (
+          <p>確定要註銷「{deleteTarget.name}」?</p>
+        ) : null}
+        <p>
+          註銷後該使用者將<strong>立即無法取得 token</strong>,密鑰全數撤銷
+          <br />
+          並自此清單移除,無法於介面復原
         </p>
       </ConfirmDialog>
     </section>

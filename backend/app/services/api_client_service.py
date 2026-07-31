@@ -1,4 +1,4 @@
-"""API Client 後台管理服務(建立 / 發證 / 輪替 / 汰換 / 啟停 / 限流參數 / 明文檢視)。
+"""API Client 後台管理服務(建立 / 發證 / 輪替 / 汰換 / 啟停 / 限流參數 / 明文檢視 / 註銷)。
 
 - 密鑰入庫雙軌:bcrypt 雜湊(token 驗證唯一依據)+ Fernet 可逆加密明文(僅 admin 檢視);
   user 裁定 2026-07-30,見 task-009。稽核 detail 一律不含明文。
@@ -185,6 +185,24 @@ class ApiClientService:
             detail=f"更新 API Client {client.client_id}(欄位:{changed})",
         )
         return await self._with_active_count(client)
+
+    async def delete_client(self, uid: UUID, *, actor_uid: UUID) -> ApiClientResponse:
+        """註銷使用者:同交易先撤銷全部 active 密鑰再軟刪,立即無法換發 token。"""
+        client = await self._get_or_404(uid)
+        for secret in await self._repo.list_active_secrets(client):
+            await self._repo.retire_secret(secret, actor_uid=actor_uid)
+        await self._repo.soft_delete(client, actor_uid=actor_uid)
+        await self._audit.log(
+            action="api_client_delete",
+            actor_uid=actor_uid,
+            target_type=_TARGET_TYPE,
+            target_uid=client.uid,
+            detail=(
+                f"註銷 API Client {client.name}(client_id={client.client_id};"
+                f"active 密鑰已全數撤銷)"
+            ),
+        )
+        return _to_response(client, 0)
 
     async def rotate_secret(
         self, uid: UUID, *, actor_uid: UUID

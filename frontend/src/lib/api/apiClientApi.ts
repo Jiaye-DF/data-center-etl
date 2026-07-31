@@ -126,6 +126,13 @@ export const apiClientApi = baseApi
           response: ApiEnvelope<ApiClientListItem>,
         ): ApiClientListItem => unwrap(response),
       }),
+      deleteApiClient: build.mutation<ApiClientListItem, string>({
+        query: (uid) => ({ url: `/api-clients/${uid}`, method: 'DELETE' }),
+        invalidatesTags: [{ type: 'ApiClient', id: 'LIST' }],
+        transformResponse: (
+          response: ApiEnvelope<ApiClientListItem>,
+        ): ApiClientListItem => unwrap(response),
+      }),
       rotateApiClientSecret: build.mutation<RotateApiClientSecretResult, string>({
         query: (uid) => ({ url: `/api-clients/${uid}/rotate-secret`, method: 'POST' }),
         invalidatesTags: (_result, _error, uid) => [
@@ -173,6 +180,7 @@ export const {
   useListApiClientSecretsQuery,
   useCreateApiClientMutation,
   useUpdateApiClientMutation,
+  useDeleteApiClientMutation,
   useRotateApiClientSecretMutation,
   useRetireApiClientSecretMutation,
   useRevealApiClientSecretMutation,

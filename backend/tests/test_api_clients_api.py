@@ -2,7 +2,7 @@
 
 涵蓋:非 admin 403;建立回明文 secret 且列表不再出現;列表不含 secret_hash / pid;
 PATCH 限流參數與 status 生效;單一密鑰制:rotate 撤舊發新 active 恆 1(task-010);
-軟刪 client 不出現在列表。
+軟刪 client 不出現在列表;DELETE 註銷(軟刪 + active 密鑰全數撤銷 + audit)。
 
 task-008 追加:密鑰清單端點(含 retired、欄位僅 uid/status/created_at、不存在 uid → 404)
 與建立 / rotate 回應的 secret_uid 對得上清單列。
@@ -179,6 +179,7 @@ async def test_member_forbidden_on_all_endpoints(
         await client.post(f"{_CLIENTS_URL}/{_FAKE_UID}/secrets/{_FAKE_UID}/retire")
     ).status_code == 403
     assert (await client.get(f"{_CLIENTS_URL}/{_FAKE_UID}/secrets")).status_code == 403
+    assert (await client.delete(f"{_CLIENTS_URL}/{_FAKE_UID}")).status_code == 403
     assert (
         await client.get(f"{_CLIENTS_URL}/{_FAKE_UID}/secrets/{_FAKE_UID}/reveal")
     ).status_code == 403
@@ -290,6 +291,53 @@ async def test_list_excludes_soft_deleted(
     assert (
         await admin_client.get(f"{_CLIENTS_URL}/{gone_uid}/secrets")
     ).status_code == 404
+
+
+# ── 註銷 ─────────────────────────────────────────────────────────────────
+async def test_delete_soft_deletes_client_and_retires_secrets(
+    admin_client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    created, _ = await _create_api_client(admin_client, name="要註銷的系統")
+    uid = created["uid"]
+
+    resp = await admin_client.delete(f"{_CLIENTS_URL}/{uid}")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["active_secret_count"] == 0
+
+    # 清單不再出現
+    body = (await admin_client.get(_CLIENTS_URL)).json()
+    assert all(item["uid"] != uid for item in body["data"]["items"])
+
+    # DB 列保留(軟刪),active 密鑰全數撤銷,audit 有註銷事件
+    async with session_factory() as session:
+        row = (
+            await session.execute(
+                select(ApiClientUser).where(ApiClientUser.uid == uid)
+            )
+        ).scalar_one()
+        assert row.is_deleted is True
+        secrets = (
+            (
+                await session.execute(
+                    select(ApiClientSecret).where(
+                        ApiClientSecret.api_client_user_pid == row.pid
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert secrets
+        assert all(s.status != SECRET_STATUS_ACTIVE for s in secrets)
+        log = (
+            await session.execute(
+                select(AuditLog).where(AuditLog.action == "api_client_delete")
+            )
+        ).scalar_one()
+        assert log.target_type == "api_client"
+
+    # 註銷後對該 uid 的操作一律 404
+    assert (await admin_client.delete(f"{_CLIENTS_URL}/{uid}")).status_code == 404
 
 
 # ── PATCH ────────────────────────────────────────────────────────────────
