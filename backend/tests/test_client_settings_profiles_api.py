@@ -79,6 +79,10 @@ _ROLES = f"{_BASE_PATH}/roles"
 
 ACTOR_UID = uuid4()
 
+# 本測試(單一 pytest 進程內序列執行,無併發風險)以 `_login_as` 建立的 admin uid;
+# 該 uid 即透過 API 建立資料的 created_by,清理時併入過濾條件,避免動到併行測試檔的資料
+_test_actor_uids: list[UUID] = []
+
 
 # ── fixtures ────────────────────────────────────────────────────────────
 @pytest.fixture(scope="session", autouse=True)
@@ -127,13 +131,29 @@ async def db_engine() -> AsyncIterator[AsyncEngine]:
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def _cleanup(db_engine: AsyncEngine) -> AsyncIterator[None]:
-    """每測試後清權限 12 表與語意映射(禁 DROP);users / audit_logs 靠隨機值隔離不清。"""
+async def _cleanup(db_engine: AsyncEngine, tag: str) -> AsyncIterator[None]:
+    """每測試後只刪本測試建立的列(禁 DROP);與併行測試檔共用測試 DB 亦互不干擾。
+
+    12 張權限表以 `created_by`(ACTOR_UID + 本測試 `_login_as` 建立的 admin uid)過濾;
+    `semantic_mappings` 無 created_by 欄位,改以本測試專屬 `tag` 前綴比對(見 `_seed_semantic`)。
+    """
+    _test_actor_uids.clear()
     yield
+    actors = [str(ACTOR_UID), *(str(uid) for uid in _test_actor_uids)]
     async with db_engine.begin() as conn:
         for table in reversed(CLIENT_SETTING_TABLES):
-            await conn.execute(text(f"DELETE FROM {CLIENT_SETTING_SCHEMA}.{table}"))
-        await conn.execute(text("DELETE FROM erp_metadata.semantic_mappings"))
+            await conn.execute(
+                text(
+                    f"DELETE FROM {CLIENT_SETTING_SCHEMA}.{table}"
+                    " WHERE created_by = ANY(:actors)"
+                ),
+                {"actors": actors},
+            )
+        await conn.execute(
+            text("DELETE FROM erp_metadata.semantic_mappings WHERE table_name LIKE :pattern"),
+            {"pattern": f"%{tag}%"},
+        )
+    _test_actor_uids.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -194,10 +214,11 @@ async def _login_as(
     password = f"{role}-password-123"
     async with session_factory() as session:
         password_hash = await hash_password_async(password)
-        await UserRepository(session).create(
+        user = await UserRepository(session).create(
             username=username, password_hash=password_hash, role=role
         )
         await session.commit()
+    _test_actor_uids.append(user.uid)
     resp = await client.post(
         "/api/v1/auth/login", json={"username": username, "password": password}
     )

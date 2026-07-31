@@ -1,7 +1,7 @@
 ---
 id: task-011
 title: e2e 收口 + 稽核驗證 + verification 文件 + Arch 回寫
-status: pending
+status: done
 parallel: false
 depends_on: [task-001, task-002, task-003, task-004, task-005, task-006, task-007, task-008, task-009, task-010]
 affected_files:
