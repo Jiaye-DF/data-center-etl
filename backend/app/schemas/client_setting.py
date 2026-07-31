@@ -9,9 +9,10 @@
 """
 
 from datetime import datetime
+from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # 系統別代碼對應資料 API 路由 `{service}` 分段 → 限小寫英數起頭的 URL 安全字元
 SERVICE_CODE_PATTERN = r"^[a-z0-9][a-z0-9_-]*$"
@@ -105,3 +106,124 @@ class OperationItemsReplaceRequest(BaseModel):
     """整批置換作業範圍:空陣列 = 清空範圍(非「不變更」)。"""
 
     items: list[ScopeItemRequest] = Field(description="置換後的完整範圍集合")
+
+
+# ── 角色權限設定檔 permission_profiles(task-005)───────────────────────
+class PermissionProfileResponse(BaseModel):
+    uid: UUID = Field(description="設定檔對外識別碼")
+    name: str = Field(description="設定檔名(唯一)")
+    description: str | None = Field(default=None, description="說明")
+    created_at: datetime = Field(description="建立時間(Asia/Taipei wall-clock)")
+    updated_at: datetime = Field(description="最後更新時間(Asia/Taipei wall-clock)")
+
+
+class PermissionProfileListResponse(BaseModel):
+    items: list[PermissionProfileResponse] = Field(description="設定檔清單(排除軟刪)")
+    total: int = Field(description="總筆數")
+
+
+class PermissionProfileCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100, description="設定檔名(未刪列唯一)")
+    description: str | None = Field(default=None, description="說明")
+
+
+class PermissionProfileUpdateRequest(BaseModel):
+    """部分更新;省略即不變更。"""
+
+    name: str | None = Field(
+        default=None, min_length=1, max_length=100, description="設定檔名(未刪列唯一)"
+    )
+    description: str | None = Field(default=None, description="說明")
+
+
+# ── 設定檔勾選作業 profile_operations ──────────────────────────────────
+class ProfileOperationResponse(BaseModel):
+    uid: UUID = Field(description="勾選列對外識別碼")
+    operation_uid: UUID = Field(description="勾選的作業")
+
+
+class ProfileOperationListResponse(BaseModel):
+    items: list[ProfileOperationResponse] = Field(description="已勾選作業(排除軟刪)")
+    total: int = Field(description="總筆數")
+
+
+class ProfileOperationsReplaceRequest(BaseModel):
+    """整批置換勾選作業:空陣列 = 全部取消勾選(移除的作業其授權項同交易清除)。"""
+
+    operation_uids: list[UUID] = Field(description="置換後的完整勾選作業集合")
+
+
+# ── 設定檔授權矩陣 profile_items ───────────────────────────────────────
+# 與 `models.client_setting.ACTION_READ / ACTION_EDIT` 同一組值;動作為固定列舉,
+# 合法性於 schema 層擋下(FastAPI 自動 422),service 層只驗「∩ 作業範圍」等業務規則
+PermissionAction = Literal["read", "edit"]
+
+
+class PermissionItemRequest(BaseModel):
+    table_name: str = Field(min_length=1, max_length=200, description="資料表(語意層英文名)")
+    column_name: str = Field(
+        min_length=1, max_length=200, description="欄位(語意層英文名;`*` = 全欄位)"
+    )
+    action: PermissionAction = Field(description="動作(read / edit;edit 含新增 / 更新 / 軟刪)")
+
+
+class ProfileItemResponse(BaseModel):
+    uid: UUID = Field(description="授權項對外識別碼")
+    table_name: str = Field(description="資料表(語意層英文名)")
+    column_name: str = Field(description="欄位(`*` = 全欄位)")
+    action: PermissionAction = Field(description="動作(read / edit)")
+
+
+class ProfileItemListResponse(BaseModel):
+    items: list[ProfileItemResponse] = Field(description="該作業下的授權項(排除軟刪)")
+    total: int = Field(description="總筆數")
+
+
+class ProfileItemsReplaceRequest(BaseModel):
+    """整批置換「設定檔 × 單一作業」的授權矩陣:空陣列 = 該作業下無任何欄位授權。"""
+
+    items: list[PermissionItemRequest] = Field(description="置換後的完整授權集合")
+
+
+# ── Role roles ─────────────────────────────────────────────────────────
+class RoleResponse(BaseModel):
+    uid: UUID = Field(description="Role 對外識別碼")
+    permission_profile_uid: UUID = Field(description="綁定的權限設定檔(必綁)")
+    name: str = Field(description="角色名(唯一)")
+    description: str | None = Field(default=None, description="說明")
+    created_at: datetime = Field(description="建立時間(Asia/Taipei wall-clock)")
+    updated_at: datetime = Field(description="最後更新時間(Asia/Taipei wall-clock)")
+
+
+class RoleListResponse(BaseModel):
+    items: list[RoleResponse] = Field(description="Role 清單(排除軟刪)")
+    total: int = Field(description="總筆數")
+
+
+class RoleCreateRequest(BaseModel):
+    """建立 Role;`permission_profile_uid` 為必帶欄位(禁空角色,缺值即 422)。"""
+
+    permission_profile_uid: UUID = Field(description="綁定的權限設定檔(必綁)")
+    name: str = Field(min_length=1, max_length=100, description="角色名(未刪列唯一)")
+    description: str | None = Field(default=None, description="說明")
+
+
+class RoleUpdateRequest(BaseModel):
+    """部分更新;省略即不變更。設定檔可改綁,但**不可清空**(顯式 null 即 422)。"""
+
+    permission_profile_uid: UUID | None = Field(
+        default=None, description="改綁的權限設定檔;省略即不變更"
+    )
+    name: str | None = Field(
+        default=None, min_length=1, max_length=100, description="角色名(未刪列唯一)"
+    )
+    description: str | None = Field(default=None, description="說明")
+
+    @model_validator(mode="after")
+    def _reject_cleared_profile(self) -> Self:
+        if (
+            "permission_profile_uid" in self.model_fields_set
+            and self.permission_profile_uid is None
+        ):
+            raise ValueError("Role 必綁 1 個權限設定檔,permission_profile_uid 不可清空")
+        return self

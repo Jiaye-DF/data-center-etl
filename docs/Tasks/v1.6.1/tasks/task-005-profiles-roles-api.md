@@ -1,7 +1,7 @@
 ---
 id: task-005
 title: 設定檔 / Role 管理 API(勾作業 + 授權矩陣 + 必綁防呆)
-status: pending
+status: done
 parallel: false
 depends_on: [task-004]
 affected_files:
