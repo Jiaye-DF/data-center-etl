@@ -813,39 +813,70 @@ const EFFECTIVE_ACTION_BADGE: Record<EffectivePermissionAction, string> = {
   edit: 'df-badge bg-primary/15 text-primary',
 }
 
-/** Role 指派區:下拉直接指派;已指派時顯示解除鈕(走 ConfirmDialog)。 */
+/** Role 指派區:下拉選取後二次確認才指派;已指派時顯示解除鈕(同樣走 ConfirmDialog)。 */
 interface RoleAssignmentSectionProps {
   clientUid: string
   currentRoleUid: string | null
+  /** 子層 ConfirmDialog 開闔上報,供外層權限對話框的 Esc 分流 */
+  onNestedDialogChange: (open: boolean) => void
 }
 
 function RoleAssignmentSection({
   clientUid,
   currentRoleUid,
+  onNestedDialogChange,
 }: RoleAssignmentSectionProps): React.ReactNode {
-  const { data: roleData, isLoading: isLoadingRoles } = useListClientSettingRolesQuery()
+  const {
+    data: roleData,
+    isLoading: isLoadingRoles,
+    isError: isRolesError,
+  } = useListClientSettingRolesQuery()
   const [assignClientRole, { isLoading: isAssigning }] = useAssignClientRoleMutation()
   const [removeClientRole, { isLoading: isRemoving }] = useRemoveClientRoleMutation()
   const [assignError, setAssignError] = useState<string | null>(null)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
+  // 指派 = 把整組表 × 欄位授權放行給對外使用者,與「解除指派」同樣走二次確認
+  const [pendingRoleUid, setPendingRoleUid] = useState<string | null>(null)
 
   const roles = useMemo(
     (): { uid: string; name: string }[] => roleData?.items ?? [],
     [roleData],
   )
+  const pendingRoleName = useMemo(
+    (): string =>
+      roles.find((role) => role.uid === pendingRoleUid)?.name ?? '(未知 Role)',
+    [roles, pendingRoleUid],
+  )
+
+  const nestedOpen = confirmingRemove || pendingRoleUid !== null
+  useEffect(() => {
+    onNestedDialogChange(nestedOpen)
+    // 對話框關閉時本區塊隨之卸載,須歸零否則下次開啟會殘留「有子對話框」而擋掉 Esc
+    return () => onNestedDialogChange(false)
+  }, [nestedOpen, onNestedDialogChange])
 
   const handleRoleChange = useCallback(
-    async (event: React.ChangeEvent<HTMLSelectElement>): Promise<void> => {
+    (event: React.ChangeEvent<HTMLSelectElement>): void => {
       const roleUid = event.target.value
-      if (roleUid === '') return
+      if (roleUid === '' || roleUid === currentRoleUid) return
       setAssignError(null)
-      const result = await assignClientRole({ clientUid, role_uid: roleUid })
-      if ('error' in result) {
-        setAssignError(extractApiErrorDetail(result.error, '指派 Role 失敗,請稍後再試'))
-      }
+      setPendingRoleUid(roleUid)
     },
-    [assignClientRole, clientUid],
+    [currentRoleUid],
   )
+
+  // 取消:清掉暫存選取,下拉即回到目前指派值(select 值由 currentRoleUid 決定)
+  const cancelAssign = useCallback((): void => setPendingRoleUid(null), [])
+  const handleConfirmAssign = useCallback(async (): Promise<void> => {
+    if (pendingRoleUid === null) return
+    const roleUid = pendingRoleUid
+    setPendingRoleUid(null)
+    setAssignError(null)
+    const result = await assignClientRole({ clientUid, role_uid: roleUid })
+    if ('error' in result) {
+      setAssignError(extractApiErrorDetail(result.error, '指派 Role 失敗,請稍後再試'))
+    }
+  }, [assignClientRole, clientUid, pendingRoleUid])
 
   const openConfirmRemove = useCallback((): void => setConfirmingRemove(true), [])
   const cancelConfirmRemove = useCallback((): void => setConfirmingRemove(false), [])
@@ -863,9 +894,9 @@ function RoleAssignmentSection({
       <h3 className="text-sm font-semibold text-foreground md:text-base">目前 Role</h3>
       <div className="flex flex-wrap items-center gap-2">
         <select
-          value={currentRoleUid ?? ''}
+          value={pendingRoleUid ?? currentRoleUid ?? ''}
           onChange={handleRoleChange}
-          disabled={isLoadingRoles || isAssigning}
+          disabled={isLoadingRoles || isAssigning || isRolesError}
           className="df-input w-auto min-w-[180px]"
         >
           <option value="" disabled>
@@ -888,11 +919,30 @@ function RoleAssignmentSection({
           </button>
         ) : null}
       </div>
+      {/* 讀不到 Role 清單 ≠ 沒有 Role:失敗時給故障訊息並停用下拉,不讓空選單誤導 */}
+      {isRolesError ? (
+        <p role="alert" className="text-sm text-danger">
+          載入 Role 清單失敗,請稍後再試;指派功能暫不可用
+        </p>
+      ) : null}
       {assignError !== null ? (
         <p role="alert" className="text-sm text-danger">
           {assignError}
         </p>
       ) : null}
+      <ConfirmDialog
+        open={pendingRoleUid !== null}
+        title="指派 Role"
+        confirmLabel="確認指派"
+        confirmDisabled={isAssigning}
+        onConfirm={handleConfirmAssign}
+        onCancel={cancelAssign}
+      >
+        <p>
+          確定要指派 Role「<strong>{pendingRoleName}</strong>」?
+        </p>
+        <p>此使用者將<strong>立即取得</strong>該 Role 設定檔授予的可見欄位。</p>
+      </ConfirmDialog>
       <ConfirmDialog
         open={confirmingRemove}
         title="解除 Role 指派"
@@ -903,7 +953,7 @@ function RoleAssignmentSection({
         onCancel={cancelConfirmRemove}
       >
         <p>確定要解除目前指派的 Role?</p>
-        <p>解除後該 Client 將失去此 Role 授予的可見欄位。</p>
+        <p>解除後該使用者將失去此 Role 授予的可見欄位。</p>
       </ConfirmDialog>
     </div>
   )
@@ -912,12 +962,24 @@ function RoleAssignmentSection({
 /** 特例組綁定區:選組 + 選填效期綁定;清單顯示過期標示與解除。 */
 interface ExceptionSetSectionProps {
   clientUid: string
+  /** 子層 ConfirmDialog 開闔上報,供外層權限對話框的 Esc 分流 */
+  onNestedDialogChange: (open: boolean) => void
 }
 
-function ExceptionSetSection({ clientUid }: ExceptionSetSectionProps): React.ReactNode {
-  const { data: bindingData, isLoading: isLoadingBindings } =
-    useListClientExceptionSetsQuery(clientUid)
-  const { data: setData, isLoading: isLoadingSets } = useListExceptionSetsQuery()
+function ExceptionSetSection({
+  clientUid,
+  onNestedDialogChange,
+}: ExceptionSetSectionProps): React.ReactNode {
+  const {
+    data: bindingData,
+    isLoading: isLoadingBindings,
+    isError: isBindingsError,
+  } = useListClientExceptionSetsQuery(clientUid)
+  const {
+    data: setData,
+    isLoading: isLoadingSets,
+    isError: isSetsError,
+  } = useListExceptionSetsQuery()
   const [bindClientExceptionSet, { isLoading: isBinding }] = useBindClientExceptionSetMutation()
   const [unbindClientExceptionSet, { isLoading: isUnbinding }] =
     useUnbindClientExceptionSetMutation()
@@ -972,6 +1034,11 @@ function ExceptionSetSection({ clientUid }: ExceptionSetSectionProps): React.Rea
     [bindClientExceptionSet, clientUid, exceptionSetUid, expiresAtLocal],
   )
 
+  useEffect(() => {
+    onNestedDialogChange(unbindTarget !== null)
+    return () => onNestedDialogChange(false)
+  }, [unbindTarget, onNestedDialogChange])
+
   const requestUnbind = useCallback((binding: ClientExceptionSetBinding): void => {
     setUnbindError(null)
     setUnbindTarget(binding)
@@ -996,7 +1063,7 @@ function ExceptionSetSection({ clientUid }: ExceptionSetSectionProps): React.Rea
           <select
             value={exceptionSetUid}
             onChange={handleSetChange}
-            disabled={isLoadingSets}
+            disabled={isLoadingSets || isSetsError}
             className="df-input w-auto min-w-[180px]"
           >
             <option value="">請選擇</option>
@@ -1024,6 +1091,12 @@ function ExceptionSetSection({ clientUid }: ExceptionSetSectionProps): React.Rea
           綁定
         </button>
       </form>
+      {/* 讀不到特例組清單 ≠ 沒有特例組:失敗時給故障訊息並停用下拉 */}
+      {isSetsError ? (
+        <p role="alert" className="text-sm text-danger">
+          載入特例權限組清單失敗,請稍後再試;綁定功能暫不可用
+        </p>
+      ) : null}
       {bindError !== null ? (
         <p role="alert" className="text-sm text-danger">
           {bindError}
@@ -1036,6 +1109,11 @@ function ExceptionSetSection({ clientUid }: ExceptionSetSectionProps): React.Rea
       ) : null}
       {isLoadingBindings ? (
         <p className="text-sm text-muted-foreground">載入中…</p>
+      ) : isBindingsError || bindingData === undefined ? (
+        // 「讀不到」不可退化成「尚無綁定」:admin 會誤判特例權限已被清空
+        <p role="alert" className="text-sm text-danger">
+          載入已綁定特例權限組失敗,請稍後再試
+        </p>
       ) : bindings.length === 0 ? (
         <p className="text-sm text-muted-foreground">尚無綁定的特例權限組</p>
       ) : (
@@ -1173,14 +1251,20 @@ function ClientPermissionDialog({
   client,
   onClose,
 }: ClientPermissionDialogProps): React.ReactNode {
+  // 子層 ConfirmDialog 也監聽 Esc:未分流時一次 Esc 會連本對話框一起關,
+  // 連帶清掉已選特例組與已填效期(AD-142 同型)
+  const [roleNestedOpen, setRoleNestedOpen] = useState(false)
+  const [exceptionNestedOpen, setExceptionNestedOpen] = useState(false)
+  const hasNestedDialog = roleNestedOpen || exceptionNestedOpen
+
   useEffect(() => {
     if (client === null) return
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape' && !hasNestedDialog) onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [client, onClose])
+  }, [client, onClose, hasNestedDialog])
 
   // effective-permissions 提供目前 Role 摘要,免另開一支查詢
   const { data: effectiveData } = useGetEffectivePermissionsQuery(client?.uid ?? '', {
@@ -1218,11 +1302,15 @@ function ClientPermissionDialog({
         <RoleAssignmentSection
           clientUid={client.uid}
           currentRoleUid={effectiveData?.role?.uid ?? null}
+          onNestedDialogChange={setRoleNestedOpen}
         />
 
         <hr className="border-border" />
 
-        <ExceptionSetSection clientUid={client.uid} />
+        <ExceptionSetSection
+          clientUid={client.uid}
+          onNestedDialogChange={setExceptionNestedOpen}
+        />
 
         <hr className="border-border" />
 

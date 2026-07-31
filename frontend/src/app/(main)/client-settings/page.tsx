@@ -1,6 +1,17 @@
 'use client'
 
-import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  createContext,
+  Fragment,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { skipToken } from '@reduxjs/toolkit/query'
 import {
   useCreateClientSettingRoleMutation,
@@ -170,6 +181,85 @@ function buildTableZhMap(tables: readonly SemanticTableSummary[] | undefined): M
 }
 
 /* ---------------------------------------------------------------------- */
+/* 未儲存草稿守衛(切分頁 / 換列前攔一次)                                     */
+/* ---------------------------------------------------------------------- */
+
+interface DirtyGuardValue {
+  /** 編輯器上報自身 dirty 狀態(以 instance id 為鍵) */
+  setDirty: (id: string, dirty: boolean) => void
+  /** 有未儲存草稿時先確認再執行;乾淨則直接執行 */
+  guard: (action: () => void) => void
+}
+
+/** 預設值供未包 Provider 的情境(直接執行,不攔) */
+const DirtyGuardContext = createContext<DirtyGuardValue>({
+  setDirty: (): void => undefined,
+  guard: (action: () => void): void => action(),
+})
+
+/**
+ * 把編輯器的 dirty 狀態上報給頁面層守衛;卸載時自動註銷。
+ *
+ * 註冊表放 ref 不放 state:守衛只在使用者操作當下讀取,不需要因 dirty 變動重繪整頁。
+ */
+function useReportDirty(dirty: boolean): void {
+  const id = useId()
+  const { setDirty } = useContext(DirtyGuardContext)
+  useEffect(() => {
+    setDirty(id, dirty)
+    return () => setDirty(id, false)
+  }, [id, dirty, setDirty])
+}
+
+interface DirtyGuardProviderProps {
+  children: React.ReactNode
+}
+
+function DirtyGuardProvider({ children }: DirtyGuardProviderProps): React.ReactNode {
+  const dirtyIds = useRef<Set<string>>(new Set())
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
+
+  const setDirty = useCallback((id: string, dirty: boolean): void => {
+    if (dirty) dirtyIds.current.add(id)
+    else dirtyIds.current.delete(id)
+  }, [])
+
+  const guard = useCallback((action: () => void): void => {
+    if (dirtyIds.current.size === 0) {
+      action()
+      return
+    }
+    setPendingAction(() => action)
+  }, [])
+
+  const value = useMemo((): DirtyGuardValue => ({ setDirty, guard }), [setDirty, guard])
+
+  const confirmLeave = useCallback((): void => {
+    const action = pendingAction
+    setPendingAction(null)
+    if (action !== null) action()
+  }, [pendingAction])
+  const cancelLeave = useCallback((): void => setPendingAction(null), [])
+
+  return (
+    <DirtyGuardContext.Provider value={value}>
+      {children}
+      <ConfirmDialog
+        open={pendingAction !== null}
+        title="尚有未儲存的變更"
+        confirmLabel="離開並捨棄"
+        tone="danger"
+        onConfirm={confirmLeave}
+        onCancel={cancelLeave}
+      >
+        <p>目前的勾選尚未儲存,離開後將直接捨棄。確定要離開?</p>
+        <p>若要保留,請先取消並按下編輯區的儲存按鈕。</p>
+      </ConfirmDialog>
+    </DirtyGuardContext.Provider>
+  )
+}
+
+/* ---------------------------------------------------------------------- */
 /* 共用小元件                                                                */
 /* ---------------------------------------------------------------------- */
 
@@ -206,6 +296,28 @@ interface EmptyStateProps {
 function EmptyState({ message }: EmptyStateProps): React.ReactNode {
   return (
     <p className="px-3 py-8 text-center text-sm text-muted-foreground md:text-base">{message}</p>
+  )
+}
+
+/**
+ * 讀取失敗提示 + 重試;整批置換類編輯器共用。
+ *
+ * 這三個編輯器的儲存都是「整批置換」,沒讀到伺服器現況就編輯等於拿空草稿覆蓋既有設定,
+ * 故失敗時一律以本元件取代編輯區,不給編輯入口。
+ */
+interface LoadFailedNoticeProps {
+  message: string
+  onRetry: () => void
+}
+
+function LoadFailedNotice({ message, onRetry }: LoadFailedNoticeProps): React.ReactNode {
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <InlineError message={message} />
+      <button type="button" onClick={onRetry} className="df-btn-outline min-h-[44px] px-4">
+        重新載入
+      </button>
+    </div>
   )
 }
 
@@ -544,7 +656,7 @@ interface OperationScopeEditorProps {
  * 超出者一次列明回 422 並直接顯示於下方。
  */
 function OperationScopeEditor({ operation }: OperationScopeEditorProps): React.ReactNode {
-  const { data, isLoading, isError } = useListOperationItemsQuery(operation.uid)
+  const { data, isLoading, isError, refetch } = useListOperationItemsQuery(operation.uid)
   const [replaceOperationItems, { isLoading: isSaving }] = useReplaceOperationItemsMutation()
   const { data: semanticTables, isError: isTablesError } = useListSemanticTablesQuery()
 
@@ -644,7 +756,10 @@ function OperationScopeEditor({ operation }: OperationScopeEditorProps): React.R
     return groupByTable(items)
   }, [draftKeys])
 
-  const dirty = !sameKeys(draftKeys, serverKeys)
+  // 讀不到伺服器現況就不准整批覆蓋:草稿與 serverKeys 都會算成空,存檔即把既有範圍洗掉
+  const loadFailed = isError || data === undefined
+  const dirty = !loadFailed && !sameKeys(draftKeys, serverKeys)
+  useReportDirty(dirty)
 
   const toggleScope = useCallback((tableName: string, columnName: string): void => {
     const key = scopeKey(tableName, columnName)
@@ -686,6 +801,28 @@ function OperationScopeEditor({ operation }: OperationScopeEditorProps): React.R
     [],
   )
 
+  const handleRetry = useCallback((): void => {
+    void refetch()
+  }, [refetch])
+
+  if (isLoading || loadFailed) {
+    return (
+      <div className="df-card flex flex-col gap-4 p-4 md:p-5">
+        <h2 className="text-base font-semibold text-foreground md:text-lg">
+          作業範圍({operation.name})
+        </h2>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground md:text-base">載入中…</p>
+        ) : (
+          <LoadFailedNotice
+            message="載入作業範圍失敗;讀不到目前設定前不開放編輯(整批儲存會覆蓋既有範圍)"
+            onRetry={handleRetry}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="df-card flex flex-col gap-4 p-4 md:p-5">
       <h2 className="text-base font-semibold text-foreground md:text-lg">
@@ -695,8 +832,6 @@ function OperationScopeEditor({ operation }: OperationScopeEditorProps): React.R
         設定此作業最多可碰到的表 × 欄位;設定檔 / 特例組的授權矩陣以此為上限(給不出範圍外的欄位)
       </p>
 
-      {isLoading ? <p className="text-sm text-muted-foreground md:text-base">載入中…</p> : null}
-      {isError ? <InlineError message="載入作業範圍失敗,請稍後再試" /> : null}
       {isTablesError ? <InlineError message="載入語意映射表清單失敗,請稍後再試" /> : null}
 
       {authorizableTables.length === 0 && !isTablesError ? (
@@ -815,6 +950,7 @@ function OperationScopeEditor({ operation }: OperationScopeEditorProps): React.R
         onSave={handleSave}
         onReset={handleReset}
       />
+
       <InlineError message={saveError} />
       <InlineNotice message={notice} />
     </div>
@@ -1095,10 +1231,21 @@ function ServicesOperationsSection(): React.ReactNode {
     setSelectedOperation(null)
   }
 
-  const handleSelectService = useCallback((service: ClientSettingService): void => {
-    setSelectedService(service)
-    setSelectedOperation(null)
-  }, [])
+  const { guard } = useContext(DirtyGuardContext)
+
+  const handleSelectService = useCallback(
+    (service: ClientSettingService): void =>
+      guard(() => {
+        setSelectedService(service)
+        setSelectedOperation(null)
+      }),
+    [guard],
+  )
+
+  const handleSelectOperation = useCallback(
+    (operation: ClientSettingOperation): void => guard(() => setSelectedOperation(operation)),
+    [guard],
+  )
 
   const openServiceCreate = useCallback((): void => {
     setServiceCreateError(null)
@@ -1230,7 +1377,7 @@ function ServicesOperationsSection(): React.ReactNode {
                   deletingUid={
                     isDeletingOperation ? (operationDeleteTarget?.uid ?? null) : null
                   }
-                  onSelect={setSelectedOperation}
+                  onSelect={handleSelectOperation}
                   onDelete={requestDeleteOperation}
                 />
               </div>
@@ -1400,6 +1547,7 @@ function PermissionMatrixEditor({
     data: scopeData,
     isLoading: isScopeLoading,
     isError: isScopeError,
+    refetch: refetchScope,
   } = useListOperationItemsQuery(operationUid)
   const { data: semanticTables } = useListSemanticTablesQuery()
 
@@ -1417,6 +1565,8 @@ function PermissionMatrixEditor({
   const exceptionItems = useListExceptionItemsQuery(exceptionItemsArg)
   const itemsData = isProfile ? profileItems.data : exceptionItems.data
   const isItemsError = isProfile ? profileItems.isError : exceptionItems.isError
+  const isItemsLoading = isProfile ? profileItems.isLoading : exceptionItems.isLoading
+  const refetchItems = isProfile ? profileItems.refetch : exceptionItems.refetch
 
   const [replaceProfileItems, { isLoading: isSavingProfile }] = useReplaceProfileItemsMutation()
   const [replaceExceptionItems, { isLoading: isSavingException }] =
@@ -1472,7 +1622,11 @@ function PermissionMatrixEditor({
     })
   }, [draftKeys, groups])
 
-  const dirty = !sameKeys(draftKeys, serverKeys) || staleKeys.length > 0
+  // 範圍或既有授權任一讀不到,就不准整批覆蓋(見 LoadFailedNotice)
+  const loadFailed =
+    isScopeError || scopeData === undefined || isItemsError || itemsData === undefined
+  const dirty = !loadFailed && (!sameKeys(draftKeys, serverKeys) || staleKeys.length > 0)
+  useReportDirty(dirty)
 
   const handleToggle = useCallback(
     (tableName: string, columnName: string, action: PermissionAction): void => {
@@ -1537,10 +1691,26 @@ function PermissionMatrixEditor({
     targetUid,
   ])
 
-  if (isScopeLoading) {
-    return <p className="text-sm text-muted-foreground md:text-base">載入作業範圍中…</p>
+  const handleRetry = useCallback((): void => {
+    void refetchScope()
+    void refetchItems()
+  }, [refetchScope, refetchItems])
+
+  if (isScopeLoading || isItemsLoading) {
+    return <p className="text-sm text-muted-foreground md:text-base">載入授權矩陣中…</p>
   }
-  if (isScopeError) return <InlineError message="載入作業範圍失敗,請稍後再試" />
+  if (loadFailed) {
+    return (
+      <LoadFailedNotice
+        message={
+          isScopeError || scopeData === undefined
+            ? '載入作業範圍失敗;讀不到範圍上限前不開放編輯授權矩陣'
+            : '載入既有授權失敗;讀不到目前授權前不開放編輯(整批儲存會覆蓋既有授權)'
+        }
+        onRetry={handleRetry}
+      />
+    )
+  }
   if (groups.length === 0) {
     return (
       <EmptyState message="此作業尚未設定範圍,請先至「服務 / 作業」分頁設定表 × 欄位範圍" />
@@ -1549,7 +1719,6 @@ function PermissionMatrixEditor({
 
   return (
     <div className="flex flex-col gap-4">
-      {isItemsError ? <InlineError message="載入授權矩陣失敗,請稍後再試" /> : null}
       {staleKeys.length > 0 ? (
         <InlineError
           message={`下列既有授權已超出目前作業範圍,儲存時將一併移除:${staleKeys
@@ -1677,13 +1846,20 @@ function PermissionSetEditor({
   const isProfile = kind === 'profile'
   const kindLabel = isProfile ? '設定檔' : '特例權限組'
 
-  const { data: serviceData } = useListServicesQuery()
-  const { data: operationData } = useListOperationsQuery(undefined)
+  const { data: serviceData, isError: isServicesError } = useListServicesQuery()
+  const {
+    data: operationData,
+    isError: isOperationsError,
+    isLoading: isOperationsLoading,
+    refetch: refetchOperations,
+  } = useListOperationsQuery(undefined)
 
   const profileOperations = useListProfileOperationsQuery(isProfile ? targetUid : skipToken)
   const exceptionOperations = useListExceptionOperationsQuery(isProfile ? skipToken : targetUid)
   const grantedData = isProfile ? profileOperations.data : exceptionOperations.data
   const isGrantedError = isProfile ? profileOperations.isError : exceptionOperations.isError
+  const isGrantedLoading = isProfile ? profileOperations.isLoading : exceptionOperations.isLoading
+  const refetchGranted = isProfile ? profileOperations.refetch : exceptionOperations.refetch
 
   const [replaceProfileOperations, { isLoading: isSavingProfileOps }] =
     useReplaceProfileOperationsMutation()
@@ -1735,7 +1911,11 @@ function PermissionSetEditor({
   }, [serviceData, operations])
 
   const draftSet = useMemo((): Set<string> => new Set(draftUids), [draftUids])
-  const dirty = !sameKeys(draftUids, serverUids)
+  // 已勾作業或作業母清單任一讀不到,就不准整批覆蓋
+  const operationsLoadFailed = isOperationsError || operationData === undefined
+  const loadFailed = isGrantedError || grantedData === undefined || operationsLoadFailed
+  const dirty = !loadFailed && !sameKeys(draftUids, serverUids)
+  useReportDirty(dirty)
 
   // 授權矩陣只能設「已存檔勾選」的作業(未勾作業後端回 409),故以伺服器狀態為準
   const grantedOperations = useMemo(
@@ -1796,6 +1976,11 @@ function PermissionSetEditor({
     [],
   )
 
+  const handleRetry = useCallback((): void => {
+    void refetchGranted()
+    void refetchOperations()
+  }, [refetchGranted, refetchOperations])
+
   return (
     <div className="flex flex-col gap-6">
       <div className="df-card flex flex-col gap-4 p-4 md:p-5">
@@ -1805,15 +1990,34 @@ function PermissionSetEditor({
         <p className="text-sm text-muted-foreground md:text-base">
           先決定此{kindLabel}開哪些作業的門;取消勾選會一併清掉該作業下已設的授權
         </p>
-        {isGrantedError ? <InlineError message="載入勾選作業失敗,請稍後再試" /> : null}
-        <OperationPicker groups={groups} selectedUids={draftSet} onToggle={handleToggleOperation} />
-        <EditorActions
-          dirty={dirty}
-          saving={isSavingOperations}
-          saveLabel="儲存勾選作業"
-          onSave={handleSaveOperations}
-          onReset={handleResetOperations}
-        />
+        {isServicesError ? <InlineError message="載入服務清單失敗,請稍後再試" /> : null}
+        {isGrantedLoading || isOperationsLoading ? (
+          <p className="text-sm text-muted-foreground md:text-base">載入中…</p>
+        ) : loadFailed ? (
+          <LoadFailedNotice
+            message={
+              operationsLoadFailed
+                ? '載入作業清單失敗;讀不到作業母清單前不開放編輯'
+                : '載入勾選作業失敗;讀不到目前勾選前不開放編輯(整批儲存會覆蓋既有勾選)'
+            }
+            onRetry={handleRetry}
+          />
+        ) : (
+          <>
+            <OperationPicker
+              groups={groups}
+              selectedUids={draftSet}
+              onToggle={handleToggleOperation}
+            />
+            <EditorActions
+              dirty={dirty}
+              saving={isSavingOperations}
+              saveLabel="儲存勾選作業"
+              onSave={handleSaveOperations}
+              onReset={handleResetOperations}
+            />
+          </>
+        )}
         <InlineError message={saveError} />
         <InlineNotice message={notice} />
       </div>
@@ -1824,7 +2028,9 @@ function PermissionSetEditor({
           逐表逐欄勾讀取 / 編輯;可選範圍上限為該作業的表 × 欄位範圍(給不出範圍外的欄位),
           未勾任何欄位 = 該作業不給資料(default-closed)
         </p>
-        {grantedOperations.length === 0 ? (
+        {loadFailed ? (
+          <InlineError message="讀取失敗,無法顯示已勾選作業;請先於上方重新載入" />
+        ) : grantedOperations.length === 0 ? (
           <EmptyState message="尚未儲存任何勾選作業;請先於上方勾選並儲存" />
         ) : (
           <>
@@ -1887,6 +2093,12 @@ function ProfilesSection(): React.ReactNode {
     setSelected(null)
   }
 
+  const { guard } = useContext(DirtyGuardContext)
+  const handleSelect = useCallback(
+    (item: PermissionProfile): void => guard(() => setSelected(item)),
+    [guard],
+  )
+
   const openCreate = useCallback((): void => {
     setCreateError(null)
     setCreateOpen(true)
@@ -1939,7 +2151,7 @@ function ProfilesSection(): React.ReactNode {
               emptyMessage="尚無設定檔"
               selectedUid={selected?.uid ?? null}
               deletingUid={isDeleting ? (deleteTarget?.uid ?? null) : null}
-              onSelect={setSelected}
+              onSelect={handleSelect}
               onDelete={requestDelete}
             />
           </div>
@@ -2071,6 +2283,8 @@ function RoleCreateDialog({
 interface RoleTableProps {
   items: ClientSettingRole[]
   profiles: PermissionProfile[]
+  /** 設定檔清單讀取失敗:下拉選項不完整,禁止改綁以免誤送 */
+  profilesUnavailable: boolean
   deletingUid: string | null
   rebindingUid: string | null
   onRebind: (role: ClientSettingRole, profileUid: string) => void
@@ -2080,6 +2294,7 @@ interface RoleTableProps {
 const RoleTable = memo(function RoleTable({
   items,
   profiles,
+  profilesUnavailable,
   deletingUid,
   rebindingUid,
   onRebind,
@@ -2104,19 +2319,23 @@ const RoleTable = memo(function RoleTable({
           >
             <td className="df-td font-medium text-foreground">{role.name}</td>
             <td className="df-td">
-              <select
-                value={role.permission_profile_uid}
-                onChange={(event) => onRebind(role, event.target.value)}
-                disabled={rebindingUid === role.uid}
-                aria-label={`${role.name} 綁定設定檔`}
-                className="df-input min-w-[12rem]"
-              >
-                {profiles.map((profile) => (
-                  <option key={profile.uid} value={profile.uid}>
-                    {profile.name}
-                  </option>
-                ))}
-              </select>
+              {profilesUnavailable ? (
+                <span className="text-muted-foreground">—(設定檔清單讀取失敗)</span>
+              ) : (
+                <select
+                  value={role.permission_profile_uid}
+                  onChange={(event) => onRebind(role, event.target.value)}
+                  disabled={rebindingUid === role.uid}
+                  aria-label={`${role.name} 綁定設定檔`}
+                  className="df-input min-w-[12rem]"
+                >
+                  {profiles.map((profile) => (
+                    <option key={profile.uid} value={profile.uid}>
+                      {profile.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </td>
             <td className="df-td text-muted-foreground">{role.description ?? '—'}</td>
             <td className="df-td">
@@ -2145,7 +2364,7 @@ function RolesSection(): React.ReactNode {
   const [rebindNotice, setRebindNotice] = useState<string | null>(null)
   const [rebindingUid, setRebindingUid] = useState<string | null>(null)
 
-  const { data: profileData } = useListPermissionProfilesQuery()
+  const { data: profileData, isError: isProfilesError } = useListPermissionProfilesQuery()
   const { data, isLoading, isError } = useListClientSettingRolesQuery()
   const [createClientSettingRole, { isLoading: isCreating }] = useCreateClientSettingRoleMutation()
   const [updateClientSettingRole] = useUpdateClientSettingRoleMutation()
@@ -2214,14 +2433,17 @@ function RolesSection(): React.ReactNode {
         <h2 className="text-base font-semibold text-foreground md:text-lg">Role</h2>
         <CreateButton
           label="新增 Role"
-          disabled={profiles.length === 0}
+          disabled={profiles.length === 0 || isProfilesError}
           onClick={openCreate}
         />
       </div>
       <p className="text-sm text-muted-foreground md:text-base">
         每個 Role 必綁 1 個權限設定檔(可改綁、不可清空);指派給使用者見「API Client 設定」頁
       </p>
-      {profiles.length === 0 ? (
+      {/* 讀不到設定檔 ≠ 沒有設定檔:失敗時給故障訊息,不可叫使用者去重建已存在的資料 */}
+      {isProfilesError ? (
+        <InlineError message="載入權限設定檔清單失敗,請稍後再試;改綁下拉與新增 Role 暫不可用" />
+      ) : profileData !== undefined && profiles.length === 0 ? (
         <InlineError message="尚無權限設定檔,請先於「設定檔」分頁建立後再建 Role" />
       ) : null}
       {isLoading ? <p className="text-sm text-muted-foreground md:text-base">載入中…</p> : null}
@@ -2231,6 +2453,7 @@ function RolesSection(): React.ReactNode {
           <RoleTable
             items={items}
             profiles={profiles}
+            profilesUnavailable={isProfilesError}
             deletingUid={isDeleting ? (deleteTarget?.uid ?? null) : null}
             rebindingUid={rebindingUid}
             onRebind={handleRebind}
@@ -2291,6 +2514,12 @@ function ExceptionSetsSection(): React.ReactNode {
     setSelected(null)
   }
 
+  const { guard } = useContext(DirtyGuardContext)
+  const handleSelect = useCallback(
+    (item: ExceptionSet): void => guard(() => setSelected(item)),
+    [guard],
+  )
+
   const openCreate = useCallback((): void => {
     setCreateError(null)
     setCreateOpen(true)
@@ -2344,7 +2573,7 @@ function ExceptionSetsSection(): React.ReactNode {
               emptyMessage="尚無特例權限組"
               selectedUid={selected?.uid ?? null}
               deletingUid={isDeleting ? (deleteTarget?.uid ?? null) : null}
-              onSelect={setSelected}
+              onSelect={handleSelect}
               onDelete={requestDelete}
             />
           </div>
@@ -2392,9 +2621,29 @@ function ExceptionSetsSection(): React.ReactNode {
 /* 主頁面                                                                   */
 /* ---------------------------------------------------------------------- */
 
-export default function ClientSettingsPage(): React.ReactNode {
+/** 分頁切換需經守衛,故與 Provider 分層(useContext 必須在 Provider 之下) */
+function ClientSettingsTabs(): React.ReactNode {
   const [tab, setTab] = useState<TabKey>('services')
+  const { guard } = useContext(DirtyGuardContext)
 
+  const handleTabChange = useCallback(
+    (next: TabKey): void => guard(() => setTab(next)),
+    [guard],
+  )
+
+  return (
+    <>
+      <Segmented options={TAB_OPTIONS} value={tab} onChange={handleTabChange} />
+
+      {tab === 'services' ? <ServicesOperationsSection /> : null}
+      {tab === 'profiles' ? <ProfilesSection /> : null}
+      {tab === 'roles' ? <RolesSection /> : null}
+      {tab === 'exceptions' ? <ExceptionSetsSection /> : null}
+    </>
+  )
+}
+
+export default function ClientSettingsPage(): React.ReactNode {
   return (
     <section className="mx-auto flex max-w-7xl flex-col gap-6">
       <div>
@@ -2404,12 +2653,9 @@ export default function ClientSettingsPage(): React.ReactNode {
         </p>
       </div>
 
-      <Segmented options={TAB_OPTIONS} value={tab} onChange={setTab} />
-
-      {tab === 'services' ? <ServicesOperationsSection /> : null}
-      {tab === 'profiles' ? <ProfilesSection /> : null}
-      {tab === 'roles' ? <RolesSection /> : null}
-      {tab === 'exceptions' ? <ExceptionSetsSection /> : null}
+      <DirtyGuardProvider>
+        <ClientSettingsTabs />
+      </DirtyGuardProvider>
     </section>
   )
 }

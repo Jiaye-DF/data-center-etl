@@ -263,6 +263,9 @@ export interface ReplaceExceptionItemsPayload {
 export const clientSettingApi = baseApi
   .enhanceEndpoints({
     addTagTypes: [
+      // apiClientApi.ts 的 effective-permissions 預覽標籤;本檔任一權限異動都須連帶失效
+      // (同一 baseApi,跨檔共用;此處重複註冊只是為了讓本檔的 invalidatesTags 型別合法)
+      'ApiClientPermission',
       'ClientSettingService',
       'ClientSettingOperation',
       'ClientSettingOperationItems',
@@ -308,6 +311,7 @@ export const clientSettingApi = baseApi
         invalidatesTags: [
           { type: 'ClientSettingService', id: 'LIST' },
           { type: 'ClientSettingOperation', id: 'LIST' },
+          { type: 'ApiClientPermission' },
         ],
         transformResponse: (
           response: ApiEnvelope<ClientSettingService>,
@@ -351,9 +355,11 @@ export const clientSettingApi = baseApi
       }),
       deleteOperation: build.mutation<ClientSettingOperation, string>({
         query: (uid) => ({ url: `/client-settings/operations/${uid}`, method: 'DELETE' }),
+        // OperationItems 的 provider 以 uid 為 id,故整型失效(帶 id:'LIST' 匹配不到任何條目)
         invalidatesTags: [
           { type: 'ClientSettingOperation', id: 'LIST' },
-          { type: 'ClientSettingOperationItems', id: 'LIST' },
+          { type: 'ClientSettingOperationItems' },
+          { type: 'ApiClientPermission' },
         ],
         transformResponse: (
           response: ApiEnvelope<ClientSettingOperation>,
@@ -378,7 +384,8 @@ export const clientSettingApi = baseApi
         }),
         invalidatesTags: (_result, _error, { uid }) => [
           { type: 'ClientSettingOperationItems', id: uid },
-          { type: 'ClientSettingOperationItems', id: 'LIST' },
+          // 範圍縮小會連帶收斂設定檔 / 特例組的授權 ∩ 結果
+          { type: 'ApiClientPermission' },
         ],
         transformResponse: (
           response: ApiEnvelope<OperationItemListData>,
@@ -422,6 +429,7 @@ export const clientSettingApi = baseApi
         invalidatesTags: [
           { type: 'ClientSettingProfile', id: 'LIST' },
           { type: 'ClientSettingRole', id: 'LIST' },
+          { type: 'ApiClientPermission' },
         ],
         transformResponse: (
           response: ApiEnvelope<PermissionProfile>,
@@ -447,9 +455,12 @@ export const clientSettingApi = baseApi
           method: 'PUT',
           body: { operation_uids },
         }),
+        // 後端同交易清掉被取消作業的授權項 → ProfileItems 須整型失效
+        // (provider 的 id 為 `${uid}-${operationUid}`,帶 id:'LIST' 匹配不到任何條目)
         invalidatesTags: (_result, _error, { uid }) => [
           { type: 'ClientSettingProfileOperations', id: uid },
-          { type: 'ClientSettingProfileItems', id: 'LIST' },
+          { type: 'ClientSettingProfileItems' },
+          { type: 'ApiClientPermission' },
         ],
         transformResponse: (
           response: ApiEnvelope<ProfileOperationListData>,
@@ -476,6 +487,7 @@ export const clientSettingApi = baseApi
         }),
         invalidatesTags: (_result, _error, { uid, operationUid }) => [
           { type: 'ClientSettingProfileItems', id: `${uid}-${operationUid}` },
+          { type: 'ApiClientPermission' },
         ],
         transformResponse: (
           response: ApiEnvelope<ProfileItemListData>,
@@ -509,7 +521,11 @@ export const clientSettingApi = baseApi
           method: 'PATCH',
           body,
         }),
-        invalidatesTags: [{ type: 'ClientSettingRole', id: 'LIST' }],
+        // 改綁設定檔即改變指派此 Role 的 Client 最終可見欄位
+        invalidatesTags: [
+          { type: 'ClientSettingRole', id: 'LIST' },
+          { type: 'ApiClientPermission' },
+        ],
         transformResponse: (
           response: ApiEnvelope<ClientSettingRole>,
         ): ClientSettingRole => unwrap(response),
@@ -548,7 +564,10 @@ export const clientSettingApi = baseApi
       }),
       deleteExceptionSet: build.mutation<ExceptionSet, string>({
         query: (uid) => ({ url: `/client-settings/exception-sets/${uid}`, method: 'DELETE' }),
-        invalidatesTags: [{ type: 'ClientSettingExceptionSet', id: 'LIST' }],
+        invalidatesTags: [
+          { type: 'ClientSettingExceptionSet', id: 'LIST' },
+          { type: 'ApiClientPermission' },
+        ],
         transformResponse: (response: ApiEnvelope<ExceptionSet>): ExceptionSet =>
           unwrap(response),
       }),
@@ -572,9 +591,11 @@ export const clientSettingApi = baseApi
           method: 'PUT',
           body: { operation_uids },
         }),
+        // 同 replaceProfileOperations:被取消作業的授權項後端已清,須整型失效
         invalidatesTags: (_result, _error, { uid }) => [
           { type: 'ClientSettingExceptionOperations', id: uid },
-          { type: 'ClientSettingExceptionItems', id: 'LIST' },
+          { type: 'ClientSettingExceptionItems' },
+          { type: 'ApiClientPermission' },
         ],
         transformResponse: (
           response: ApiEnvelope<ExceptionOperationListData>,
@@ -601,6 +622,7 @@ export const clientSettingApi = baseApi
         }),
         invalidatesTags: (_result, _error, { uid, operationUid }) => [
           { type: 'ClientSettingExceptionItems', id: `${uid}-${operationUid}` },
+          { type: 'ApiClientPermission' },
         ],
         transformResponse: (
           response: ApiEnvelope<ExceptionItemListData>,
