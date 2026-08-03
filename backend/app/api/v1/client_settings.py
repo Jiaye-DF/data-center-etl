@@ -6,15 +6,15 @@
 - 服務:`GET|POST /services`、`PATCH|DELETE /services/{uid}`(code 建立後不可改;
   底下仍有作業不得刪)。
 - 作業:`GET|POST /operations`、`PATCH|DELETE /operations/{uid}`(歸屬服務不可改;
-  被設定檔 / 特例組引用不得刪)。
+  被角色權限設定檔 / 臨時權限組引用不得刪)。
 - 作業範圍:`GET|PUT /operations/{uid}/items`(整批置換;表 / 欄位須為 confirmed 語意映射)。
-- 權限設定檔:`GET|POST /profiles`、`PATCH|DELETE /profiles/{uid}`(被 Role 綁不得刪);
+- 角色權限設定檔:`GET|POST /profiles`、`PATCH|DELETE /profiles/{uid}`(被角色綁不得刪);
   `GET|PUT /profiles/{uid}/operations`(勾選可讀作業整批置換);
   `GET|PUT /profiles/{uid}/operations/{operation_uid}/items`(授權矩陣整批置換)。
-- Role:`GET|POST /roles`、`PATCH|DELETE /roles/{uid}`(必綁 1 設定檔;被 Client 指派
+- 角色:`GET|POST /roles`、`PATCH|DELETE /roles/{uid}`(必綁 1 角色權限設定檔;被 Client 指派
   不得刪)。與既有 `/api/v1/roles`(後台人員角色)分屬不同資源,勿混用。
-- 特例權限組(task-006):`GET|POST /exception-sets`、`PATCH|DELETE /exception-sets/{uid}`
-  (可重用,同一組可綁多個 Client;仍被未過期綁定引用不得刪);內容維護端點與設定檔對稱
+- 臨時權限組(task-006):`GET|POST /exception-sets`、`PATCH|DELETE /exception-sets/{uid}`
+  (可重用,同一組可綁多個 Client;仍被未過期綁定引用不得刪);內容維護端點與角色權限設定檔對稱
   ——`GET|PUT /exception-sets/{uid}/operations`、
   `GET|PUT /exception-sets/{uid}/operations/{operation_uid}/items`。
 - API Client 指派(task-006):以 client uid 定位於本前綴下,不動既有 `/api/v1/api-clients`
@@ -184,7 +184,7 @@ async def update_operation(
 @router.delete(
     "/operations/{uid}",
     response_model=ApiResponse[OperationResponse],
-    summary="刪除作業(軟刪,範圍項連動;被設定檔 / 特例組引用 409)",
+    summary="刪除作業(軟刪,範圍項連動;被角色權限設定檔 / 臨時權限組引用 409)",
 )
 async def delete_operation(
     uid: UUID,
@@ -227,11 +227,11 @@ async def replace_operation_items(
     return success(data=data)
 
 
-# ── 權限設定檔 ──────────────────────────────────────────────────────────
+# ── 角色權限設定檔 ──────────────────────────────────────────────────────────
 @router.get(
     "/profiles",
     response_model=ApiResponse[PermissionProfileListResponse],
-    summary="權限設定檔清單(讀取走 Redis 快取,排除軟刪)",
+    summary="角色權限設定檔清單(讀取走 Redis 快取,排除軟刪)",
 )
 async def list_permission_profiles(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -245,7 +245,7 @@ async def list_permission_profiles(
     "/profiles",
     response_model=ApiResponse[PermissionProfileResponse],
     status_code=201,
-    summary="建立權限設定檔(name 未刪列唯一,重複 409)",
+    summary="建立角色權限設定檔(name 未刪列唯一,重複 409)",
 )
 async def create_permission_profile(
     payload: PermissionProfileCreateRequest,
@@ -261,7 +261,7 @@ async def create_permission_profile(
 @router.patch(
     "/profiles/{uid}",
     response_model=ApiResponse[PermissionProfileResponse],
-    summary="更新權限設定檔(名稱 / 說明)",
+    summary="更新角色權限設定檔(名稱 / 說明)",
 )
 async def update_permission_profile(
     uid: UUID,
@@ -278,7 +278,7 @@ async def update_permission_profile(
 @router.delete(
     "/profiles/{uid}",
     response_model=ApiResponse[PermissionProfileResponse],
-    summary="刪除權限設定檔(軟刪,勾選 / 授權連動;仍被 Role 綁定 409)",
+    summary="刪除角色權限設定檔(軟刪,勾選 / 授權連動;仍被角色綁定 409)",
 )
 async def delete_permission_profile(
     uid: UUID,
@@ -289,11 +289,11 @@ async def delete_permission_profile(
     return success(data=data)
 
 
-# ── 設定檔勾選作業 ──────────────────────────────────────────────────────
+# ── 角色權限設定檔勾選作業 ──────────────────────────────────────────────────────
 @router.get(
     "/profiles/{uid}/operations",
     response_model=ApiResponse[ProfileOperationListResponse],
-    summary="設定檔已勾選的可讀作業",
+    summary="角色權限設定檔已勾選的可讀作業",
 )
 async def list_profile_operations(
     uid: UUID,
@@ -321,11 +321,11 @@ async def replace_profile_operations(
     return success(data=data)
 
 
-# ── 設定檔授權矩陣(作業 × 表 × 欄位 × read/edit)──────────────────────
+# ── 角色權限設定檔授權矩陣(作業 × 表 × 欄位 × read/edit)──────────────────────
 @router.get(
     "/profiles/{uid}/operations/{operation_uid}/items",
     response_model=ApiResponse[ProfileItemListResponse],
-    summary="設定檔在單一作業下的授權項",
+    summary="角色權限設定檔在單一作業下的授權項",
 )
 async def list_profile_items(
     uid: UUID,
@@ -355,11 +355,11 @@ async def replace_profile_items(
     return success(data=data)
 
 
-# ── Role(API Client 角色;與後台人員角色 /api/v1/roles 不同資源)───────
+# ── 角色(API Client 角色;與後台人員角色 /api/v1/roles 不同資源)───────
 @router.get(
     "/roles",
     response_model=ApiResponse[RoleListResponse],
-    summary="Role 清單(讀取走 Redis 快取,排除軟刪)",
+    summary="角色清單(讀取走 Redis 快取,排除軟刪)",
 )
 async def list_client_roles(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -373,7 +373,7 @@ async def list_client_roles(
     "/roles",
     response_model=ApiResponse[RoleResponse],
     status_code=201,
-    summary="建立 Role(必帶 permission_profile_uid,缺值 422;name 未刪列唯一 409)",
+    summary="建立角色(必帶 permission_profile_uid,缺值 422;name 未刪列唯一 409)",
 )
 async def create_client_role(
     payload: RoleCreateRequest,
@@ -387,7 +387,7 @@ async def create_client_role(
 @router.patch(
     "/roles/{uid}",
     response_model=ApiResponse[RoleResponse],
-    summary="更新 Role(可改綁設定檔;顯式清空 permission_profile_uid 422)",
+    summary="更新角色(可改綁角色權限設定檔;顯式清空 permission_profile_uid 422)",
 )
 async def update_client_role(
     uid: UUID,
@@ -402,7 +402,7 @@ async def update_client_role(
 @router.delete(
     "/roles/{uid}",
     response_model=ApiResponse[RoleResponse],
-    summary="刪除 Role(軟刪;仍被 API Client 指派 409)",
+    summary="刪除角色(軟刪;仍被 API Client 指派 409)",
 )
 async def delete_client_role(
     uid: UUID,
@@ -413,11 +413,11 @@ async def delete_client_role(
     return success(data=data)
 
 
-# ── 特例權限組(可重用;結構同設定檔)──────────────────────────────────
+# ── 臨時權限組(可重用;結構同角色權限設定檔)──────────────────────────────────
 @router.get(
     "/exception-sets",
     response_model=ApiResponse[ExceptionSetListResponse],
-    summary="特例權限組清單(讀取走 Redis 快取,排除軟刪)",
+    summary="臨時權限組清單(讀取走 Redis 快取,排除軟刪)",
 )
 async def list_exception_sets(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -431,7 +431,7 @@ async def list_exception_sets(
     "/exception-sets",
     response_model=ApiResponse[ExceptionSetResponse],
     status_code=201,
-    summary="建立特例權限組(name 未刪列唯一,重複 409)",
+    summary="建立臨時權限組(name 未刪列唯一,重複 409)",
 )
 async def create_exception_set(
     payload: ExceptionSetCreateRequest,
@@ -445,7 +445,7 @@ async def create_exception_set(
 @router.patch(
     "/exception-sets/{uid}",
     response_model=ApiResponse[ExceptionSetResponse],
-    summary="更新特例權限組(名稱 / 說明)",
+    summary="更新臨時權限組(名稱 / 說明)",
 )
 async def update_exception_set(
     uid: UUID,
@@ -462,7 +462,7 @@ async def update_exception_set(
 @router.delete(
     "/exception-sets/{uid}",
     response_model=ApiResponse[ExceptionSetResponse],
-    summary="刪除特例權限組(軟刪,勾選 / 授權連動;仍被未過期綁定引用 409)",
+    summary="刪除臨時權限組(軟刪,勾選 / 授權連動;仍被未過期綁定引用 409)",
 )
 async def delete_exception_set(
     uid: UUID,
@@ -473,11 +473,11 @@ async def delete_exception_set(
     return success(data=data)
 
 
-# ── 特例組勾選作業 / 授權矩陣(語意同設定檔)──────────────────────────
+# ── 臨時權限組勾選作業 / 授權矩陣(語意同角色權限設定檔)──────────────────────────
 @router.get(
     "/exception-sets/{uid}/operations",
     response_model=ApiResponse[ExceptionOperationListResponse],
-    summary="特例權限組已勾選的可讀作業",
+    summary="臨時權限組已勾選的可讀作業",
 )
 async def list_exception_operations(
     uid: UUID,
@@ -508,7 +508,7 @@ async def replace_exception_operations(
 @router.get(
     "/exception-sets/{uid}/operations/{operation_uid}/items",
     response_model=ApiResponse[ExceptionItemListResponse],
-    summary="特例權限組在單一作業下的授權項",
+    summary="臨時權限組在單一作業下的授權項",
 )
 async def list_exception_items(
     uid: UUID,
@@ -538,11 +538,11 @@ async def replace_exception_items(
     return success(data=data)
 
 
-# ── API Client 的 Role 指派(0..1)─────────────────────────────────────
+# ── API Client 的角色指派(0..1)─────────────────────────────────────
 @router.put(
     "/clients/{client_uid}/role",
     response_model=ApiResponse[ClientRoleResponse],
-    summary="指派 / 改指派 Role(冪等置換;Client 或 Role 不存在 404)",
+    summary="指派 / 改指派角色(冪等置換;Client 或角色不存在 404)",
 )
 async def assign_client_role(
     client_uid: UUID,
@@ -559,7 +559,7 @@ async def assign_client_role(
 @router.delete(
     "/clients/{client_uid}/role",
     response_model=ApiResponse[ClientRoleResponse],
-    summary="解除 Role 指派(本來就沒指派 404)",
+    summary="解除角色指派(本來就沒指派 404)",
 )
 async def remove_client_role(
     client_uid: UUID,
@@ -572,11 +572,11 @@ async def remove_client_role(
     return success(data=data)
 
 
-# ── API Client 的特例組綁定(0..N,各自效期)──────────────────────────
+# ── API Client 的臨時權限組綁定(0..N,各自效期)──────────────────────────
 @router.get(
     "/clients/{client_uid}/exception-sets",
     response_model=ApiResponse[ClientExceptionSetListResponse],
-    summary="特例綁定清單(含已過期,以 is_expired 標示)",
+    summary="臨時權限綁定清單(含已過期,以 is_expired 標示)",
 )
 async def list_client_exception_sets(
     client_uid: UUID,
@@ -591,7 +591,7 @@ async def list_client_exception_sets(
     "/clients/{client_uid}/exception-sets",
     response_model=ApiResponse[ClientExceptionSetResponse],
     status_code=201,
-    summary="綁定特例權限組(expires_at 省略 = 不設限;重複綁同組 409)",
+    summary="綁定臨時權限組(expires_at 省略 = 不設限;重複綁同組 409)",
 )
 async def bind_client_exception_set(
     client_uid: UUID,
@@ -608,7 +608,7 @@ async def bind_client_exception_set(
 @router.delete(
     "/clients/{client_uid}/exception-sets/{binding_uid}",
     response_model=ApiResponse[ClientExceptionSetResponse],
-    summary="解除單筆特例綁定(以綁定列 uid 定位;不屬於該 Client 404)",
+    summary="解除單筆臨時權限綁定(以綁定列 uid 定位;不屬於該 Client 404)",
 )
 async def unbind_client_exception_set(
     client_uid: UUID,

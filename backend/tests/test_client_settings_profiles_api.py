@@ -1,11 +1,11 @@
-"""權限設定檔 / Role 管理 API 測試(v1.6.1 task-005)。
+"""角色權限設定檔 / Role 管理 API 測試(v1.6.1 task-005)。
 
 fixture 區塊與 test_client_settings_services_api.py 同構:真實本地 PostgreSQL 測試 DB
 同時假扮「自有 DB」與「目標 RDS」;清理一律 DELETE 資料,**不做任何 DROP**。
 
-涵蓋:非 admin 403、設定檔 CRUD、勾作業整批置換(含取消勾選連動清授權項)、授權矩陣整批
+涵蓋:非 admin 403、角色權限設定檔 CRUD、勾作業整批置換(含取消勾選連動清授權項)、授權矩陣整批
 置換(未勾作業 409 / 超出作業範圍 422 / 非 confirmed 422 / 重複 422 / 非法 action 422)、
-Role CRUD 必綁設定檔防呆、刪除防呆 409、稽核事件、失效扇出(綁該設定檔的 Role → Client)。
+Role CRUD 必綁角色權限設定檔防呆、刪除防呆 409、稽核事件、失效扇出(綁該設定檔的 Role → Client)。
 測試資料一律帶隨機前綴,避免與並行測試/他人資料互撞。
 """
 
@@ -369,7 +369,7 @@ async def _granted_items(
 async def _matrix_fixture(
     client: AsyncClient, db_engine: AsyncEngine, tag: str
 ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
-    """一組可用的矩陣場景:作業範圍只開 `table1.col_ok`,設定檔已勾選該作業。"""
+    """一組可用的矩陣場景:作業範圍只開 `table1.col_ok`,角色權限設定檔已勾選該作業。"""
     names = await _seed_semantic(db_engine, tag)
     service = await _create_service(client, tag)
     operation = await _create_operation(client, service["uid"], f"O1-{tag}")
@@ -408,7 +408,7 @@ async def test_member_forbidden_on_profile_and_role_endpoints(
         assert resp.status_code == 403, f"{method} {path}: {resp.text}"
 
 
-# ── 設定檔 CRUD ─────────────────────────────────────────────────────────
+# ── 角色權限設定檔 CRUD ─────────────────────────────────────────────────────────
 async def test_profile_crud_round_trip(
     client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
@@ -806,7 +806,7 @@ async def test_role_crud_round_trip(
     assert created["permission_profile_uid"] == profile_a["uid"]
     assert f"R-{tag}" in await _role_names(client)
 
-    # 改綁設定檔(仍必有值)
+    # 改綁角色權限設定檔(仍必有值)
     patched = await client.patch(
         f"{_ROLES}/{uid}",
         json={"permission_profile_uid": profile_b["uid"], "name": f"R-{tag}-改"},
@@ -833,14 +833,14 @@ async def test_role_must_bind_permission_profile(
     await _login_as(client, session_factory, "admin")
     profile = await _create_profile(client, f"P-{tag}")
 
-    # 建立時未帶設定檔 → 422
+    # 建立時未帶角色權限設定檔 → 422
     assert (await client.post(_ROLES, json={"name": f"R-{tag}"})).status_code == 422
     # 顯式 null 同樣 422
     resp = await client.post(
         _ROLES, json={"permission_profile_uid": None, "name": f"R-{tag}"}
     )
     assert resp.status_code == 422, resp.text
-    # 設定檔不存在 → 404
+    # 角色權限設定檔不存在 → 404
     resp = await client.post(
         _ROLES, json={"permission_profile_uid": str(uuid4()), "name": f"R-{tag}"}
     )
@@ -856,7 +856,7 @@ async def test_role_must_bind_permission_profile(
     kept = await client.patch(f"{_ROLES}/{role['uid']}", json={"description": "只改說明"})
     assert kept.status_code == 200, kept.text
     assert kept.json()["data"]["permission_profile_uid"] == profile["uid"]
-    # 改綁到不存在的設定檔 → 404
+    # 改綁到不存在的角色權限設定檔 → 404
     resp = await client.patch(
         f"{_ROLES}/{role['uid']}", json={"permission_profile_uid": str(uuid4())}
     )
@@ -904,7 +904,7 @@ async def test_role_delete_blocked_while_client_assigned(
     assert f"R-{tag}" in await _role_names(client)
 
 
-# ── 失效扇出(設定檔 / Role 異動 → 綁定該檔的 Client)──────────────────
+# ── 失效扇出(角色權限設定檔 / Role 異動 → 綁定該檔的 Client)──────────────────
 async def test_profile_write_invalidates_bound_client_effective_cache(
     client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
@@ -928,7 +928,7 @@ async def test_profile_write_invalidates_bound_client_effective_cache(
         for uid in (bound_client_uid, unrelated_client_uid):
             await cache.cache_set(effective_key(uid), "{}", ttl_seconds=300)
 
-    # 授權矩陣異動 → 綁該設定檔的 Client 被失效,其他 Client 不受影響
+    # 授權矩陣異動 → 綁該角色權限設定檔的 Client 被失效,其他 Client 不受影響
     await _seed_effective_cache()
     granted = await client.put(
         _items_path(profile["uid"], operation["uid"]),
@@ -951,7 +951,7 @@ async def test_profile_write_invalidates_bound_client_effective_cache(
     await _grant_operations(client, profile["uid"], [])
     assert await cache.cache_get(effective_key(bound_client_uid)) is None
 
-    # 設定檔改名(名稱會進 effective 快取內容)同樣扇出
+    # 角色權限設定檔改名(名稱會進 effective 快取內容)同樣扇出
     await _seed_effective_cache()
     renamed = await client.patch(
         f"{_PROFILES}/{profile['uid']}", json={"name": f"P-{tag}-改"}
@@ -959,7 +959,7 @@ async def test_profile_write_invalidates_bound_client_effective_cache(
     assert renamed.status_code == 200, renamed.text
     assert await cache.cache_get(effective_key(bound_client_uid)) is None
 
-    # Role 改綁設定檔 → 指派該 Role 的 Client 被失效
+    # Role 改綁角色權限設定檔 → 指派該 Role 的 Client 被失效
     await _seed_effective_cache()
     other_profile = await _create_profile(client, f"P-{tag}-other")
     rebound = await client.patch(

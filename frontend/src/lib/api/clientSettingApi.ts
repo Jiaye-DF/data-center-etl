@@ -5,10 +5,10 @@ import { unwrap, type ApiEnvelope } from '@/types/api'
  * 組織權限管理 API 層(v1.6.1 task-008)。
  *
  * 對應後端 `/api/v1/client-settings` 前綴(admin-only,見 `backend/app/api/v1/client_settings.py`):
- * 服務 → 作業(表 × 欄位範圍)→ 權限設定檔(勾作業 + 授權矩陣)→ Role(綁 1 設定檔);
- * 特例權限組(task-006)結構與設定檔對稱,獨立可重用、可綁多個 API Client。
+ * 服務 → 作業(表 × 欄位範圍)→ 角色權限設定檔(勾作業 + 授權矩陣)→ 角色(綁 1 角色權限設定檔);
+ * 臨時權限組(task-006)結構與角色權限設定檔對稱,獨立可重用、可綁多個 API Client。
  *
- * **不含**:API Client 的 Role 指派 / 特例綁定 / 最終權限預覽(`effective-permissions`)
+ * **不含**:API Client 的角色指派 / 臨時權限綁定 / 最終權限預覽(`effective-permissions`)
  * ——這三者依 task-010 規格併入既有 `apiClientApi.ts`(該頁「權限」面板專用,勿在此重複實作)。
  *
  * list 類回應統一 `{items, total}`(無分頁);寫入端點 invalidatesTags 對應清單標籤,
@@ -107,7 +107,7 @@ export interface ReplaceOperationItemsPayload {
 }
 
 /* ---------------------------------------------------------------------- */
-/* 權限設定檔 permission_profiles                                           */
+/* 角色權限設定檔 permission_profiles                                           */
 /* ---------------------------------------------------------------------- */
 
 export interface PermissionProfile {
@@ -132,7 +132,7 @@ export interface UpdatePermissionProfilePayload {
 }
 
 /* ---------------------------------------------------------------------- */
-/* 設定檔勾選作業 profile_operations                                        */
+/* 角色權限設定檔勾選作業 profile_operations                                        */
 /* ---------------------------------------------------------------------- */
 
 export interface ProfileOperation {
@@ -148,7 +148,7 @@ export interface ReplaceProfileOperationsPayload {
 }
 
 /* ---------------------------------------------------------------------- */
-/* 設定檔授權矩陣 profile_items(作業 × 表 × 欄位 × read/edit)               */
+/* 角色權限設定檔授權矩陣 profile_items(作業 × 表 × 欄位 × read/edit)               */
 /* ---------------------------------------------------------------------- */
 
 export interface ProfileItem {
@@ -172,7 +172,7 @@ export interface ReplaceProfileItemsPayload {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Role(API Client 角色;與後台人員角色 /api/v1/roles 不同資源)             */
+/* 角色(API Client 角色;與後台人員角色 /api/v1/roles 不同資源)             */
 /* ---------------------------------------------------------------------- */
 
 export interface ClientSettingRole {
@@ -200,7 +200,7 @@ export interface UpdateClientSettingRolePayload {
 }
 
 /* ---------------------------------------------------------------------- */
-/* 特例權限組 exception_sets(結構同設定檔,可重用 / 可綁多個 Client)         */
+/* 臨時權限組 exception_sets(結構同角色權限設定檔,可重用 / 可綁多個 Client)         */
 /* ---------------------------------------------------------------------- */
 
 export interface ExceptionSet {
@@ -384,7 +384,7 @@ export const clientSettingApi = baseApi
         }),
         invalidatesTags: (_result, _error, { uid }) => [
           { type: 'ClientSettingOperationItems', id: uid },
-          // 範圍縮小會連帶收斂設定檔 / 特例組的授權 ∩ 結果
+          // 範圍縮小會連帶收斂角色權限設定檔 / 臨時權限組的授權 ∩ 結果
           { type: 'ApiClientPermission' },
         ],
         transformResponse: (
@@ -392,7 +392,7 @@ export const clientSettingApi = baseApi
         ): OperationItemListData => unwrap(response),
       }),
 
-      // ── 權限設定檔 ──────────────────────────────────────────────────
+      // ── 角色權限設定檔 ──────────────────────────────────────────────────
       listPermissionProfiles: build.query<PermissionProfileListData, void>({
         query: () => ({ url: '/client-settings/profiles' }),
         providesTags: [{ type: 'ClientSettingProfile', id: 'LIST' }],
@@ -436,7 +436,7 @@ export const clientSettingApi = baseApi
         ): PermissionProfile => unwrap(response),
       }),
 
-      // ── 設定檔勾選作業 ──────────────────────────────────────────────
+      // ── 角色權限設定檔勾選作業 ──────────────────────────────────────────────
       listProfileOperations: build.query<ProfileOperationListData, string>({
         query: (uid) => ({ url: `/client-settings/profiles/${uid}/operations` }),
         providesTags: (_result, _error, uid) => [
@@ -467,7 +467,7 @@ export const clientSettingApi = baseApi
         ): ProfileOperationListData => unwrap(response),
       }),
 
-      // ── 設定檔授權矩陣 ──────────────────────────────────────────────
+      // ── 角色權限設定檔授權矩陣 ──────────────────────────────────────────────
       listProfileItems: build.query<ProfileItemListData, ListProfileItemsParams>({
         query: ({ uid, operationUid }) => ({
           url: `/client-settings/profiles/${uid}/operations/${operationUid}/items`,
@@ -521,7 +521,7 @@ export const clientSettingApi = baseApi
           method: 'PATCH',
           body,
         }),
-        // 改綁設定檔即改變指派此 Role 的 Client 最終可見欄位
+        // 改綁角色權限設定檔即改變指派此角色的 Client 最終可見欄位
         invalidatesTags: [
           { type: 'ClientSettingRole', id: 'LIST' },
           { type: 'ApiClientPermission' },
@@ -538,7 +538,7 @@ export const clientSettingApi = baseApi
         ): ClientSettingRole => unwrap(response),
       }),
 
-      // ── 特例權限組 ──────────────────────────────────────────────────
+      // ── 臨時權限組 ──────────────────────────────────────────────────
       listExceptionSets: build.query<ExceptionSetListData, void>({
         query: () => ({ url: '/client-settings/exception-sets' }),
         providesTags: [{ type: 'ClientSettingExceptionSet', id: 'LIST' }],
@@ -572,7 +572,7 @@ export const clientSettingApi = baseApi
           unwrap(response),
       }),
 
-      // ── 特例組勾選作業 ──────────────────────────────────────────────
+      // ── 臨時權限組勾選作業 ──────────────────────────────────────────────
       listExceptionOperations: build.query<ExceptionOperationListData, string>({
         query: (uid) => ({ url: `/client-settings/exception-sets/${uid}/operations` }),
         providesTags: (_result, _error, uid) => [
@@ -602,7 +602,7 @@ export const clientSettingApi = baseApi
         ): ExceptionOperationListData => unwrap(response),
       }),
 
-      // ── 特例組授權矩陣 ──────────────────────────────────────────────
+      // ── 臨時權限組授權矩陣 ──────────────────────────────────────────────
       listExceptionItems: build.query<ExceptionItemListData, ListExceptionItemsParams>({
         query: ({ uid, operationUid }) => ({
           url: `/client-settings/exception-sets/${uid}/operations/${operationUid}/items`,

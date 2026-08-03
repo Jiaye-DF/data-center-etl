@@ -491,7 +491,7 @@ async def test_operation_create_with_unknown_service_returns_404(
 async def test_operation_delete_blocked_when_referenced(
     client: AsyncClient, session_factory: async_sessionmaker[AsyncSession], tag: str
 ) -> None:
-    """被權限設定檔勾選的作業不得刪(設定檔管理端點屬 task-005,此處直接以 repo 建關聯)。"""
+    """被角色權限設定檔勾選的作業不得刪(設定檔管理端點屬 task-005,此處直接以 repo 建關聯)。"""
     await _login_as(client, session_factory, "admin")
     service = await _create_service(client, tag)
     operation = await _create_operation(client, service["uid"], f"O1-{tag}")

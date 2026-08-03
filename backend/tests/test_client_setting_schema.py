@@ -184,7 +184,7 @@ async def test_every_table_has_base_model_columns(prepared_engine: AsyncEngine) 
 
 
 async def test_roles_permission_profile_pid_not_null(prepared_engine: AsyncEngine) -> None:
-    """Role 必綁設定檔:DB 層 NOT NULL 禁空角色。"""
+    """Role 必綁角色權限設定檔:DB 層 NOT NULL 禁空角色。"""
     async with prepared_engine.connect() as conn:
         rows = (
             await conn.execute(
@@ -198,7 +198,7 @@ async def test_roles_permission_profile_pid_not_null(prepared_engine: AsyncEngin
 async def test_client_exception_sets_expires_at_nullable_naive(
     prepared_engine: AsyncEngine,
 ) -> None:
-    """特例效期:naive timestamp 且可為 NULL(NULL = 不設限)。"""
+    """臨時權限效期:naive timestamp 且可為 NULL(NULL = 不設限)。"""
     async with prepared_engine.connect() as conn:
         rows = (
             await conn.execute(

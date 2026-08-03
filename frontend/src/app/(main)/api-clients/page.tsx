@@ -800,7 +800,7 @@ function EditClientDialog({
 }
 
 /* ---------------------------------------------------------------------- */
-/* 權限面板(Role 指派 + 特例綁定 + 最終可見欄位頁內檢視;task-010)             */
+/* 權限面板(角色指派 + 臨時權限綁定 + 最終可見欄位頁內檢視;task-010)             */
 /* ---------------------------------------------------------------------- */
 
 const EFFECTIVE_ACTION_LABEL: Record<EffectivePermissionAction, string> = {
@@ -813,7 +813,7 @@ const EFFECTIVE_ACTION_BADGE: Record<EffectivePermissionAction, string> = {
   edit: 'df-badge bg-primary/15 text-primary',
 }
 
-/** Role 指派區:下拉選取後二次確認才指派;已指派時顯示解除鈕(同樣走 ConfirmDialog)。 */
+/** 角色指派區:下拉選取後二次確認才指派;已指派時顯示解除鈕(同樣走 ConfirmDialog)。 */
 interface RoleAssignmentSectionProps {
   clientUid: string
   currentRoleUid: string | null
@@ -844,7 +844,7 @@ function RoleAssignmentSection({
   )
   const pendingRoleName = useMemo(
     (): string =>
-      roles.find((role) => role.uid === pendingRoleUid)?.name ?? '(未知 Role)',
+      roles.find((role) => role.uid === pendingRoleUid)?.name ?? '(未知角色)',
     [roles, pendingRoleUid],
   )
 
@@ -874,7 +874,7 @@ function RoleAssignmentSection({
     setAssignError(null)
     const result = await assignClientRole({ clientUid, role_uid: roleUid })
     if ('error' in result) {
-      setAssignError(extractApiErrorDetail(result.error, '指派 Role 失敗,請稍後再試'))
+      setAssignError(extractApiErrorDetail(result.error, '指派角色失敗,請稍後再試'))
     }
   }, [assignClientRole, clientUid, pendingRoleUid])
 
@@ -885,13 +885,13 @@ function RoleAssignmentSection({
     setAssignError(null)
     const result = await removeClientRole(clientUid)
     if ('error' in result) {
-      setAssignError(extractApiErrorDetail(result.error, '解除 Role 指派失敗,請稍後再試'))
+      setAssignError(extractApiErrorDetail(result.error, '解除角色指派失敗,請稍後再試'))
     }
   }, [removeClientRole, clientUid])
 
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-sm font-semibold text-foreground md:text-base">目前 Role</h3>
+      <h3 className="text-sm font-semibold text-foreground md:text-base">目前角色</h3>
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={pendingRoleUid ?? currentRoleUid ?? ''}
@@ -919,10 +919,10 @@ function RoleAssignmentSection({
           </button>
         ) : null}
       </div>
-      {/* 讀不到 Role 清單 ≠ 沒有 Role:失敗時給故障訊息並停用下拉,不讓空選單誤導 */}
+      {/* 讀不到角色清單 ≠ 沒有角色:失敗時給故障訊息並停用下拉,不讓空選單誤導 */}
       {isRolesError ? (
         <p role="alert" className="text-sm text-danger">
-          載入 Role 清單失敗,請稍後再試;指派功能暫不可用
+          載入角色清單失敗,請稍後再試;指派功能暫不可用
         </p>
       ) : null}
       {assignError !== null ? (
@@ -932,34 +932,34 @@ function RoleAssignmentSection({
       ) : null}
       <ConfirmDialog
         open={pendingRoleUid !== null}
-        title="指派 Role"
+        title="指派角色"
         confirmLabel="確認指派"
         confirmDisabled={isAssigning}
         onConfirm={handleConfirmAssign}
         onCancel={cancelAssign}
       >
         <p>
-          確定要指派 Role「<strong>{pendingRoleName}</strong>」?
+          確定要指派角色「<strong>{pendingRoleName}</strong>」?
         </p>
-        <p>此使用者將<strong>立即取得</strong>該 Role 設定檔授予的可見欄位。</p>
+        <p>此使用者將<strong>立即取得</strong>該角色綁定的角色權限設定檔授予的可見欄位。</p>
       </ConfirmDialog>
       <ConfirmDialog
         open={confirmingRemove}
-        title="解除 Role 指派"
+        title="解除角色指派"
         confirmLabel="確認解除"
         tone="danger"
         confirmDisabled={isRemoving}
         onConfirm={handleConfirmRemove}
         onCancel={cancelConfirmRemove}
       >
-        <p>確定要解除目前指派的 Role?</p>
-        <p>解除後該使用者將失去此 Role 授予的可見欄位。</p>
+        <p>確定要解除目前指派的角色?</p>
+        <p>解除後該使用者將失去此角色授予的可見欄位。</p>
       </ConfirmDialog>
     </div>
   )
 }
 
-/** 特例組綁定區:選組 + 選填效期綁定;清單顯示過期標示與解除。 */
+/** 臨時權限組綁定區:選組 + 選填效期綁定;清單顯示過期標示與解除。 */
 interface ExceptionSetSectionProps {
   clientUid: string
   /** 子層 ConfirmDialog 開闔上報,供外層權限對話框的 Esc 分流 */
@@ -1025,7 +1025,7 @@ function ExceptionSetSection({
         expires_at: expiresAtLocal === '' ? undefined : `${expiresAtLocal}:00`,
       })
       if ('error' in result) {
-        setBindError(extractApiErrorDetail(result.error, '綁定特例權限組失敗,請稍後再試'))
+        setBindError(extractApiErrorDetail(result.error, '綁定臨時權限組失敗,請稍後再試'))
         return
       }
       setExceptionSetUid('')
@@ -1050,16 +1050,16 @@ function ExceptionSetSection({
     setUnbindTarget(null)
     const result = await unbindClientExceptionSet({ clientUid, bindingUid: target.uid })
     if ('error' in result) {
-      setUnbindError(extractApiErrorDetail(result.error, '解除特例綁定失敗,請稍後再試'))
+      setUnbindError(extractApiErrorDetail(result.error, '解除臨時權限綁定失敗,請稍後再試'))
     }
   }, [unbindClientExceptionSet, clientUid, unbindTarget])
 
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-sm font-semibold text-foreground md:text-base">特例權限組綁定</h3>
+      <h3 className="text-sm font-semibold text-foreground md:text-base">臨時權限組綁定</h3>
       <form onSubmit={handleBindSubmit} className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-          特例權限組
+          臨時權限組
           <select
             value={exceptionSetUid}
             onChange={handleSetChange}
@@ -1091,10 +1091,10 @@ function ExceptionSetSection({
           綁定
         </button>
       </form>
-      {/* 讀不到特例組清單 ≠ 沒有特例組:失敗時給故障訊息並停用下拉 */}
+      {/* 讀不到臨時權限組清單 ≠ 沒有臨時權限組:失敗時給故障訊息並停用下拉 */}
       {isSetsError ? (
         <p role="alert" className="text-sm text-danger">
-          載入特例權限組清單失敗,請稍後再試;綁定功能暫不可用
+          載入臨時權限組清單失敗,請稍後再試;綁定功能暫不可用
         </p>
       ) : null}
       {bindError !== null ? (
@@ -1110,12 +1110,12 @@ function ExceptionSetSection({
       {isLoadingBindings ? (
         <p className="text-sm text-muted-foreground">載入中…</p>
       ) : isBindingsError || bindingData === undefined ? (
-        // 「讀不到」不可退化成「尚無綁定」:admin 會誤判特例權限已被清空
+        // 「讀不到」不可退化成「尚無綁定」:admin 會誤判臨時權限已被清空
         <p role="alert" className="text-sm text-danger">
-          載入已綁定特例權限組失敗,請稍後再試
+          載入已綁定臨時權限組失敗,請稍後再試
         </p>
       ) : bindings.length === 0 ? (
-        <p className="text-sm text-muted-foreground">尚無綁定的特例權限組</p>
+        <p className="text-sm text-muted-foreground">尚無綁定的臨時權限組</p>
       ) : (
         <ul className="flex flex-col gap-1.5">
           {bindings.map((binding) => (
@@ -1148,7 +1148,7 @@ function ExceptionSetSection({
       )}
       <ConfirmDialog
         open={unbindTarget !== null}
-        title="解除特例綁定"
+        title="解除臨時權限綁定"
         confirmLabel="確認解除"
         tone="danger"
         confirmDisabled={isUnbinding}
@@ -1187,7 +1187,7 @@ function EffectivePermissionPreview({
   if (data.operations.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        尚未指派任何權限(無 Role 或有效特例),無可見欄位
+        尚未指派任何權限(無角色或有效臨時權限),無可見欄位
       </p>
     )
   }
@@ -1252,7 +1252,7 @@ function ClientPermissionDialog({
   onClose,
 }: ClientPermissionDialogProps): React.ReactNode {
   // 子層 ConfirmDialog 也監聽 Esc:未分流時一次 Esc 會連本對話框一起關,
-  // 連帶清掉已選特例組與已填效期(AD-142 同型)
+  // 連帶清掉已選臨時權限組與已填效期(AD-142 同型)
   const [roleNestedOpen, setRoleNestedOpen] = useState(false)
   const [exceptionNestedOpen, setExceptionNestedOpen] = useState(false)
   const hasNestedDialog = roleNestedOpen || exceptionNestedOpen
@@ -1266,7 +1266,7 @@ function ClientPermissionDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [client, onClose, hasNestedDialog])
 
-  // effective-permissions 提供目前 Role 摘要,免另開一支查詢
+  // effective-permissions 提供目前角色摘要,免另開一支查詢
   const { data: effectiveData } = useGetEffectivePermissionsQuery(client?.uid ?? '', {
     skip: client === null,
   })

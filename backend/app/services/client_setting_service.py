@@ -1,4 +1,4 @@
-"""權限階層管理服務(task-004 系統別 / 作業 / 範圍;005 設定檔 / Role;006 特例 / 指派)。
+"""權限階層管理服務(task-004 系統別 / 作業 / 範圍;005 角色權限設定檔 / 角色;006 臨時權限 / 指派)。
 
 權限設定的唯一真身在目標 RDS `client_setting` schema(propose v1.6.1),本層負責維護面:
 
@@ -10,8 +10,8 @@
 - **快取**:清單讀取一律走 `permission_cache` 的 cache-aside;失效扇出分兩種:
   - `_invalidate_wide()` — 系統別 / 作業 / 作業範圍異動牽動面廣(任一 Client 的最終權限
     都可能變),直接清空全部 effective,不逐一反查。
-  - `_invalidate_narrow(client_uids)` — 設定檔 / Role / 特例組異動只影響有限的 Client
-    (設定檔 → 綁它的 Role → 其 Client;特例組 → 綁它的 Client),故於**寫入交易內**先反查
+  - `_invalidate_narrow(client_uids)` — 角色權限設定檔 / 角色 / 臨時權限組異動只影響有限的 Client
+    (角色權限設定檔 → 綁它的角色 → 其 Client;臨時權限組 → 綁它的 Client),故於**寫入交易內**先反查
     受影響 Client uid,commit 後再逐一失效。受影響集合須在交易內取:commit 後改綁 /
     解除指派會讓反查漏掉本次真正受影響的 Client。Client 指派 / 綁定端點的受影響集合
     就是該 Client 本身,直接傳入即可。
@@ -21,13 +21,13 @@
   `semantic_admin_service.py` / `api_client_service.py` 前例落在本層(識別字為白名單
   常值、值走 bind params,`04-databases/04-sql-safety.md`)。
 
-- **特例權限**:結構與設定檔完全對稱(勾作業 + 授權矩陣),差別只在「可重用 + 綁定帶效期」;
-  驗證關卡(confirmed 語意映射、∩ 作業範圍上限)與設定檔共用同一組函式 —— 特例是加法模型
+- **臨時權限**:結構與角色權限設定檔完全對稱(勾作業 + 授權矩陣),差別只在「可重用 + 綁定帶效期」;
+  驗證關卡(confirmed 語意映射、∩ 作業範圍上限)與角色權限設定檔共用同一組函式 —— 臨時權限是加法模型
   的另一個授權來源,不是繞過作業範圍的後門。`expires_at` 為 naive UTC+8,到期由讀取端
   自動過濾(加法模型的收權手段之一,無需人工解除)。
 - **API Client 指派**:Client 本體在自有 DB,RDS 端冷關聯無 FK → **新增**授權(指派 / 綁定)
   前一律先 `_ensure_client_exists()` 驗存在且未軟刪(防呆只能落在這層);**解除 / 解綁**
-  刻意不驗(AD-152):Client 註銷後殘留的指派 / 綁定仍須解得掉,否則 Role 與特例組永久
+  刻意不驗(AD-152):Client 註銷後殘留的指派 / 綁定仍須解得掉,否則角色與臨時權限組永久
   刪不掉。註銷本身另由 `api_client_service.delete_client` 連動清 RDS 兩表。
 """
 
@@ -135,25 +135,25 @@ TARGET_TYPE_API_CLIENT = "api_client"
 
 _SERVICE_NOT_FOUND = "服務不存在"
 _OPERATION_NOT_FOUND = "作業不存在"
-_PROFILE_NOT_FOUND = "權限設定檔不存在"
+_PROFILE_NOT_FOUND = "角色權限設定檔不存在"
 _ROLE_NOT_FOUND = "角色不存在"
-_EXCEPTION_SET_NOT_FOUND = "特例權限組不存在"
+_EXCEPTION_SET_NOT_FOUND = "臨時權限組不存在"
 _CLIENT_NOT_FOUND = "API Client 不存在"
 _CLIENT_ROLE_NOT_FOUND = "此 API Client 尚未指派角色"
-_CLIENT_EXCEPTION_NOT_FOUND = "特例權限綁定不存在"
+_CLIENT_EXCEPTION_NOT_FOUND = "臨時權限綁定不存在"
 _SERVICE_CODE_CONFLICT = "服務代碼已存在"
 _OPERATION_NAME_CONFLICT = "同一服務下已有同名作業"
-_PROFILE_NAME_CONFLICT = "權限設定檔名稱已存在"
+_PROFILE_NAME_CONFLICT = "角色權限設定檔名稱已存在"
 _ROLE_NAME_CONFLICT = "角色名稱已存在"
-_EXCEPTION_SET_NAME_CONFLICT = "特例權限組名稱已存在"
-_CLIENT_EXCEPTION_CONFLICT = "此 API Client 已綁定該特例權限組,請先解除綁定再重新綁定"
+_EXCEPTION_SET_NAME_CONFLICT = "臨時權限組名稱已存在"
+_CLIENT_EXCEPTION_CONFLICT = "此 API Client 已綁定該臨時權限組,請先解除綁定再重新綁定"
 _SERVICE_HAS_OPERATIONS = "服務底下仍有作業,請先刪除作業"
-_OPERATION_REFERENCED = "作業仍被權限設定檔或特例權限組引用,請先解除引用"
-_PROFILE_HAS_ROLES = "權限設定檔仍被角色綁定,請先改綁或刪除角色"
+_OPERATION_REFERENCED = "作業仍被角色權限設定檔或臨時權限組引用,請先解除引用"
+_PROFILE_HAS_ROLES = "角色權限設定檔仍被角色綁定,請先改綁或刪除角色"
 _ROLE_HAS_CLIENTS = "角色仍被 API Client 指派,請先解除指派"
-_EXCEPTION_SET_HAS_BINDINGS = "特例權限組仍被未過期的綁定引用,請先解除綁定"
-_OPERATION_NOT_GRANTED = "該作業尚未在此設定檔勾選,請先勾選作業再設定授權"
-_EXCEPTION_OPERATION_NOT_GRANTED = "該作業尚未在此特例權限組勾選,請先勾選作業再設定授權"
+_EXCEPTION_SET_HAS_BINDINGS = "臨時權限組仍被未過期的綁定引用,請先解除綁定"
+_OPERATION_NOT_GRANTED = "該作業尚未在此角色權限設定檔勾選,請先勾選作業再設定授權"
+_EXCEPTION_OPERATION_NOT_GRANTED = "該作業尚未在此臨時權限組勾選,請先勾選作業再設定授權"
 _SCOPE_ITEM_CONFLICT = "作業範圍項重複"
 _PROFILE_OPERATION_CONFLICT = "勾選作業重複"
 _PROFILE_ITEM_CONFLICT = "授權項重複"
@@ -198,7 +198,7 @@ async def _invalidate_wide() -> None:
 
 
 async def _invalidate_narrow(client_uids: Sequence[UUID]) -> None:
-    """設定檔 / Role 異動的失效扇出:管理面清單 + 反查到的受影響 Client。
+    """角色權限設定檔 / 角色異動的失效扇出:管理面清單 + 反查到的受影響 Client。
 
     `client_uids` 須由呼叫端**於寫入交易內**反查(見模組 docstring);空集合時只清清單。
     本函式永不拋錯,不影響已完成的寫入。
@@ -216,7 +216,7 @@ async def _clients_of_roles(
 
 
 async def _clients_of_profile(repo: ClientSettingRepository, profile_pid: int) -> list[UUID]:
-    """設定檔 → 綁它的 Role → 指派這些 Role 的 Client(失效扇出的兩段反查)。"""
+    """角色權限設定檔 → 綁它的角色 → 指派這些角色的 Client(失效扇出的兩段反查)。"""
     roles = await repo.list_roles_by_profile(profile_pid)
     return await _clients_of_roles(repo, [role.pid for role in roles])
 
@@ -224,7 +224,7 @@ async def _clients_of_profile(repo: ClientSettingRepository, profile_pid: int) -
 async def _clients_of_exception_sets(
     repo: ClientSettingRepository, exception_set_pids: Sequence[int]
 ) -> list[UUID]:
-    """特例組 → 綁它的 Client(單段反查;含已過期綁定,寧可多失效一次)。"""
+    """臨時權限組 → 綁它的 Client(單段反查;含已過期綁定,寧可多失效一次)。"""
     return [
         row.api_client_uid
         for row in await repo.list_client_exception_sets_by_set_pids(exception_set_pids)
@@ -279,7 +279,7 @@ async def _service_uid_by_pid(repo: ClientSettingRepository) -> dict[int, UUID]:
 
 
 async def _profile_uid_by_pid(repo: ClientSettingRepository) -> dict[int, UUID]:
-    """設定檔 pid → uid 對照(Role 回應需以 uid 表達綁定;設定檔為小表,一次全撈)。"""
+    """角色權限設定檔 pid → uid 對照(角色回應需以 uid 表達綁定;角色權限設定檔為小表,一次全撈)。"""
     return {profile.pid: profile.uid for profile in await repo.list_permission_profiles()}
 
 
@@ -291,7 +291,7 @@ async def _operation_uid_by_pid(repo: ClientSettingRepository) -> dict[int, UUID
 async def _exception_set_by_pid(
     repo: ClientSettingRepository,
 ) -> dict[int, ExceptionSet]:
-    """特例組 pid → 實體對照(綁定回應需 uid 與名稱;特例組為小表,一次全撈免 N+1)。"""
+    """臨時權限組 pid → 實體對照(綁定回應需 uid 與名稱;臨時權限組為小表,一次全撈免 N+1)。"""
     return {row.pid: row for row in await repo.list_exception_sets()}
 
 
@@ -544,7 +544,7 @@ def _validate_permission_items(
     """逐項檢核授權矩陣,非法項依類別一次列明回 422(`_validate_scope_items` 的姊妹函式)。
 
     `action` 合法性由 schema 的 Literal 擋在前面(FastAPI 自動 422),本函式只驗業務規則:
-    重複項、confirmed 語意映射、以及**授權 ∩ 作業範圍上限**(propose:設定檔給不出作業
+    重複項、confirmed 語意映射、以及**授權 ∩ 作業範圍上限**(propose:角色權限設定檔給不出作業
     範圍以外的東西)。
     """
     columns_by_table = _scope_columns_by_table(scope)
@@ -795,7 +795,7 @@ class ClientSettingService:
         return data
 
     async def delete_operation(self, uid: UUID, *, actor_uid: UUID) -> OperationResponse:
-        """軟刪作業(連動軟刪其範圍項);被設定檔或特例組引用一律擋下。"""
+        """軟刪作業(連動軟刪其範圍項);被角色權限設定檔或臨時權限組引用一律擋下。"""
         async with _rds_write(_WRITE_CONFLICT) as session:
             repo = ClientSettingRepository(session)
             operation = await _get_operation_or_404(repo, uid)
@@ -883,9 +883,9 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_PROFILE,
             target_uid=data.uid,
-            detail=f"建立權限設定檔 {data.name}",
+            detail=f"建立角色權限設定檔 {data.name}",
         )
-        # 新建設定檔尚無 Role 綁定 → 無 Client 受影響,只需清清單
+        # 新建角色權限設定檔尚無角色綁定 → 無 Client 受影響,只需清清單
         await _invalidate_narrow([])
         return data
 
@@ -902,7 +902,7 @@ class ClientSettingService:
                 actor_uid=actor_uid,
             )
             data = _to_profile(profile)
-            # 設定檔名進得了 effective 快取內容(task-007 預覽),改名同樣要失效
+            # 角色權限設定檔名進得了 effective 快取內容(task-007 預覽),改名同樣要失效
             affected = await _clients_of_profile(repo, profile.pid)
         changed = ", ".join(sorted(payload.model_fields_set)) or "無"
         await self._audit.log(
@@ -910,7 +910,7 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_PROFILE,
             target_uid=data.uid,
-            detail=f"更新權限設定檔 {data.name}(欄位:{changed})",
+            detail=f"更新角色權限設定檔 {data.name}(欄位:{changed})",
         )
         await _invalidate_narrow(affected)
         return data
@@ -918,7 +918,7 @@ class ClientSettingService:
     async def delete_permission_profile(
         self, uid: UUID, *, actor_uid: UUID
     ) -> PermissionProfileResponse:
-        """軟刪設定檔(勾選作業與授權項連動);仍被 Role 綁定一律擋下。"""
+        """軟刪角色權限設定檔(勾選作業與授權項連動);仍被角色綁定一律擋下。"""
         async with _rds_write(_WRITE_CONFLICT) as session:
             repo = ClientSettingRepository(session)
             profile = await _get_permission_profile_or_404(repo, uid)
@@ -931,13 +931,13 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_PROFILE,
             target_uid=data.uid,
-            detail=f"刪除權限設定檔 {data.name}(勾選作業與授權項一併清除)",
+            detail=f"刪除角色權限設定檔 {data.name}(勾選作業與授權項一併清除)",
         )
-        # 無 Role 綁定才刪得掉(上方 409)→ 無 Client 受影響
+        # 無角色綁定才刪得掉(上方 409)→ 無 Client 受影響
         await _invalidate_narrow([])
         return data
 
-    # ── 設定檔勾選作業 ─────────────────────────────────────────────────
+    # ── 角色權限設定檔勾選作業 ─────────────────────────────────────────────────
     async def list_profile_operations(self, uid: UUID) -> ProfileOperationListResponse:
         async def loader() -> ProfileOperationListResponse:
             async with _rds_read() as session:
@@ -956,7 +956,7 @@ class ClientSettingService:
     ) -> ProfileOperationListResponse:
         """整批置換勾選作業;被移除的作業其授權項同交易一併清除(repo 層負責)。
 
-        父列(設定檔)於交易開頭即加行鎖,同一設定檔的併發置換序列化(AD-153)。
+        父列(角色權限設定檔)於交易開頭即加行鎖,同一角色權限設定檔的併發置換序列化(AD-153)。
         """
         async with _rds_write(_PROFILE_OPERATION_CONFLICT) as session:
             repo = ClientSettingRepository(session)
@@ -974,12 +974,12 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_PROFILE,
             target_uid=uid,
-            detail=f"置換設定檔 {profile_name} 勾選作業(共 {data.total} 項)",
+            detail=f"置換角色權限設定檔 {profile_name} 勾選作業(共 {data.total} 項)",
         )
         await _invalidate_narrow(affected)
         return data
 
-    # ── 設定檔授權矩陣 ─────────────────────────────────────────────────
+    # ── 角色權限設定檔授權矩陣 ─────────────────────────────────────────────────
     async def list_profile_items(
         self, uid: UUID, operation_uid: UUID
     ) -> ProfileItemListResponse:
@@ -1005,9 +1005,9 @@ class ClientSettingService:
         *,
         actor_uid: UUID,
     ) -> ProfileItemListResponse:
-        """整批置換「設定檔 × 單一作業」授權矩陣;作業須先被勾選(未勾選 409)。
+        """整批置換「角色權限設定檔 × 單一作業」授權矩陣;作業須先被勾選(未勾選 409)。
 
-        父列(設定檔)於交易開頭即加行鎖,同一設定檔的併發置換序列化(AD-153)。
+        父列(角色權限設定檔)於交易開頭即加行鎖,同一角色權限設定檔的併發置換序列化(AD-153)。
         """
         async with _rds_write(_PROFILE_ITEM_CONFLICT) as session:
             repo = ClientSettingRepository(session)
@@ -1035,7 +1035,8 @@ class ClientSettingService:
             target_type=TARGET_TYPE_PROFILE,
             target_uid=uid,
             detail=(
-                f"置換設定檔 {profile_name} / 作業 {operation_name} 授權(共 {data.total} 項)"
+                f"置換角色權限設定檔 {profile_name} / 作業 {operation_name} 授權"
+                f"(共 {data.total} 項)"
             ),
         )
         await _invalidate_narrow(affected)
@@ -1058,7 +1059,7 @@ class ClientSettingService:
         return await get_or_load_model(list_key("roles"), RoleListResponse, loader)
 
     async def create_role(self, payload: RoleCreateRequest, *, actor_uid: UUID) -> RoleResponse:
-        """建立 Role;`permission_profile_uid` 為 schema 必填欄位(缺值即 422,禁空角色)。"""
+        """建立角色;`permission_profile_uid` 為 schema 必填欄位(缺值即 422,禁空角色)。"""
         async with _rds_write(_ROLE_NAME_CONFLICT) as session:
             repo = ClientSettingRepository(session)
             profile = await _get_permission_profile_or_404(
@@ -1077,16 +1078,16 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_ROLE,
             target_uid=data.uid,
-            detail=f"建立角色 {data.name}(綁定設定檔 {profile_name})",
+            detail=f"建立角色 {data.name}(綁定角色權限設定檔 {profile_name})",
         )
-        # 新建 Role 尚無 Client 指派 → 無 Client 受影響
+        # 新建角色尚無 Client 指派 → 無 Client 受影響
         await _invalidate_narrow([])
         return data
 
     async def update_role(
         self, uid: UUID, payload: RoleUpdateRequest, *, actor_uid: UUID
     ) -> RoleResponse:
-        """部分更新;可改綁設定檔,但不可清空(schema 擋顯式 null)。"""
+        """部分更新;可改綁角色權限設定檔,但不可清空(schema 擋顯式 null)。"""
         async with _rds_write(_ROLE_NAME_CONFLICT) as session:
             repo = ClientSettingRepository(session)
             role = await _get_role_or_404(repo, uid)
@@ -1118,7 +1119,7 @@ class ClientSettingService:
         return data
 
     async def delete_role(self, uid: UUID, *, actor_uid: UUID) -> RoleResponse:
-        """軟刪 Role;仍被 API Client 指派一律擋下(不做連鎖解除指派)。"""
+        """軟刪角色;仍被 API Client 指派一律擋下(不做連鎖解除指派)。"""
         async with _rds_write(_WRITE_CONFLICT) as session:
             repo = ClientSettingRepository(session)
             role = await _get_role_or_404(repo, uid)
@@ -1139,7 +1140,7 @@ class ClientSettingService:
         await _invalidate_narrow([])
         return data
 
-    # ── 特例權限組 ─────────────────────────────────────────────────────
+    # ── 臨時權限組 ─────────────────────────────────────────────────────
     async def list_exception_sets(self) -> ExceptionSetListResponse:
         async def loader() -> ExceptionSetListResponse:
             async with _rds_read() as session:
@@ -1165,9 +1166,9 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_EXCEPTION_SET,
             target_uid=data.uid,
-            detail=f"建立特例權限組 {data.name}",
+            detail=f"建立臨時權限組 {data.name}",
         )
-        # 新建特例組尚無 Client 綁定 → 無 Client 受影響,只需清清單
+        # 新建臨時權限組尚無 Client 綁定 → 無 Client 受影響,只需清清單
         await _invalidate_narrow([])
         return data
 
@@ -1184,7 +1185,7 @@ class ClientSettingService:
                 actor_uid=actor_uid,
             )
             data = _to_exception_set(exception_set)
-            # 特例組名進得了 effective 快取內容(task-007 預覽),改名同樣要失效
+            # 臨時權限組名進得了 effective 快取內容(task-007 預覽),改名同樣要失效
             affected = await _clients_of_exception_sets(repo, [exception_set.pid])
         changed = ", ".join(sorted(payload.model_fields_set)) or "無"
         await self._audit.log(
@@ -1192,7 +1193,7 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_EXCEPTION_SET,
             target_uid=data.uid,
-            detail=f"更新特例權限組 {data.name}(欄位:{changed})",
+            detail=f"更新臨時權限組 {data.name}(欄位:{changed})",
         )
         await _invalidate_narrow(affected)
         return data
@@ -1200,7 +1201,7 @@ class ClientSettingService:
     async def delete_exception_set(
         self, uid: UUID, *, actor_uid: UUID
     ) -> ExceptionSetResponse:
-        """軟刪特例組(勾選作業與授權項連動);仍被**未過期**綁定引用一律擋下。
+        """軟刪臨時權限組(勾選作業與授權項連動);仍被**未過期**綁定引用一律擋下。
 
         已過期的綁定不擋:該綁定本就不生效,留著也只是歷史紀錄。
         """
@@ -1219,12 +1220,12 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_EXCEPTION_SET,
             target_uid=data.uid,
-            detail=f"刪除特例權限組 {data.name}(勾選作業與授權項一併清除)",
+            detail=f"刪除臨時權限組 {data.name}(勾選作業與授權項一併清除)",
         )
         await _invalidate_narrow(affected)
         return data
 
-    # ── 特例組勾選作業 ─────────────────────────────────────────────────
+    # ── 臨時權限組勾選作業 ─────────────────────────────────────────────────
     async def list_exception_operations(
         self, uid: UUID
     ) -> ExceptionOperationListResponse:
@@ -1245,7 +1246,7 @@ class ClientSettingService:
     ) -> ExceptionOperationListResponse:
         """整批置換勾選作業;被移除的作業其授權項同交易一併清除(repo 層負責)。
 
-        父列(特例組)於交易開頭即加行鎖,同一特例組的併發置換序列化(AD-153)。
+        父列(臨時權限組)於交易開頭即加行鎖,同一臨時權限組的併發置換序列化(AD-153)。
         """
         async with _rds_write(_PROFILE_OPERATION_CONFLICT) as session:
             repo = ClientSettingRepository(session)
@@ -1263,12 +1264,12 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_EXCEPTION_SET,
             target_uid=uid,
-            detail=f"置換特例權限組 {set_name} 勾選作業(共 {data.total} 項)",
+            detail=f"置換臨時權限組 {set_name} 勾選作業(共 {data.total} 項)",
         )
         await _invalidate_narrow(affected)
         return data
 
-    # ── 特例組授權矩陣 ─────────────────────────────────────────────────
+    # ── 臨時權限組授權矩陣 ─────────────────────────────────────────────────
     async def list_exception_items(
         self, uid: UUID, operation_uid: UUID
     ) -> ExceptionItemListResponse:
@@ -1296,12 +1297,12 @@ class ClientSettingService:
         *,
         actor_uid: UUID,
     ) -> ExceptionItemListResponse:
-        """整批置換「特例組 × 單一作業」授權矩陣;語意與設定檔矩陣完全相同。
+        """整批置換「臨時權限組 × 單一作業」授權矩陣;語意與角色權限設定檔矩陣完全相同。
 
-        特例是加法模型的另一個授權來源,不是繞過作業範圍的後門 → 同樣受
+        臨時權限是加法模型的另一個授權來源,不是繞過作業範圍的後門 → 同樣受
         confirmed 語意映射與「∩ 作業範圍上限」兩關把守。
 
-        父列(特例組)於交易開頭即加行鎖,同一特例組的併發置換序列化(AD-153)。
+        父列(臨時權限組)於交易開頭即加行鎖,同一臨時權限組的併發置換序列化(AD-153)。
         """
         async with _rds_write(_PROFILE_ITEM_CONFLICT) as session:
             repo = ClientSettingRepository(session)
@@ -1332,18 +1333,18 @@ class ClientSettingService:
             target_type=TARGET_TYPE_EXCEPTION_SET,
             target_uid=uid,
             detail=(
-                f"置換特例權限組 {set_name} / 作業 {operation_name} 授權"
+                f"置換臨時權限組 {set_name} / 作業 {operation_name} 授權"
                 f"(共 {data.total} 項)"
             ),
         )
         await _invalidate_narrow(affected)
         return data
 
-    # ── API Client 的 Role 指派(0..1)──────────────────────────────────
+    # ── API Client 的角色指派(0..1)──────────────────────────────────
     async def assign_client_role(
         self, client_uid: UUID, payload: ClientRoleAssignRequest, *, actor_uid: UUID
     ) -> ClientRoleResponse:
-        """指派 / 改指派 Role(冪等置換:重下同一請求結果相同,恆維持至多 1 筆有效)。"""
+        """指派 / 改指派角色(冪等置換:重下同一請求結果相同,恆維持至多 1 筆有效)。"""
         await self._ensure_client_exists(client_uid)
         async with _rds_write(_WRITE_CONFLICT) as session:
             repo = ClientSettingRepository(session)
@@ -1369,7 +1370,7 @@ class ClientSettingService:
         """解除指派;本來就沒指派 → 404(避免前端誤以為解除了某個實際存在的指派)。
 
         **不驗 Client 是否仍存在**(AD-152):Client 註銷後殘留的指派仍須解得掉,否則該
-        Role 因 `count_clients_by_role > 0` 永久刪不掉,UI 又找不到可解除的 Client。
+        角色因 `count_clients_by_role > 0` 永久刪不掉,UI 又找不到可解除的 Client。
         存在性檢核保留在 `assign_client_role`(新增授權才需要防呆)。
         """
         async with _rds_write(_WRITE_CONFLICT) as session:
@@ -1377,7 +1378,7 @@ class ClientSettingService:
             assignment = await repo.get_client_role(client_uid)
             if assignment is None:
                 raise AppError(_CLIENT_ROLE_NOT_FOUND, response_code=404, status_code=404)
-            # Role 被指派時不得刪(delete_role 擋 409)→ 此處恆取得到;取不到視為資料不一致
+            # 角色被指派時不得刪(delete_role 擋 409)→ 此處恆取得到;取不到視為資料不一致
             role = await repo.get_role_by_pid(assignment.role_pid)
             if role is None:
                 raise AppError(_ROLE_NOT_FOUND, response_code=404, status_code=404)
@@ -1394,7 +1395,7 @@ class ClientSettingService:
         await _invalidate_narrow([client_uid])
         return data
 
-    # ── API Client 的特例組綁定(0..N,各自效期)────────────────────────
+    # ── API Client 的臨時權限組綁定(0..N,各自效期)────────────────────────
     async def list_client_exception_sets(
         self, client_uid: UUID
     ) -> ClientExceptionSetListResponse:
@@ -1413,7 +1414,7 @@ class ClientSettingService:
             now = db_now()
             items = [
                 _to_client_exception_set(row, set_by_pid[row.exception_set_pid], now)
-                # 特例組已軟刪 → 綁定本就不生效(預覽同樣看不到),清單一併略過
+                # 臨時權限組已軟刪 → 綁定本就不生效(預覽同樣看不到),清單一併略過
                 for row in rows
                 if row.exception_set_pid in set_by_pid
             ]
@@ -1428,7 +1429,7 @@ class ClientSettingService:
     async def bind_client_exception_set(
         self, client_uid: UUID, payload: ClientExceptionSetBindRequest, *, actor_uid: UUID
     ) -> ClientExceptionSetResponse:
-        """綁定特例組;`expires_at` 省略 = 不設限,到期後由讀取端自動過濾(無需人工解除)。
+        """綁定臨時權限組;`expires_at` 省略 = 不設限,到期後由讀取端自動過濾(無需人工解除)。
 
         過去時間亦允許(綁完即失效),語意單純且便於「先建後調」;重複綁同一組 409。
         """
@@ -1453,7 +1454,7 @@ class ClientSettingService:
             target_type=TARGET_TYPE_API_CLIENT,
             target_uid=client_uid,
             detail=(
-                f"綁定特例權限組 {set_name} 給 API Client {client_uid}"
+                f"綁定臨時權限組 {set_name} 給 API Client {client_uid}"
                 f"(效期:{expires_at if expires_at is not None else '不設限'})"
             ),
         )
@@ -1466,7 +1467,7 @@ class ClientSettingService:
         """解除單筆綁定(以綁定列 uid 定位);綁定不屬於該 Client 一律 404。
 
         **不驗 Client 是否仍存在**(AD-152):理由同 `remove_client_role` —— 註銷後殘留的
-        綁定仍須解得掉,否則該特例權限組永久刪不掉。存在性檢核保留在 `bind_*`。
+        綁定仍須解得掉,否則該臨時權限組永久刪不掉。存在性檢核保留在 `bind_*`。
         """
         async with _rds_write(_WRITE_CONFLICT) as session:
             repo = ClientSettingRepository(session)
@@ -1489,7 +1490,7 @@ class ClientSettingService:
             actor_uid=actor_uid,
             target_type=TARGET_TYPE_API_CLIENT,
             target_uid=client_uid,
-            detail=f"解除 API Client {client_uid} 的特例權限組綁定({set_name})",
+            detail=f"解除 API Client {client_uid} 的臨時權限組綁定({set_name})",
         )
         await _invalidate_narrow([client_uid])
         return data

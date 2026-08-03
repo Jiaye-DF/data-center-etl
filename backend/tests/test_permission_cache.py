@@ -153,7 +153,7 @@ async def test_ttl_must_be_positive(redis: FakeRedis) -> None:
 
 
 async def test_empty_values_are_cached_not_treated_as_miss(redis: FakeRedis) -> None:
-    """`None` / 空集合是合法權限結構(無 Role 無特例),不得被當成未命中反覆回源。"""
+    """`None` / 空集合是合法權限結構(無 Role 無臨時權限),不得被當成未命中反覆回源。"""
     for value in (None, [], {}):
         redis.store.clear()
         loader = _loader(value)

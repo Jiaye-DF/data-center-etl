@@ -198,7 +198,7 @@ class ApiClientService:
         """註銷使用者:同交易先撤銷全部 active 密鑰再軟刪,立即無法換發 token。
 
         自有 DB 註銷成功後連動清 RDS `client_setting` 的指派 / 綁定(AD-152),避免留下
-        解不掉的孤兒讓 Role 與特例權限組永久刪不掉;跨庫清理失敗只記 log,不擋註銷
+        解不掉的孤兒讓角色與臨時權限組永久刪不掉;跨庫清理失敗只記 log,不擋註銷
         (註銷本身已生效,密鑰已撤銷 → 安全面不受影響,RDS 殘列可事後重跑解除)。
         """
         client = await self._get_or_404(uid)
@@ -221,7 +221,7 @@ class ApiClientService:
     async def _cleanup_client_setting_grants(
         self, client_uid: UUID, *, actor_uid: UUID
     ) -> None:
-        """軟刪該 Client 在 RDS 的 Role 指派與特例綁定,並失效其最終權限快取。
+        """軟刪該 Client 在 RDS 的角色指派與臨時權限綁定,並失效其最終權限快取。
 
         RDS 為獨立資料庫、無跨庫交易 → 任何失敗僅 log,不讓註銷回滾。
         """

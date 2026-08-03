@@ -95,12 +95,12 @@ type TabKey = 'services' | 'profiles' | 'roles' | 'exceptions'
 
 const TAB_OPTIONS: ReadonlyArray<SegmentedOption<TabKey>> = [
   { value: 'services', label: '服務 / 作業' },
-  { value: 'profiles', label: '設定檔' },
-  { value: 'roles', label: 'Role' },
-  { value: 'exceptions', label: '特例' },
+  { value: 'profiles', label: '角色權限設定檔' },
+  { value: 'roles', label: '角色' },
+  { value: 'exceptions', label: '臨時權限' },
 ]
 
-/** 設定檔 / 特例組共用同一組授權 UI,差別僅在打哪組端點 */
+/** 角色權限設定檔 / 臨時權限組共用同一組授權 UI,差別僅在打哪組端點 */
 type PermissionSetKind = 'profile' | 'exception'
 
 /* ---------------------------------------------------------------------- */
@@ -448,7 +448,7 @@ function FormDialog({
   )
 }
 
-/** 名稱 + 說明(選填)建立對話框;作業 / 設定檔 / 特例組共用同一形狀 */
+/** 名稱 + 說明(選填)建立對話框;作業 / 角色權限設定檔 / 臨時權限組共用同一形狀 */
 interface NameDescriptionCreateDialogProps {
   title: string
   nameLabel: string
@@ -524,7 +524,7 @@ function NameDescriptionCreateDialog({
   )
 }
 
-/** 名稱 / 說明 / 建立時間 / 操作 的清單表格;設定檔 / 特例組共用同一欄位形狀 */
+/** 名稱 / 說明 / 建立時間 / 操作 的清單表格;角色權限設定檔 / 臨時權限組共用同一欄位形狀 */
 interface SimpleNamedEntity {
   uid: string
   name: string
@@ -829,7 +829,7 @@ function OperationScopeEditor({ operation }: OperationScopeEditorProps): React.R
         作業範圍({operation.name})
       </h2>
       <p className="text-sm text-muted-foreground md:text-base">
-        設定此作業最多可碰到的表 × 欄位;設定檔 / 特例組的授權矩陣以此為上限(給不出範圍外的欄位)
+        設定此作業最多可碰到的表 × 欄位;角色權限設定檔 / 臨時權限組的授權矩陣以此為上限(給不出範圍外的欄位)
       </p>
 
       {isTablesError ? <InlineError message="載入語意映射表清單失敗,請稍後再試" /> : null}
@@ -1437,7 +1437,7 @@ function ServicesOperationsSection(): React.ReactNode {
         {operationDeleteTarget !== null ? (
           <p>確定要刪除作業「{operationDeleteTarget.name}」?</p>
         ) : null}
-        <p>仍被設定檔 / 特例組引用時後端將拒絕刪除(409)。</p>
+        <p>仍被角色權限設定檔 / 臨時權限組引用時後端將拒絕刪除(409)。</p>
         <InlineError message={operationDeleteError} />
       </ConfirmDialog>
     </div>
@@ -1445,7 +1445,7 @@ function ServicesOperationsSection(): React.ReactNode {
 }
 
 /* ---------------------------------------------------------------------- */
-/* 授權矩陣(設定檔 / 特例組共用)                                            */
+/* 授權矩陣(角色權限設定檔 / 臨時權限組共用)                                 */
 /* ---------------------------------------------------------------------- */
 
 interface MatrixGroupHeaderProps {
@@ -1834,7 +1834,7 @@ interface PermissionSetEditorProps {
 }
 
 /**
- * 設定檔 / 特例組的授權編輯:先勾作業(整批置換),再逐作業設授權矩陣。
+ * 角色權限設定檔 / 臨時權限組的授權編輯:先勾作業(整批置換),再逐作業設授權矩陣。
  *
  * 兩者端點對稱,故以 `kind` 分流:未選用的那一組 query 走 `skipToken` 不發請求。
  */
@@ -1844,7 +1844,7 @@ function PermissionSetEditor({
   targetName,
 }: PermissionSetEditorProps): React.ReactNode {
   const isProfile = kind === 'profile'
-  const kindLabel = isProfile ? '設定檔' : '特例權限組'
+  const kindLabel = isProfile ? '角色權限設定檔' : '臨時權限組'
 
   const { data: serviceData, isError: isServicesError } = useListServicesQuery()
   const {
@@ -2068,7 +2068,7 @@ function PermissionSetEditor({
 }
 
 /* ---------------------------------------------------------------------- */
-/* 設定檔                                                                   */
+/* 角色權限設定檔                                                            */
 /* ---------------------------------------------------------------------- */
 
 function ProfilesSection(): React.ReactNode {
@@ -2109,7 +2109,7 @@ function ProfilesSection(): React.ReactNode {
       setCreateError(null)
       const result = await createPermissionProfile(payload)
       if ('error' in result) {
-        setCreateError(extractApiErrorDetail(result.error, '建立設定檔失敗,請稍後再試'))
+        setCreateError(extractApiErrorDetail(result.error, '建立角色權限設定檔失敗,請稍後再試'))
         return
       }
       setCreateOpen(false)
@@ -2128,7 +2128,7 @@ function ProfilesSection(): React.ReactNode {
     const result = await deletePermissionProfile(deleteTarget.uid)
     setDeleteTarget(null)
     if ('error' in result) {
-      setDeleteError(extractApiErrorDetail(result.error, '刪除設定檔失敗,請稍後再試'))
+      setDeleteError(extractApiErrorDetail(result.error, '刪除角色權限設定檔失敗,請稍後再試'))
     }
   }, [deleteTarget, deletePermissionProfile])
 
@@ -2136,19 +2136,19 @@ function ProfilesSection(): React.ReactNode {
     <div className="flex flex-col gap-6">
       <div className="df-card flex flex-col gap-4 p-4 md:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-foreground md:text-lg">權限設定檔</h2>
+          <h2 className="text-base font-semibold text-foreground md:text-lg">角色權限設定檔</h2>
           <CreateButton label="新增設定檔" onClick={openCreate} />
         </div>
         <p className="text-sm text-muted-foreground md:text-base">
           選一列(或按「設定授權」)即可於下方勾選作業與設定逐表逐欄授權矩陣
         </p>
         {isLoading ? <p className="text-sm text-muted-foreground md:text-base">載入中…</p> : null}
-        {isError ? <InlineError message="載入設定檔清單失敗,請稍後再試" /> : null}
+        {isError ? <InlineError message="載入角色權限設定檔清單失敗,請稍後再試" /> : null}
         {data !== undefined ? (
           <div className="overflow-x-auto">
             <SimpleEntityTable
               items={items}
-              emptyMessage="尚無設定檔"
+              emptyMessage="尚無角色權限設定檔"
               selectedUid={selected?.uid ?? null}
               deletingUid={isDeleting ? (deleteTarget?.uid ?? null) : null}
               onSelect={handleSelect}
@@ -2158,22 +2158,22 @@ function ProfilesSection(): React.ReactNode {
         ) : null}
         <ConfirmDialog
           open={deleteTarget !== null}
-          title="刪除設定檔"
+          title="刪除角色權限設定檔"
           confirmLabel="確認刪除"
           tone="danger"
           confirmDisabled={isDeleting}
           onConfirm={confirmDelete}
           onCancel={cancelDelete}
         >
-          {deleteTarget !== null ? <p>確定要刪除設定檔「{deleteTarget.name}」?</p> : null}
-          <p>仍被 Role 綁定時後端將拒絕刪除(409)。</p>
+          {deleteTarget !== null ? <p>確定要刪除角色權限設定檔「{deleteTarget.name}」?</p> : null}
+          <p>仍被角色綁定時後端將拒絕刪除(409)。</p>
           <InlineError message={deleteError} />
         </ConfirmDialog>
       </div>
 
       {createOpen ? (
         <NameDescriptionCreateDialog
-          title="新增權限設定檔"
+          title="新增角色權限設定檔"
           nameLabel="設定檔名稱"
           submitLabel="建立設定檔"
           submitting={isCreating}
@@ -2196,7 +2196,7 @@ function ProfilesSection(): React.ReactNode {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Role                                                                     */
+/* 角色                                                                     */
 /* ---------------------------------------------------------------------- */
 
 interface RoleCreateDialogProps {
@@ -2234,15 +2234,15 @@ function RoleCreateDialog({
 
   return (
     <FormDialog
-      title="新增 Role"
-      submitLabel={submitting ? '建立中…' : '建立 Role'}
+      title="新增角色"
+      submitLabel={submitting ? '建立中…' : '建立角色'}
       submitDisabled={submitting || name.trim() === '' || profileUid === ''}
       errorMessage={submitError}
       onSubmit={handleSubmit}
       onCancel={onCancel}
     >
       <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-        綁定設定檔(必選)
+        綁定角色權限設定檔(必選)
         <select
           value={profileUid}
           onChange={(event) => setProfileUid(event.target.value)}
@@ -2258,7 +2258,7 @@ function RoleCreateDialog({
         </select>
       </label>
       <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground md:text-base">
-        Role 名稱
+        角色名稱
         <input
           type="text"
           value={name}
@@ -2283,7 +2283,7 @@ function RoleCreateDialog({
 interface RoleTableProps {
   items: ClientSettingRole[]
   profiles: PermissionProfile[]
-  /** 設定檔清單讀取失敗:下拉選項不完整,禁止改綁以免誤送 */
+  /** 角色權限設定檔清單讀取失敗:下拉選項不完整,禁止改綁以免誤送 */
   profilesUnavailable: boolean
   deletingUid: string | null
   rebindingUid: string | null
@@ -2300,13 +2300,13 @@ const RoleTable = memo(function RoleTable({
   onRebind,
   onDelete,
 }: RoleTableProps): React.ReactNode {
-  if (items.length === 0) return <EmptyState message="尚無 Role" />
+  if (items.length === 0) return <EmptyState message="尚無角色" />
   return (
     <table className="df-table min-w-[760px]">
       <thead>
         <tr className="border-b border-border bg-muted/50">
           <th className="df-th">名稱</th>
-          <th className="df-th">綁定設定檔</th>
+          <th className="df-th">綁定角色權限設定檔</th>
           <th className="df-th">說明</th>
           <th className="df-th">操作</th>
         </tr>
@@ -2320,13 +2320,13 @@ const RoleTable = memo(function RoleTable({
             <td className="df-td font-medium text-foreground">{role.name}</td>
             <td className="df-td">
               {profilesUnavailable ? (
-                <span className="text-muted-foreground">—(設定檔清單讀取失敗)</span>
+                <span className="text-muted-foreground">—(角色權限設定檔清單讀取失敗)</span>
               ) : (
                 <select
                   value={role.permission_profile_uid}
                   onChange={(event) => onRebind(role, event.target.value)}
                   disabled={rebindingUid === role.uid}
-                  aria-label={`${role.name} 綁定設定檔`}
+                  aria-label={`${role.name} 綁定角色權限設定檔`}
                   className="df-input min-w-[12rem]"
                 >
                   {profiles.map((profile) => (
@@ -2383,7 +2383,7 @@ function RolesSection(): React.ReactNode {
       setCreateError(null)
       const result = await createClientSettingRole(payload)
       if ('error' in result) {
-        setCreateError(extractApiErrorDetail(result.error, '建立 Role 失敗,請稍後再試'))
+        setCreateError(extractApiErrorDetail(result.error, '建立角色失敗,請稍後再試'))
         return
       }
       setCreateOpen(false)
@@ -2404,10 +2404,10 @@ function RolesSection(): React.ReactNode {
       })
       setRebindingUid(null)
       if ('error' in result) {
-        setRebindError(extractApiErrorDetail(result.error, '改綁設定檔失敗,請稍後再試'))
+        setRebindError(extractApiErrorDetail(result.error, '改綁角色權限設定檔失敗,請稍後再試'))
         return
       }
-      setRebindNotice(`已將 Role「${role.name}」改綁設定檔`)
+      setRebindNotice(`已將角色「${role.name}」改綁角色權限設定檔`)
     },
     [updateClientSettingRole],
   )
@@ -2423,31 +2423,31 @@ function RolesSection(): React.ReactNode {
     const result = await deleteClientSettingRole(deleteTarget.uid)
     setDeleteTarget(null)
     if ('error' in result) {
-      setDeleteError(extractApiErrorDetail(result.error, '刪除 Role 失敗,請稍後再試'))
+      setDeleteError(extractApiErrorDetail(result.error, '刪除角色失敗,請稍後再試'))
     }
   }, [deleteTarget, deleteClientSettingRole])
 
   return (
     <div className="df-card flex flex-col gap-4 p-4 md:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-foreground md:text-lg">Role</h2>
+        <h2 className="text-base font-semibold text-foreground md:text-lg">角色</h2>
         <CreateButton
-          label="新增 Role"
+          label="新增角色"
           disabled={profiles.length === 0 || isProfilesError}
           onClick={openCreate}
         />
       </div>
       <p className="text-sm text-muted-foreground md:text-base">
-        每個 Role 必綁 1 個權限設定檔(可改綁、不可清空);指派給使用者見「API Client 設定」頁
+        每個角色必綁 1 個角色權限設定檔(可改綁、不可清空);指派給使用者見「API Client 設定」頁
       </p>
       {/* 讀不到設定檔 ≠ 沒有設定檔:失敗時給故障訊息,不可叫使用者去重建已存在的資料 */}
       {isProfilesError ? (
-        <InlineError message="載入權限設定檔清單失敗,請稍後再試;改綁下拉與新增 Role 暫不可用" />
+        <InlineError message="載入角色權限設定檔清單失敗,請稍後再試;改綁下拉與新增角色暫不可用" />
       ) : profileData !== undefined && profiles.length === 0 ? (
-        <InlineError message="尚無權限設定檔,請先於「設定檔」分頁建立後再建 Role" />
+        <InlineError message="尚無角色權限設定檔,請先於「角色權限設定檔」分頁建立後再建角色" />
       ) : null}
       {isLoading ? <p className="text-sm text-muted-foreground md:text-base">載入中…</p> : null}
-      {isError ? <InlineError message="載入 Role 清單失敗,請稍後再試" /> : null}
+      {isError ? <InlineError message="載入角色清單失敗,請稍後再試" /> : null}
       {data !== undefined ? (
         <div className="overflow-x-auto">
           <RoleTable
@@ -2465,14 +2465,14 @@ function RolesSection(): React.ReactNode {
       <InlineNotice message={rebindNotice} />
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="刪除 Role"
+        title="刪除角色"
         confirmLabel="確認刪除"
         tone="danger"
         confirmDisabled={isDeleting}
         onConfirm={confirmDelete}
         onCancel={cancelDelete}
       >
-        {deleteTarget !== null ? <p>確定要刪除 Role「{deleteTarget.name}」?</p> : null}
+        {deleteTarget !== null ? <p>確定要刪除角色「{deleteTarget.name}」?</p> : null}
         <p>仍被使用者指派時後端將拒絕刪除(409)。</p>
         <InlineError message={deleteError} />
       </ConfirmDialog>
@@ -2490,7 +2490,7 @@ function RolesSection(): React.ReactNode {
 }
 
 /* ---------------------------------------------------------------------- */
-/* 特例                                                                     */
+/* 臨時權限                                                                  */
 /* ---------------------------------------------------------------------- */
 
 function ExceptionSetsSection(): React.ReactNode {
@@ -2530,7 +2530,7 @@ function ExceptionSetsSection(): React.ReactNode {
       setCreateError(null)
       const result = await createExceptionSet(payload)
       if ('error' in result) {
-        setCreateError(extractApiErrorDetail(result.error, '建立特例權限組失敗,請稍後再試'))
+        setCreateError(extractApiErrorDetail(result.error, '建立臨時權限組失敗,請稍後再試'))
         return
       }
       setCreateOpen(false)
@@ -2549,7 +2549,7 @@ function ExceptionSetsSection(): React.ReactNode {
     const result = await deleteExceptionSet(deleteTarget.uid)
     setDeleteTarget(null)
     if ('error' in result) {
-      setDeleteError(extractApiErrorDetail(result.error, '刪除特例權限組失敗,請稍後再試'))
+      setDeleteError(extractApiErrorDetail(result.error, '刪除臨時權限組失敗,請稍後再試'))
     }
   }, [deleteTarget, deleteExceptionSet])
 
@@ -2557,20 +2557,20 @@ function ExceptionSetsSection(): React.ReactNode {
     <div className="flex flex-col gap-6">
       <div className="df-card flex flex-col gap-4 p-4 md:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-foreground md:text-lg">特例權限組</h2>
-          <CreateButton label="新增特例權限組" onClick={openCreate} />
+          <h2 className="text-base font-semibold text-foreground md:text-lg">臨時權限組</h2>
+          <CreateButton label="新增臨時權限組" onClick={openCreate} />
         </div>
         <p className="text-sm text-muted-foreground md:text-base">
-          結構同設定檔(勾作業 + 授權矩陣),可重用、可綁多個使用者;綁定與效期(到期自動失效)
+          結構同角色權限設定檔(勾作業 + 授權矩陣),可重用、可綁多個使用者;綁定與效期(到期自動失效)
           於「API Client 設定」頁設定
         </p>
         {isLoading ? <p className="text-sm text-muted-foreground md:text-base">載入中…</p> : null}
-        {isError ? <InlineError message="載入特例權限組清單失敗,請稍後再試" /> : null}
+        {isError ? <InlineError message="載入臨時權限組清單失敗,請稍後再試" /> : null}
         {data !== undefined ? (
           <div className="overflow-x-auto">
             <SimpleEntityTable
               items={items}
-              emptyMessage="尚無特例權限組"
+              emptyMessage="尚無臨時權限組"
               selectedUid={selected?.uid ?? null}
               deletingUid={isDeleting ? (deleteTarget?.uid ?? null) : null}
               onSelect={handleSelect}
@@ -2580,14 +2580,14 @@ function ExceptionSetsSection(): React.ReactNode {
         ) : null}
         <ConfirmDialog
           open={deleteTarget !== null}
-          title="刪除特例權限組"
+          title="刪除臨時權限組"
           confirmLabel="確認刪除"
           tone="danger"
           confirmDisabled={isDeleting}
           onConfirm={confirmDelete}
           onCancel={cancelDelete}
         >
-          {deleteTarget !== null ? <p>確定要刪除特例權限組「{deleteTarget.name}」?</p> : null}
+          {deleteTarget !== null ? <p>確定要刪除臨時權限組「{deleteTarget.name}」?</p> : null}
           <p>仍被未過期綁定引用時後端將拒絕刪除(409)。</p>
           <InlineError message={deleteError} />
         </ConfirmDialog>
@@ -2595,9 +2595,9 @@ function ExceptionSetsSection(): React.ReactNode {
 
       {createOpen ? (
         <NameDescriptionCreateDialog
-          title="新增特例權限組"
-          nameLabel="特例權限組名稱"
-          submitLabel="建立特例權限組"
+          title="新增臨時權限組"
+          nameLabel="臨時權限組名稱"
+          submitLabel="建立臨時權限組"
           submitting={isCreating}
           submitError={createError}
           onSubmit={handleCreate}
@@ -2649,7 +2649,7 @@ export default function ClientSettingsPage(): React.ReactNode {
       <div>
         <h1 className="text-xl font-bold text-foreground md:text-2xl">組織權限管理</h1>
         <p className="mt-1 text-sm text-muted-foreground md:text-base">
-          服務 / 作業範圍 → 權限設定檔矩陣 → Role;特例權限組另可臨時綁定使用者
+          服務 / 作業範圍 → 角色權限設定檔矩陣 → 角色;臨時權限組可限期綁定使用者
         </p>
       </div>
 

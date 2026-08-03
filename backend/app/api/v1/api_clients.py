@@ -116,7 +116,10 @@ async def reveal_api_client_secret(
 @router.get(
     "/{uid}/effective-permissions",
     response_model=ApiResponse[EffectivePermissionsResponse],
-    summary="最終可見欄位預覽(Role 設定檔 ∪ 未過期特例,再 ∩ 作業範圍;default-closed)",
+    summary=(
+        "最終可見欄位預覽(角色綁定的角色權限設定檔 ∪ 未過期臨時權限,"
+        "再 ∩ 作業範圍;default-closed)"
+    ),
 )
 async def get_api_client_effective_permissions(
     uid: UUID,

@@ -3,7 +3,7 @@
 權限資料連真實本地 PostgreSQL 測試 DB 的 `client_setting` schema(模擬 RDS),
 Client 本體連同一測試 DB 的自有表;Redis 以記憶體替身取代(寫法沿用 test_permission_cache.py)。
 
-情境涵蓋 Arch「三情境對照」:聯集 ∩ 作業範圍、default-closed、過期特例排除、
+情境涵蓋 Arch「三情境對照」:聯集 ∩ 作業範圍、default-closed、過期臨時權限排除、
 超範圍授權不生效、`*` 展開、快取命中與失效、非 admin 403 / 不存在 client 404。
 清理只刪本檔自建資料(以 `ACTOR_UID` 標記),與併行測試共用測試 DB 亦互不干擾;**禁 DROP**。
 """
@@ -308,7 +308,7 @@ async def _assign_profile(
     operation_pids: list[int],
     items: dict[int, list[PermissionItem]],
 ) -> int:
-    """建設定檔 → Role → 指派給 Client;回傳設定檔 pid。"""
+    """建角色權限設定檔 → Role → 指派給 Client;回傳角色權限設定檔 pid。"""
     profile = await repo.create_permission_profile(name=_uniq("P1"), actor_uid=ACTOR_UID)
     await repo.replace_profile_operations(profile.pid, operation_pids, actor_uid=ACTOR_UID)
     for operation_pid, permission_items in items.items():
@@ -330,7 +330,7 @@ async def _bind_exception_set(
     items: list[PermissionItem],
     expires_at: datetime | None = None,
 ) -> int:
-    """建特例組(勾作業 + 授權項)並綁給 Client;回傳特例組 pid。"""
+    """建臨時權限組(勾作業 + 授權項)並綁給 Client;回傳臨時權限組 pid。"""
     exception_set = await repo.create_exception_set(name=_uniq("X"), actor_uid=ACTOR_UID)
     await repo.replace_exception_operations(
         exception_set.pid, [operation_pid], actor_uid=ACTOR_UID
@@ -383,7 +383,7 @@ async def test_preview_carries_role_and_exception_context(
     session: AsyncSession,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """預覽同時交代權限來源:Role / 設定檔名稱、納入計算的特例組與效期(naive UTC+8)。"""
+    """預覽同時交代權限來源:Role / 角色權限設定檔名稱、納入計算的臨時權限組與效期(naive UTC+8)。"""
     client_uid = await _create_client_row(session_factory)
     _, operation_pid = await _make_arch_operation(repo)
     await _assign_profile(
@@ -430,7 +430,7 @@ async def test_no_role_and_no_exception_returns_empty(
     session: AsyncSession,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """無 Role 且無特例 → 空結構(default-closed 的極端情形)。"""
+    """無 Role 且無臨時權限 → 空結構(default-closed 的極端情形)。"""
     client_uid = await _create_client_row(session_factory)
     await _make_arch_operation(repo)
     await session.commit()
@@ -457,7 +457,7 @@ async def test_items_of_unopened_operation_do_not_grant(
     await repo.replace_operation_items(
         other.pid, [ScopeItem("T9", "C91")], actor_uid=ACTOR_UID
     )
-    # 設定檔只勾 O1,卻在 O2 底下留有授權項(異常資料);特例組只開 O2 的門、不給授權
+    # 角色權限設定檔只勾 O1,卻在 O2 底下留有授權項(異常資料);臨時權限組只開 O2 的門、不給授權
     profile_pid = await _assign_profile(
         repo,
         client_uid,
@@ -616,13 +616,13 @@ async def test_wildcard_and_named_columns_converge_to_higher_action(
     }
 
 
-# ── 特例權限:效期與聯集 ────────────────────────────────────────────────
+# ── 臨時權限:效期與聯集 ────────────────────────────────────────────────
 async def test_expired_exception_excluded_and_active_included(
     repo: ClientSettingRepository,
     session: AsyncSession,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """過期特例(expires_at < now)排除;未過期特例納入聯集,並可提高既有欄位動作。"""
+    """過期臨時權限(expires_at < now)排除;未過期臨時權限納入聯集,並可提高既有欄位動作。"""
     client_uid = await _create_client_row(session_factory)
     _, operation_pid = await _make_arch_operation(repo)
     await _assign_profile(
@@ -665,7 +665,7 @@ async def test_exception_alone_grants_without_role(
     session: AsyncSession,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """無 Role 也能只靠特例組取得權限(加法模型;仍受作業範圍限制)。"""
+    """無 Role 也能只靠臨時權限組取得權限(加法模型;仍受作業範圍限制)。"""
     client_uid = await _create_client_row(session_factory)
     _, operation_pid = await _make_arch_operation(repo)
     await _bind_exception_set(

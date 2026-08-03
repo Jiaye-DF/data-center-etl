@@ -260,7 +260,7 @@ async def test_replace_profile_operations_clears_items_of_removed_operation(
 async def test_replace_exception_operations_clears_items_of_removed_operation(
     repo: ClientSettingRepository, session: AsyncSession
 ) -> None:
-    """特例組勾選作業置換語意與設定檔一致(移除作業連動清授權項)。"""
+    """臨時權限組勾選作業置換語意與角色權限設定檔一致(移除作業連動清授權項)。"""
     service_pid, op1_pid = await _make_operation(repo, code="erp", name="O1")
     op2 = await repo.create_operation(service_pid=service_pid, name="O2", actor_uid=ACTOR_UID)
     op2_pid = op2.pid
@@ -298,7 +298,7 @@ async def test_count_operations_by_service(
 async def test_count_profiles_referencing_operation(
     repo: ClientSettingRepository, session: AsyncSession
 ) -> None:
-    """作業引用計數涵蓋設定檔勾選 / 授權項與特例組兩側(刪作業防呆用)。"""
+    """作業引用計數涵蓋角色權限設定檔勾選 / 授權項與臨時權限組兩側(刪作業防呆用)。"""
     _, operation_pid = await _make_operation(repo, code="erp", name="O1")
     profile = await repo.create_permission_profile(name="P1", actor_uid=ACTOR_UID)
     exception_set = await repo.create_exception_set(name="X1", actor_uid=ACTOR_UID)
@@ -327,7 +327,7 @@ async def test_count_profiles_referencing_operation(
 async def test_count_roles_by_profile_and_clients_by_role(
     repo: ClientSettingRepository, session: AsyncSession
 ) -> None:
-    """設定檔被 Role 綁、Role 被 Client 指派的計數(供 409 防呆)。"""
+    """角色權限設定檔被 Role 綁、Role 被 Client 指派的計數(供 409 防呆)。"""
     profile = await repo.create_permission_profile(name="P1", actor_uid=ACTOR_UID)
     role = await repo.create_role(
         permission_profile_pid=profile.pid, name="R1", actor_uid=ACTOR_UID
@@ -353,7 +353,7 @@ async def test_count_roles_by_profile_and_clients_by_role(
 async def test_count_active_bindings_by_exception_set_ignores_expired(
     repo: ClientSettingRepository, session: AsyncSession
 ) -> None:
-    """特例組刪除防呆只算未過期綁定;已過期綁定自動不計。"""
+    """臨時權限組刪除防呆只算未過期綁定;已過期綁定自動不計。"""
     exception_set = await repo.create_exception_set(name="X1", actor_uid=ACTOR_UID)
     set_pid = exception_set.pid
     now = db_now()
@@ -452,7 +452,7 @@ async def test_client_exception_set_binding_expiry_and_unbind(
 async def test_duplicate_binding_is_rejected(
     repo: ClientSettingRepository, session: AsyncSession
 ) -> None:
-    """同一 Client 重複綁同一特例組由 partial unique 擋下(呼叫端轉 409)。"""
+    """同一 Client 重複綁同一臨時權限組由 partial unique 擋下(呼叫端轉 409)。"""
     exception_set = await repo.create_exception_set(name="X1", actor_uid=ACTOR_UID)
     api_client_uid = uuid4()
     await repo.bind_client_exception_set(
@@ -467,7 +467,7 @@ async def test_duplicate_binding_is_rejected(
     await session.rollback()
 
 
-# ── 設定檔軟刪連動 + 批次載入 ───────────────────────────────────────────
+# ── 角色權限設定檔軟刪連動 + 批次載入 ───────────────────────────────────────────
 async def test_soft_delete_profile_cascades_children(
     repo: ClientSettingRepository, session: AsyncSession
 ) -> None:
@@ -494,7 +494,7 @@ async def test_soft_delete_profile_cascades_children(
 async def test_bulk_loaders_cover_multiple_parents(
     repo: ClientSettingRepository, session: AsyncSession
 ) -> None:
-    """供最終權限展開的批次載入:多作業 / 多特例組一次取回,空輸入回空集合。"""
+    """供最終權限展開的批次載入:多作業 / 多臨時權限組一次取回,空輸入回空集合。"""
     service_pid, op1_pid = await _make_operation(repo, code="erp", name="O1")
     op2 = await repo.create_operation(service_pid=service_pid, name="O2", actor_uid=ACTOR_UID)
     op2_pid = op2.pid
@@ -531,7 +531,7 @@ async def test_bulk_loaders_cover_multiple_parents(
 async def test_role_rebinding_profile_round_trip(
     repo: ClientSettingRepository, session: AsyncSession
 ) -> None:
-    """Role 必綁設定檔,可改綁但不可清空;uid / pid 兩種讀法一致。"""
+    """Role 必綁角色權限設定檔,可改綁但不可清空;uid / pid 兩種讀法一致。"""
     profile1 = await repo.create_permission_profile(name="P1", actor_uid=ACTOR_UID)
     profile2 = await repo.create_permission_profile(name="P2", actor_uid=ACTOR_UID)
     role = await repo.create_role(
@@ -557,7 +557,7 @@ async def test_role_rebinding_profile_round_trip(
 async def test_invalidation_fanout_lookups(
     repo: ClientSettingRepository, session: AsyncSession
 ) -> None:
-    """設定檔 / 特例組異動時,反查受影響 Client 的兩段查詢(供快取失效)。"""
+    """角色權限設定檔 / 臨時權限組異動時,反查受影響 Client 的兩段查詢(供快取失效)。"""
     profile = await repo.create_permission_profile(name="P1", actor_uid=ACTOR_UID)
     role1 = await repo.create_role(
         permission_profile_pid=profile.pid, name="R1", actor_uid=ACTOR_UID
@@ -627,7 +627,7 @@ async def test_soft_delete_client_grants_clears_both_tables(
 
     assert await repo.get_client_role(doomed) is None
     assert await repo.list_client_exception_sets(doomed) == []
-    # 孤兒清乾淨 → Role 與特例組的刪除防呆不再被已註銷 Client 卡住
+    # 孤兒清乾淨 → Role 與臨時權限組的刪除防呆不再被已註銷 Client 卡住
     assert await repo.count_clients_by_role(role_pid) == 1
     assert await repo.count_active_bindings_by_exception_set(set_pid) == 1
     assert await repo.get_client_role(survivor) is not None
@@ -636,7 +636,7 @@ async def test_soft_delete_client_grants_clears_both_tables(
 async def test_soft_delete_exception_set_clears_leftover_bindings(
     repo: ClientSettingRepository, session: AsyncSession
 ) -> None:
-    """AD-156:特例組軟刪連動軟刪其殘留(已過期)綁定,不留看不到又解不掉的殭屍列。"""
+    """AD-156:臨時權限組軟刪連動軟刪其殘留(已過期)綁定,不留看不到又解不掉的殭屍列。"""
     exception_set = await repo.create_exception_set(name="X1", actor_uid=ACTOR_UID)
     set_pid = exception_set.pid
     api_client_uid = uuid4()

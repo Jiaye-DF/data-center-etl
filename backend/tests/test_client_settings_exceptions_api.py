@@ -1,12 +1,12 @@
-"""特例權限組 / API Client 指派 API 測試(v1.6.1 task-006)。
+"""臨時權限組 / API Client 指派 API 測試(v1.6.1 task-006)。
 
 fixture 區塊與 test_client_settings_profiles_api.py 同構:真實本地 PostgreSQL 測試 DB
 同時假扮「自有 DB」與「目標 RDS」;清理一律 DELETE 資料,**不做任何 DROP**。
 
-涵蓋:非 admin 403、特例組 CRUD(名稱唯一 409 / 未過期綁定擋刪 409)、勾作業與授權矩陣
+涵蓋:非 admin 403、臨時權限組 CRUD(名稱唯一 409 / 未過期綁定擋刪 409)、勾作業與授權矩陣
 整批置換(未勾作業 409 / 超出作業範圍 422 / 非 confirmed 422 / 重複 422)、Role 指派
-冪等置換 0..1 與解除、特例綁定含效期(過期標示 / 重複 409 / 解除 / 跨 Client 定位 404)、
-指派不存在或已軟刪的 Client → 404、稽核事件、失效扇出(指派 / 綁定 → 該 Client;特例組
+冪等置換 0..1 與解除、臨時權限綁定含效期(過期標示 / 重複 409 / 解除 / 跨 Client 定位 404)、
+指派不存在或已軟刪的 Client → 404、稽核事件、失效扇出(指派 / 綁定 → 該 Client;臨時權限組
 內容異動 → 綁該組的 Client)。測試資料一律帶隨機前綴,避免與並行測試/他人資料互撞。
 """
 
@@ -428,7 +428,7 @@ async def _bindings(client: AsyncClient, client_uid: str) -> list[dict[str, obje
 async def _matrix_fixture(
     client: AsyncClient, db_engine: AsyncEngine, tag: str
 ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
-    """一組可用的矩陣場景:作業範圍只開 `table1.col_ok`,特例組已勾選該作業。"""
+    """一組可用的矩陣場景:作業範圍只開 `table1.col_ok`,臨時權限組已勾選該作業。"""
     names = await _seed_semantic(db_engine, tag)
     service = await _create_service(client, tag)
     operation = await _create_operation(client, service["uid"], f"O1-{tag}")
@@ -476,7 +476,7 @@ async def test_member_forbidden_on_exception_and_assignment_endpoints(
         assert resp.status_code == 403, f"{method} {path}: {resp.text}"
 
 
-# ── 特例組 CRUD ─────────────────────────────────────────────────────────
+# ── 臨時權限組 CRUD ─────────────────────────────────────────────────────────
 async def test_exception_set_crud_round_trip(
     client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
@@ -531,7 +531,7 @@ async def test_exception_set_not_found_returns_404(
     assert resp.status_code == 404, resp.text
 
 
-# ── 特例組勾選作業 / 授權矩陣 ───────────────────────────────────────────
+# ── 臨時權限組勾選作業 / 授權矩陣 ───────────────────────────────────────────
 async def test_replace_exception_operations_round_trip(
     client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
@@ -584,7 +584,7 @@ async def test_replace_exception_items_requires_granted_operation(
     db_engine: AsyncEngine,
     tag: str,
 ) -> None:
-    """作業未先勾選 → 409(特例同樣遵守「開門與授權缺一不可」)。"""
+    """作業未先勾選 → 409(臨時權限同樣遵守「開門與授權缺一不可」)。"""
     await _login_as(client, session_factory, "admin")
     names, operation, exception_set = await _matrix_fixture(client, db_engine, tag)
     service_uid = (await client.get(_OPERATIONS)).json()["data"]["items"][0]["service_uid"]
@@ -613,7 +613,7 @@ async def test_replace_exception_items_enforces_scope_and_semantic(
     db_engine: AsyncEngine,
     tag: str,
 ) -> None:
-    """特例不是繞過作業範圍的後門:超範圍 / 非 confirmed / 重複一律 422,且原授權不動。"""
+    """臨時權限不是繞過作業範圍的後門:超範圍 / 非 confirmed / 重複一律 422,且原授權不動。"""
     await _login_as(client, session_factory, "admin")
     names, operation, exception_set = await _matrix_fixture(client, db_engine, tag)
     path = _items_path(exception_set["uid"], operation["uid"])
@@ -776,7 +776,7 @@ async def test_assignment_endpoints_require_existing_client(
             assert resp.status_code == 404, f"{method} {path}: {resp.text}"
 
 
-# ── 特例綁定(0..N,各自效期)──────────────────────────────────────────
+# ── 臨時權限綁定(0..N,各自效期)──────────────────────────────────────────
 async def test_bind_exception_set_with_expiry_round_trip(
     client: AsyncClient,
     session_factory: async_sessionmaker[AsyncSession],
@@ -853,7 +853,7 @@ async def test_bind_exception_set_not_found_and_cross_client_unbind(
     session_factory: async_sessionmaker[AsyncSession],
     tag: str,
 ) -> None:
-    """綁不存在的特例組 404;拿別的 Client 的綁定 uid 解除同樣 404(不得跨 Client 操作)。"""
+    """綁不存在的臨時權限組 404;拿別的 Client 的綁定 uid 解除同樣 404(不得跨 Client 操作)。"""
     await _login_as(client, session_factory, "admin")
     owner_uid = await _create_api_client(session_factory)
     other_uid = await _create_api_client(session_factory)
@@ -916,7 +916,7 @@ async def test_exception_set_delete_blocked_while_active_binding(
     assert f"E-{tag}-active" in await _exception_set_names(client)
 
     assert (await client.delete(f"{_EXCEPTION_SETS}/{expired_set['uid']}")).status_code == 200
-    # 特例組已軟刪 → 該綁定不再出現在綁定清單(與預覽同一語意)
+    # 臨時權限組已軟刪 → 該綁定不再出現在綁定清單(與預覽同一語意)
     assert {str(i["exception_set_uid"]) for i in await _bindings(client, client_uid)} == {
         active_set["uid"]
     }
@@ -928,7 +928,7 @@ async def test_exception_set_delete_soft_deletes_leftover_bindings(
     db_engine: AsyncEngine,
     tag: str,
 ) -> None:
-    """AD-156:特例組軟刪時,其殘留(已過期)綁定一併軟刪,不留看不到又解不掉的殭屍列。"""
+    """AD-156:臨時權限組軟刪時,其殘留(已過期)綁定一併軟刪,不留看不到又解不掉的殭屍列。"""
     await _login_as(client, session_factory, "admin")
     client_uid = await _create_api_client(session_factory)
     expired_set = await _create_exception_set(client, f"E-{tag}-expired")
@@ -951,7 +951,7 @@ async def test_api_client_delete_clears_rds_grants_and_frees_role_and_set(
     db_engine: AsyncEngine,
     tag: str,
 ) -> None:
-    """註銷 API Client → RDS 指派 / 綁定同步軟刪、快取失效,Role 與特例組因而刪得掉。"""
+    """註銷 API Client → RDS 指派 / 綁定同步軟刪、快取失效,Role 與臨時權限組因而刪得掉。"""
     await _login_as(client, session_factory, "admin")
     client_uid = await _create_api_client(session_factory)
     unrelated_uid = str(uuid4())
@@ -965,7 +965,7 @@ async def test_api_client_delete_clears_rds_grants_and_frees_role_and_set(
         _bindings_path(client_uid), json={"exception_set_uid": exception_set["uid"]}
     )
     assert bound.status_code == 201, bound.text
-    # 註銷前:Role 被指派、特例組被未過期綁定引用 → 兩者都刪不掉
+    # 註銷前:Role 被指派、臨時權限組被未過期綁定引用 → 兩者都刪不掉
     assert (await client.delete(f"{_ROLES}/{role['uid']}")).status_code == 409
     assert (await client.delete(f"{_EXCEPTION_SETS}/{exception_set['uid']}")).status_code == 409
 
@@ -1081,7 +1081,7 @@ async def test_exception_set_write_invalidates_bound_client_cache(
     db_engine: AsyncEngine,
     tag: str,
 ) -> None:
-    """特例組內容 / 名稱異動 → 反查綁該組的 Client 失效,其他 Client 不受影響。"""
+    """臨時權限組內容 / 名稱異動 → 反查綁該組的 Client 失效,其他 Client 不受影響。"""
     await _login_as(client, session_factory, "admin")
     names, operation, exception_set = await _matrix_fixture(client, db_engine, tag)
     bound_client_uid = await _create_api_client(session_factory)

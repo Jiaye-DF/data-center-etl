@@ -222,7 +222,7 @@ _UNIQUE_INDEX_DDL: tuple[tuple[str, str, str], ...] = (
         "permission_profile_pid, operation_pid, table_name, column_name, action",
     ),
     ("uq_roles_name", "roles", "name"),
-    # API Client 只綁 0..1 Role:未刪列以 api_client_uid 唯一保證
+    # API Client 只綁 0..1 角色:未刪列以 api_client_uid 唯一保證
     ("uq_client_roles_api_client_uid", "client_roles", "api_client_uid"),
     ("uq_exception_sets_name", "exception_sets", "name"),
     (
@@ -247,15 +247,15 @@ _TABLE_COMMENTS: dict[str, str] = {
     "operations": "作業:查詢入口,歸屬一個系統別 / Operation: query entry under a service",
     "operation_items": "作業範圍:表 × 欄位 / Operation scope: table x column",
     "permission_profiles": "角色權限設定檔 / Permission profile",
-    "profile_operations": "設定檔勾選的可讀作業 / Operations granted by a profile",
-    "profile_items": "設定檔權限項:作業 × 表 × 欄位 × 動作 / Profile permission items",
-    "roles": "Role:必綁 1 個設定檔 / Role: bound to exactly one profile",
-    "client_roles": "API Client 的 Role 指派(0..1)/ API client role assignment (0..1)",
-    "exception_sets": "特例權限組(可重用)/ Reusable exception permission set",
-    "exception_operations": "特例組勾選的作業 / Operations granted by an exception set",
-    "exception_items": "特例組權限項 / Exception set permission items",
+    "profile_operations": "角色權限設定檔勾選的可讀作業 / Operations granted by a profile",
+    "profile_items": "角色權限設定檔權限項:作業 × 表 × 欄位 × 動作 / Profile permission items",
+    "roles": "角色:必綁 1 個角色權限設定檔 / Role: bound to exactly one profile",
+    "client_roles": "API Client 的角色指派(0..1)/ API client role assignment (0..1)",
+    "exception_sets": "臨時權限組(可重用)/ Reusable exception permission set",
+    "exception_operations": "臨時權限組勾選的作業 / Operations granted by an exception set",
+    "exception_items": "臨時權限組權限項 / Exception set permission items",
     "client_exception_sets": (
-        "API Client 的特例組綁定(可設效期)/ Client exception set binding (with expiry)"
+        "API Client 的臨時權限組綁定(可設效期)/ Client exception set binding (with expiry)"
     ),
 }
 
@@ -298,39 +298,39 @@ _BUSINESS_COLUMN_COMMENTS: dict[str, dict[str, str]] = {
         "column_name": _COLUMN_NAME_COMMENT,
     },
     "permission_profiles": {
-        "name": "設定檔名(唯一)/ Profile name (unique)",
+        "name": "角色權限設定檔名(唯一)/ Profile name (unique)",
         "description": _DESCRIPTION_COMMENT,
     },
     "profile_operations": {
-        "permission_profile_pid": "歸屬設定檔 / Owning profile",
+        "permission_profile_pid": "歸屬角色權限設定檔 / Owning profile",
         "operation_pid": "勾選的作業 / Granted operation",
     },
     "profile_items": {
-        "permission_profile_pid": "歸屬設定檔 / Owning profile",
+        "permission_profile_pid": "歸屬角色權限設定檔 / Owning profile",
         "operation_pid": "歸屬作業(授權巢狀在作業下)/ Owning operation",
         "table_name": _TABLE_NAME_COMMENT,
         "column_name": _COLUMN_NAME_COMMENT,
         "action": _ACTION_COMMENT,
     },
     "roles": {
-        "permission_profile_pid": "綁定的設定檔(必綁)/ Bound profile (mandatory)",
+        "permission_profile_pid": "綁定的角色權限設定檔(必綁)/ Bound profile (mandatory)",
         "name": "角色名(唯一)/ Role name (unique)",
         "description": _DESCRIPTION_COMMENT,
     },
     "client_roles": {
         "api_client_uid": _API_CLIENT_UID_COMMENT,
-        "role_pid": "指派的 Role / Assigned role",
+        "role_pid": "指派的角色 / Assigned role",
     },
     "exception_sets": {
-        "name": "特例權限名(唯一)/ Exception set name (unique)",
+        "name": "臨時權限名(唯一)/ Exception set name (unique)",
         "description": _DESCRIPTION_COMMENT,
     },
     "exception_operations": {
-        "exception_set_pid": "歸屬特例組 / Owning exception set",
+        "exception_set_pid": "歸屬臨時權限組 / Owning exception set",
         "operation_pid": "勾選的作業 / Granted operation",
     },
     "exception_items": {
-        "exception_set_pid": "歸屬特例組 / Owning exception set",
+        "exception_set_pid": "歸屬臨時權限組 / Owning exception set",
         "operation_pid": _OPERATION_PID_COMMENT,
         "table_name": _TABLE_NAME_COMMENT,
         "column_name": _COLUMN_NAME_COMMENT,
@@ -338,7 +338,7 @@ _BUSINESS_COLUMN_COMMENTS: dict[str, dict[str, str]] = {
     },
     "client_exception_sets": {
         "api_client_uid": _API_CLIENT_UID_COMMENT,
-        "exception_set_pid": "綁定的特例組 / Bound exception set",
+        "exception_set_pid": "綁定的臨時權限組 / Bound exception set",
         "expires_at": "效期(UTC+8;NULL 代表不設限)/ Expires at (UTC+8; NULL means never)",
     },
 }

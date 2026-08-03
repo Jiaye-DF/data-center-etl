@@ -8,8 +8,8 @@
 - **交易邊界由呼叫端(service)掌握**:本層只 `flush`、**不** `commit`;批次置換的
   「軟刪舊集合 + 插入新集合」因而恆落在同一交易內(全成或全不成)。
 - 讀取一律過濾 `is_deleted`;刪除一律軟刪(`04-databases/02-soft-delete.md` 命名強制:
-  過濾版無後綴)。父列軟刪時連動軟刪其「內含子集合」(作業→範圍項、設定檔→勾選/授權項、
-  特例組→勾選/授權項);跨實體引用不連鎖刪除,改由 `count_*` 防呆查詢供 service 擋 409。
+  過濾版無後綴)。父列軟刪時連動軟刪其「內含子集合」(作業→範圍項、角色權限設定檔→勾選/授權項、
+  臨時權限組→勾選/授權項);跨實體引用不連鎖刪除,改由 `count_*` 防呆查詢供 service 擋 409。
 - 時間欄位為 naive UTC+8(`04-databases/06-timezone.md`,RDS datetime2 等價慣例),
   寫入一律走 `db_now()`;`expires_at` 亦同一時基。
 - 全走 ORM / bind params,無字串拼接 SQL(`04-databases/04-sql-safety.md`)。
@@ -256,9 +256,9 @@ class ClientSettingRepository:
         )
 
     async def count_profiles_referencing_operation(self, operation_pid: int) -> int:
-        """作業被設定檔 / 特例組引用的未刪筆數合計(勾選列與授權項皆計)。
+        """作業被角色權限設定檔 / 臨時權限組引用的未刪筆數合計(勾選列與授權項皆計)。
 
-        名稱沿用 task-002 規格;範圍含特例組 — 刪除作業的防呆須同時擋兩側引用(task-004)。
+        名稱沿用 task-002 規格;範圍含臨時權限組 — 刪除作業的防呆須同時擋兩側引用(task-004)。
         """
         statements: tuple[Select[tuple[int]], ...] = (
             select(func.count())
@@ -406,7 +406,7 @@ class ClientSettingRepository:
     async def soft_delete_permission_profile(
         self, profile: PermissionProfile, *, actor_uid: UUID
     ) -> None:
-        """軟刪設定檔並連動軟刪其勾選作業與授權項(內含子集合)。"""
+        """軟刪角色權限設定檔並連動軟刪其勾選作業與授權項(內含子集合)。"""
         profile_pid = profile.pid
         await self._soft_delete(profile, actor_uid)
         await self._soft_delete_where(
@@ -425,7 +425,7 @@ class ClientSettingRepository:
         )
 
     async def count_roles_by_profile(self, permission_profile_pid: int) -> int:
-        """綁定該設定檔的未刪 Role 數(> 0 時 service 層擋刪除)。"""
+        """綁定該角色權限設定檔的未刪角色數(> 0 時 service 層擋刪除)。"""
         return await self._count(
             select(func.count())
             .select_from(Role)
@@ -436,7 +436,7 @@ class ClientSettingRepository:
         )
 
     async def list_roles_by_profile(self, permission_profile_pid: int) -> list[Role]:
-        """綁定該設定檔的未刪 Role(設定檔內容異動時,反查受影響 Client 的第一段)。"""
+        """綁定該角色權限設定檔的未刪角色(角色權限設定檔內容異動時,反查受影響 Client 的第一段)。"""
         rows = (
             await self._db.execute(
                 select(Role)
@@ -449,7 +449,7 @@ class ClientSettingRepository:
         ).scalars()
         return list(rows.all())
 
-    # ── 設定檔勾選作業 profile_operations ────────────────────────────────
+    # ── 角色權限設定檔勾選作業 profile_operations ────────────────────────────────
     async def list_profile_operations(
         self, permission_profile_pid: int
     ) -> list[ProfileOperation]:
@@ -507,7 +507,7 @@ class ClientSettingRepository:
         await self._db.flush()
         return rows
 
-    # ── 設定檔授權項 profile_items ───────────────────────────────────────
+    # ── 角色權限設定檔授權項 profile_items ───────────────────────────────────────
     async def list_profile_items(
         self, permission_profile_pid: int, *, operation_pid: int | None = None
     ) -> list[ProfileItem]:
@@ -528,7 +528,7 @@ class ClientSettingRepository:
         *,
         actor_uid: UUID,
     ) -> list[ProfileItem]:
-        """整批置換「設定檔 × 單一作業」的授權矩陣(同交易軟刪舊集合 + 插入新集合)。"""
+        """整批置換「角色權限設定檔 × 單一作業」的授權矩陣(同交易軟刪舊集合 + 插入新集合)。"""
         await self._soft_delete_where(
             update(ProfileItem).where(
                 ProfileItem.permission_profile_pid == permission_profile_pid,
@@ -585,7 +585,7 @@ class ClientSettingRepository:
         description: str | None = None,
         actor_uid: UUID,
     ) -> Role:
-        """建立 Role;設定檔為必帶(DB 層 NOT NULL,禁空角色)。"""
+        """建立角色;角色權限設定檔為必帶(DB 層 NOT NULL,禁空角色)。"""
         role = Role(
             uid=uuid4(),
             permission_profile_pid=permission_profile_pid,
@@ -607,7 +607,7 @@ class ClientSettingRepository:
         permission_profile_pid: int | None = None,
         actor_uid: UUID,
     ) -> Role:
-        """部分更新;可改綁設定檔,但 None 代表不變更 — 無法清空(必綁)。"""
+        """部分更新;可改綁角色權限設定檔,但 None 代表不變更 — 無法清空(必綁)。"""
         if name is not None:
             role.name = name
         if description is not None:
@@ -621,16 +621,16 @@ class ClientSettingRepository:
         await self._soft_delete(role, actor_uid)
 
     async def count_clients_by_role(self, role_pid: int) -> int:
-        """指派該 Role 的未刪 Client 數(> 0 時 service 層擋刪除)。"""
+        """指派該角色的未刪 Client 數(> 0 時 service 層擋刪除)。"""
         return await self._count(
             select(func.count())
             .select_from(ClientRole)
             .where(ClientRole.role_pid == role_pid, ClientRole.is_deleted.is_(False))
         )
 
-    # ── API Client 的 Role 指派 client_roles ─────────────────────────────
+    # ── API Client 的角色指派 client_roles ─────────────────────────────
     async def get_client_role(self, api_client_uid: UUID) -> ClientRole | None:
-        """取 Client 目前的 Role 指派(0..1;partial unique 保證至多一筆有效)。"""
+        """取 Client 目前的角色指派(0..1;partial unique 保證至多一筆有效)。"""
         return (
             await self._db.execute(
                 select(ClientRole).where(
@@ -643,7 +643,7 @@ class ClientSettingRepository:
     async def list_client_roles_by_role_pids(
         self, role_pids: Sequence[int]
     ) -> list[ClientRole]:
-        """指派這些 Role 的未刪指派列(權限異動時反查受影響 Client 的第二段)。"""
+        """指派這些角色的未刪指派列(權限異動時反查受影響 Client 的第二段)。"""
         if not role_pids:
             return []
         rows = (
@@ -688,7 +688,7 @@ class ClientSettingRepository:
         """同交易軟刪該 Client 在 RDS 的全部指派與綁定(API Client 註銷的跨庫連動)。
 
         自有 DB 的 Client 註銷後,RDS 側的 `client_roles` / `client_exception_sets` 若留著
-        就成了解不掉的孤兒(Role / 特例組因而永久刪不掉),故註銷一併清除。
+        就成了解不掉的孤兒(角色 / 臨時權限組因而永久刪不掉),故註銷一併清除。
         """
         await self._soft_delete_where(
             update(ClientRole).where(
@@ -705,7 +705,7 @@ class ClientSettingRepository:
             actor_uid=actor_uid,
         )
 
-    # ── 特例權限組 exception_sets ────────────────────────────────────────
+    # ── 臨時權限組 exception_sets ────────────────────────────────────────
     async def list_exception_sets(self) -> list[ExceptionSet]:
         rows = (
             await self._db.execute(
@@ -779,7 +779,7 @@ class ClientSettingRepository:
     async def soft_delete_exception_set(
         self, exception_set: ExceptionSet, *, actor_uid: UUID
     ) -> None:
-        """軟刪特例組並連動軟刪其勾選作業、授權項與殘留綁定。
+        """軟刪臨時權限組並連動軟刪其勾選作業、授權項與殘留綁定。
 
         綁定列本非「內含子集合」,但未過期綁定在 service 層已擋刪(409)→ 走到這裡的只會是
         已過期綁定,對權限判斷本就不生效;留著會變成清單看不到、unbind 又 404 的殭屍列。
@@ -811,7 +811,7 @@ class ClientSettingRepository:
     async def count_active_bindings_by_exception_set(
         self, exception_set_pid: int, *, now: datetime | None = None
     ) -> int:
-        """引用該特例組且**未過期**的綁定數(`expires_at` NULL = 不設限)。"""
+        """引用該臨時權限組且**未過期**的綁定數(`expires_at` NULL = 不設限)。"""
         moment = now if now is not None else db_now()
         return await self._count(
             select(func.count())
@@ -826,7 +826,7 @@ class ClientSettingRepository:
             )
         )
 
-    # ── 特例組勾選作業 / 授權項 ──────────────────────────────────────────
+    # ── 臨時權限組勾選作業 / 授權項 ──────────────────────────────────────────
     async def list_exception_operations(
         self, exception_set_pid: int
     ) -> list[ExceptionOperation]:
@@ -835,7 +835,7 @@ class ClientSettingRepository:
     async def list_exception_operations_by_set_pids(
         self, exception_set_pids: Sequence[int]
     ) -> list[ExceptionOperation]:
-        """一次載入多特例組的勾選作業(Client 可綁多組,避免逐組 N+1)。"""
+        """一次載入多臨時權限組的勾選作業(Client 可綁多組,避免逐組 N+1)。"""
         if not exception_set_pids:
             return []
         rows = (
@@ -857,7 +857,7 @@ class ClientSettingRepository:
         *,
         actor_uid: UUID,
     ) -> list[ExceptionOperation]:
-        """整批置換特例組勾選作業;被移除的作業連動清其授權項(同交易)。"""
+        """整批置換臨時權限組勾選作業;被移除的作業連動清其授權項(同交易)。"""
         previous = {
             row.operation_pid
             for row in await self.list_exception_operations(exception_set_pid)
@@ -908,7 +908,7 @@ class ClientSettingRepository:
     async def list_exception_items_by_set_pids(
         self, exception_set_pids: Sequence[int]
     ) -> list[ExceptionItem]:
-        """一次載入多特例組的授權項(供最終權限展開)。"""
+        """一次載入多臨時權限組的授權項(供最終權限展開)。"""
         if not exception_set_pids:
             return []
         rows = (
@@ -931,7 +931,7 @@ class ClientSettingRepository:
         *,
         actor_uid: UUID,
     ) -> list[ExceptionItem]:
-        """整批置換「特例組 × 單一作業」的授權矩陣(同交易軟刪舊集合 + 插入新集合)。"""
+        """整批置換「臨時權限組 × 單一作業」的授權矩陣(同交易軟刪舊集合 + 插入新集合)。"""
         await self._soft_delete_where(
             update(ExceptionItem).where(
                 ExceptionItem.exception_set_pid == exception_set_pid,
@@ -957,7 +957,7 @@ class ClientSettingRepository:
         await self._db.flush()
         return rows
 
-    # ── API Client 的特例綁定 client_exception_sets ──────────────────────
+    # ── API Client 的臨時權限綁定 client_exception_sets ──────────────────────
     async def list_client_exception_sets(
         self, api_client_uid: UUID
     ) -> list[ClientExceptionSet]:
@@ -998,7 +998,7 @@ class ClientSettingRepository:
     async def list_client_exception_sets_by_set_pids(
         self, exception_set_pids: Sequence[int]
     ) -> list[ClientExceptionSet]:
-        """綁定這些特例組的未刪綁定列(特例組內容異動時反查受影響 Client)。
+        """綁定這些臨時權限組的未刪綁定列(臨時權限組內容異動時反查受影響 Client)。
 
         含已過期綁定:失效快取寧可多刪(過期綁定本就讀不到,多失效只是多一次回源)。
         """
@@ -1034,7 +1034,7 @@ class ClientSettingRepository:
         expires_at: datetime | None = None,
         actor_uid: UUID,
     ) -> ClientExceptionSet:
-        """綁定特例組(0..N);`expires_at` 為 naive UTC+8,NULL = 不設限。
+        """綁定臨時權限組(0..N);`expires_at` 為 naive UTC+8,NULL = 不設限。
 
         同一 Client 重複綁同組由 partial unique 擋下(呼叫端轉 409)。
         """

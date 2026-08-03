@@ -90,7 +90,7 @@ export interface RevealApiClientSecretResult {
 /* 型別集中放此檔,對應 clientSettingApi.ts 頂部註記)                          */
 /* ---------------------------------------------------------------------- */
 
-/** Client 的 Role 指派(0..1);與 `ClientSettingRole`(Role 定義本身)不同資源 */
+/** Client 的角色指派(0..1);與 `ClientSettingRole`(角色定義本身)不同資源 */
 export interface ClientRoleAssignment {
   uid: string
   api_client_uid: string
@@ -104,7 +104,7 @@ export interface AssignClientRolePayload {
   role_uid: string
 }
 
-/** Client 的特例權限組綁定列(0..N,各自效期) */
+/** Client 的臨時權限組綁定列(0..N,各自效期) */
 export interface ClientExceptionSetBinding {
   uid: string
   api_client_uid: string
@@ -155,7 +155,7 @@ export interface EffectiveOperationPermission {
   tables: Record<string, Record<string, EffectivePermissionAction>>
 }
 
-/** 單一 API Client 的最終權限預覽(Role 設定檔 ∪ 未過期特例,再 ∩ 作業範圍) */
+/** 單一 API Client 的最終權限預覽(角色綁定的角色權限設定檔 ∪ 未過期臨時權限,再 ∩ 作業範圍) */
 export interface EffectivePermissions {
   client_uid: string
   role: EffectiveRoleSummary | null
